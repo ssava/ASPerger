@@ -1,10 +1,12 @@
 use std::collections::HashMap;
-use super::value::VBValue;
+
+use super::VBValue;
 
 #[derive(Default)]
 pub struct ExecutionContext {
     variables: HashMap<String, VBValue>,
-    pub response_buffer: String,
+    response_buffer: String,
+    functions: HashMap<String, VBValue>, // Store functions
 }
 
 impl ExecutionContext {
@@ -12,7 +14,16 @@ impl ExecutionContext {
         ExecutionContext {
             variables: HashMap::new(),
             response_buffer: String::new(),
+            functions: HashMap::new(),
         }
+    }
+
+    pub fn get_response_buffer(&mut self) -> String {
+        self.response_buffer
+    }
+
+    pub fn flush_response_buffer(&mut self) {
+        self.response_buffer.clear();
     }
 
     pub fn write(&mut self, content: &str) {
@@ -25,5 +36,13 @@ impl ExecutionContext {
 
     pub fn get_variable(&self, name: &str) -> Option<VBValue> {
         self.variables.get(name).cloned()
+    }
+
+    pub fn set_function(&mut self, name: String, params: Vec<String>, body: String) {
+        self.functions.insert(name, VBValue::Function(params, body));
+    }
+
+    pub fn get_function(&self, name: &str) -> Option<&VBValue> {
+        self.functions.get(name)
     }
 }
