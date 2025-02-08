@@ -6,8 +6,7 @@ use crate::asp::parser::AspParser;
 use crate::asp::handler::Handler;
 use crate::asp::html_handler::HtmlHandler;
 use crate::asp::code_handler::CodeHandler;
-
-use super::asp_error::ASPError;
+use crate::asp::asp_error::ASPError;
 
 pub struct AspServer {
     interpreter: Arc<VBScriptInterpreter>,
@@ -67,9 +66,16 @@ impl AspServer {
         let mut response_content = String::new();
 
         for block in blocks {
-            handler_chain.handle(&block, &mut context)?;
-            response_content.push_str(&context.response_buffer);
-            context.flush_response_buffer();
+            if let Err(e) = handler_chain.handle(&block, &mut context) {
+                // Include the error in the response for debugging
+                response_content.push_str(&format!(
+                    "<!-- Error: {} -->",
+                    e
+                ));
+            } else {
+                response_content.push_str(&context.response_buffer);
+                context.flush_response_buffer();
+            }
         }
 
         let response = format!(
