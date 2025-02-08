@@ -1,5 +1,5 @@
 use super::VBSyntax;
-use crate::vbscript::{ExecutionContext, VBScriptInterpreter, VBValue};
+use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBScriptInterpreter, VBValue};
 
 pub struct ForLoop {
     counter: String,
@@ -22,7 +22,7 @@ impl ForLoop {
 }
 
 impl VBSyntax for ForLoop {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let mut counter_value = self.start;
         while counter_value <= self.end {
             context.set_variable(&self.counter, VBValue::Number(counter_value as f64));

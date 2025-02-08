@@ -10,7 +10,7 @@ impl VBSError {
     }
 
     pub fn to_string(&self) -> String {
-        format!("[Codice {}]: {}", self.code, self.message)
+        format!("[VBS{}]: {}", self.code, self.message)
     }
 }
 

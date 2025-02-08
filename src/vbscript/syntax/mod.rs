@@ -1,6 +1,6 @@
 // Define the VBSyntax trait
 pub trait VBSyntax {
-    fn execute(&self, context: &mut crate::vbscript::ExecutionContext) -> Result<(), String>;
+    fn execute(&self, context: &mut crate::vbscript::ExecutionContext) -> Result<(), VBSError>;
 }
 
 // Re-export all syntax constructs
@@ -21,3 +21,5 @@ pub use for_loop::ForLoop;
 pub use while_loop::WhileLoop;
 pub use function_decl::Function;
 pub use call_function::CallFunction;
+
+use super::vbs_error::VBSError;

@@ -1,4 +1,4 @@
-use crate::vbscript::{ExecutionContext, VBValue};
+use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 use super::VBSyntax;
 
 pub struct Dim {
@@ -12,7 +12,7 @@ impl Dim {
 }
 
 impl VBSyntax for Dim {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         for var_name in &self.var_names {
             context.set_variable(var_name, VBValue::Null);
         }

@@ -1,5 +1,5 @@
 use super::VBSyntax;
-use crate::vbscript::{ExecutionContext, VBScriptInterpreter, VBValue};
+use crate::vbscript::{vbs_error::{VBSError, VBSErrorType}, ExecutionContext, VBScriptInterpreter, VBValue};
 
 pub struct CallFunction {
     name: String,
@@ -13,13 +13,13 @@ impl CallFunction {
 }
 
 impl VBSyntax for CallFunction {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         if let Some(VBValue::Function(params, body)) = context.get_variable(&self.name) {
             if params.len() != self.args.len() {
-                return Err(format!(
+                return Err(VBSErrorType::SyntaxError.into_error(format!(
                     "Numero di argomenti non valido per la funzione {}",
                     self.name
-                ));
+                )));
             }
 
             // Set arguments as variables in the context
@@ -31,7 +31,7 @@ impl VBSyntax for CallFunction {
                 } else if arg.starts_with('"') && arg.ends_with('"') {
                     VBValue::String(arg[1..arg.len() - 1].to_string())
                 } else {
-                    return Err(format!("Argomento non valido: {}", arg));
+                    return Err(VBSErrorType::SyntaxError.into_error(format!("Argomento non valido: {}", arg)));
                 };
                 context.set_variable(param, value);
             }
@@ -40,7 +40,7 @@ impl VBSyntax for CallFunction {
             let interpreter = VBScriptInterpreter;
             interpreter.execute(&body, context)?;
         } else {
-            return Err(format!("Funzione non definita: {}", self.name));
+            return Err(VBSErrorType::RuntimeError.into_error(format!("Funzione non definita: {}", self.name)));
         }
         Ok(())
     }

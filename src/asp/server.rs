@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use crate::vbscript::{VBScriptInterpreter, ExecutionContext, VBSError}; // Importa VBSError
+use crate::vbscript::vbs_error::VBSError;
+use crate::vbscript::{VBScriptInterpreter, ExecutionContext};
 use crate::asp::parser::AspParser;
 use crate::asp::parser::AspBlock;
 
@@ -55,7 +56,7 @@ impl AspServer {
                 AspBlock::Code(code) => {
                     match interpreter.execute(&code, &mut context) {
                         Ok(_) => {
-                            response_content.push_str(&context.get_response_buffer());
+                            response_content.push_str(&context.response_buffer);
                             context.flush_response_buffer();
                         }
                         Err(e) => {

@@ -7,7 +7,7 @@ use crate::vbscript::syntax::{
 use crate::vbscript::ExecutionContext;
 use regex::Regex;
 
-use super::vbs_error::VBSError;
+use super::vbs_error::{VBSError, VBSErrorType};
 use super::VBValue;
 
 pub struct VBScriptInterpreter;
@@ -22,7 +22,7 @@ impl VBScriptInterpreter {
     /// # Returns
     /// * `Ok(())` if the execution is successful.
     /// * `Err(String)` if there is a syntax or runtime error.
-    pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), String> {
+    pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let code = code.trim();
         for line in code.split('\n') {
             let line = line.trim();
@@ -34,7 +34,7 @@ impl VBScriptInterpreter {
             // Create a syntax object using the factory method
             match self.create_syntax(line, code)? {
                 Some(syntax) => syntax.execute(context)?,
-                None => return Err(format!("Comando non riconosciuto: {}", line)),
+                None => return Err(VBSErrorType::NotImplementedError.into_error(format!("Comando non riconosciuto: {}", line))),
             }
         }
         Ok(())
@@ -49,12 +49,12 @@ impl VBScriptInterpreter {
     /// # Returns
     /// * `Ok(Some(Box<dyn VBSyntax>))` if the line corresponds to a valid VBScript statement.
     /// * `Ok(None)` if the line does not match any known VBScript statement.
-    /// * `Err(String)` if there is a syntax error.
+    /// * `Err(VBSError)` if there is a syntax error.
     fn create_syntax(
         &self,
         line: &str,
         full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         // Handle different types of VBScript statements
         if line.to_lowercase().starts_with("response.write") {
             let content = line
@@ -77,7 +77,9 @@ impl VBScriptInterpreter {
         } else if line.contains('=') {
             let parts: Vec<&str> = line.split('=').collect();
             if parts.len() != 2 {
-                return Err("Assegnazione non valida".to_string());
+                return Err(
+                    VBSErrorType::SyntaxError.into_error("Assegnazione non valida".to_string())
+                );
             }
             let var_name = parts[0].trim().to_string();
             let value = parts[1].trim().to_string();
@@ -117,23 +119,31 @@ impl VBScriptInterpreter {
             let lhs_name = caps.get(1).unwrap().as_str();
             let op = caps.get(2).unwrap().as_str();
             let rhs_str = caps.get(3).unwrap().as_str();
-    
+
             let lhs_value = match context.get_variable(lhs_name) {
-                Some(value) => VBValue::from_str(value).map_err(|_| {
-                    VBSErrorType::TypeError.into_error(format!("Variabile '{}' non è un tipo valido", lhs_name))
+                Some(value) => VBValue::from_str(&value.to_string()).map_err(|_| {
+                    VBSErrorType::TypeError
+                        .into_error(format!("Variabile '{}' non è un tipo valido", lhs_name))
                 })?,
-                None => return Err(VBSErrorType::NameError.into_error(format!("Variabile '{}' non definita", lhs_name))),
+                None => {
+                    return Err(VBSErrorType::NameError
+                        .into_error(format!("Variabile '{}' non definita", lhs_name)))
+                }
             };
-    
+
             let rhs_value = match context.get_variable(rhs_str) {
-                Some(value) => VBValue::from_str(value).map_err(|_| {
-                    VBSErrorType::TypeError.into_error(format!("Valore destro '{}' non è un tipo valido", rhs_str))
+                Some(value) => VBValue::from_str(&value.to_string()).map_err(|_| {
+                    VBSErrorType::TypeError
+                        .into_error(format!("Valore destro '{}' non è un tipo valido", rhs_str))
                 })?,
                 None => VBValue::from_str(rhs_str).map_err(|_| {
-                    VBSErrorType::ValueError.into_error(format!("Impossibile interpretare '{}' come valore", rhs_str))
+                    VBSErrorType::ValueError.into_error(format!(
+                        "Impossibile interpretare '{}' come valore",
+                        rhs_str
+                    ))
                 })?,
             };
-    
+
             match op {
                 "==" => Ok(self.compare_values(&lhs_value, &rhs_value)?),
                 "!=" => Ok(!self.compare_values(&lhs_value, &rhs_value)?),
@@ -144,7 +154,8 @@ impl VBScriptInterpreter {
                 "&" => self.combine_strings(&lhs_value, &rhs_value, context, lhs_name),
                 "And" => self.evaluate_logical_and(&lhs_value, &rhs_value),
                 "Or" => self.evaluate_logical_or(&lhs_value, &rhs_value),
-                _ => Err(VBSErrorType::SyntaxError.into_error(format!("Operatore '{}' non supportato", op))),
+                _ => Err(VBSErrorType::SyntaxError
+                    .into_error(format!("Operatore '{}' non supportato", op))),
             }
         } else {
             Err(VBSErrorType::SyntaxError.into_error("Condizione non valida".to_string()))
@@ -152,7 +163,7 @@ impl VBScriptInterpreter {
     }
 
     /// Compares two `VBValue` instances for equality.
-    fn compare_values(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, String> {
+    fn compare_values(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
         match (lhs, rhs) {
             (VBValue::String(l), VBValue::String(r)) => Ok(l == r),
             (VBValue::Number(l), VBValue::Number(r)) => Ok((l - r).abs() < f64::EPSILON), // Handle floating-point precision
@@ -168,13 +179,13 @@ impl VBScriptInterpreter {
         lhs: &VBValue,
         rhs: &VBValue,
         cmp: F,
-    ) -> Result<bool, String>
+    ) -> Result<bool, VBSError>
     where
         F: Fn(f64, f64) -> bool,
     {
         match (lhs, rhs) {
             (VBValue::Number(l), VBValue::Number(r)) => Ok(cmp(*l, *r)),
-            _ => Err("Confronto numerico richiede valori di tipo Number".to_string()),
+            _ => Err(VBSErrorType::RuntimeError.into_error("Confronto numerico richiede valori di tipo Number".to_string())),
         }
     }
 
@@ -185,7 +196,7 @@ impl VBScriptInterpreter {
         rhs: &VBValue,
         context: &mut ExecutionContext,
         lhs_name: &str,
-    ) -> Result<bool, String> {
+    ) -> Result<bool, VBSError> {
         match (lhs, rhs) {
             (VBValue::String(l), VBValue::String(r)) => {
                 // Combine the strings and update the variable in the context
@@ -193,35 +204,35 @@ impl VBScriptInterpreter {
                 context.set_variable(lhs_name, VBValue::String(combined));
                 Ok(true)
             }
-            _ => Err("Operatore '&' richiede valori di tipo String".to_string()),
+            _ => Err(VBSErrorType::TypeError.into_error("Operatore '&' richiede valori di tipo String".to_string())),
         }
     }
 
     /// Evaluates the logical AND operation between two `VBValue` instances.
-    fn evaluate_logical_and(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, String> {
+    fn evaluate_logical_and(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
         match (lhs, rhs) {
             (VBValue::Boolean(l), VBValue::Boolean(r)) => Ok(*l && *r),
-            _ => Err("Operatore 'And' richiede valori di tipo Boolean".to_string()),
+            _ => Err(VBSErrorType::TypeError.into_error("Operatore 'And' richiede valori di tipo Boolean".to_string())),
         }
     }
 
     /// Evaluates the logical OR operation between two `VBValue` instances.
-    fn evaluate_logical_or(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, String> {
+    fn evaluate_logical_or(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
         match (lhs, rhs) {
             (VBValue::Boolean(l), VBValue::Boolean(r)) => Ok(*l || *r),
-            _ => Err("Operatore 'Or' richiede valori di tipo Boolean".to_string()),
+            _ => Err(VBSErrorType::TypeError.into_error("Operatore 'Or' richiede valori di tipo Boolean".to_string())),
         }
     }
 
     /// Parse an IF statement.
-    fn parse_if_statement(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    fn parse_if_statement(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         let if_pattern = Regex::new(r"If\s+(.+?)\s+Then\s+(.+?)\s+End If").unwrap();
         if let Some(caps) = if_pattern.captures(line) {
             let condition = caps.get(1).unwrap().as_str().to_string();
             let then_code = caps.get(2).unwrap().as_str().to_string();
             Ok(Some(Box::new(IfStatement::new(condition, then_code))))
         } else {
-            Err("Sintassi If non valida".to_string())
+            Err(VBSErrorType::SyntaxError.into_error("Sintassi If non valida".to_string()))
         }
     }
 
@@ -230,7 +241,7 @@ impl VBScriptInterpreter {
         &self,
         line: &str,
         full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         let for_pattern =
             Regex::new(r"For\s+(\w+)\s*=\s*(\d+)\s+To\s+(\d+)(?:\s+Step\s+(\d+))?").unwrap();
         if let Some(caps) = for_pattern.captures(line) {
@@ -245,7 +256,7 @@ impl VBScriptInterpreter {
                 counter, start, end, step, body,
             ))))
         } else {
-            Err("Sintassi For non valida".to_string())
+            Err(VBSErrorType::SyntaxError.into_error("Sintassi If non valida".to_string()))
         }
     }
 
@@ -254,7 +265,7 @@ impl VBScriptInterpreter {
         &self,
         line: &str,
         full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         let condition = line
             .trim()
             .strip_prefix("While")
@@ -270,7 +281,7 @@ impl VBScriptInterpreter {
         &self,
         line: &str,
         full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         let func_pattern = Regex::new(r"Function\s+(\w+)\s*\((.*?)\)").unwrap();
         if let Some(caps) = func_pattern.captures(line) {
             let name = caps.get(1).unwrap().as_str().to_string();
@@ -284,12 +295,12 @@ impl VBScriptInterpreter {
             let body = self.extract_body(full_code, "Function", "End Function")?;
             Ok(Some(Box::new(Function::new(name, params, body))))
         } else {
-            Err("Sintassi Function non valida".to_string())
+            Err(VBSErrorType::SyntaxError.into_error("Sintassi Function non valida".to_string()))
         }
     }
 
     /// Parse a CALL function.
-    fn parse_call_function(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, String> {
+    fn parse_call_function(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         let call_pattern = Regex::new(r"Call\s+(\w+)\s*\((.*?)\)").unwrap();
         if let Some(caps) = call_pattern.captures(line) {
             let name = caps.get(1).unwrap().as_str().to_string();
@@ -302,7 +313,7 @@ impl VBScriptInterpreter {
                 .collect();
             Ok(Some(Box::new(CallFunction::new(name, args))))
         } else {
-            Err("Sintassi Call non valida".to_string())
+            Err(VBSErrorType::BlockMismatchError.into_error("Sintassi Call non valida".to_string()))
         }
     }
 
@@ -312,7 +323,7 @@ impl VBScriptInterpreter {
         code: &str,
         start_keyword: &str,
         end_keyword: &str,
-    ) -> Result<String, String> {
+    ) -> Result<String, VBSError> {
         let mut lines = code.lines();
         let mut body = String::new();
         let mut depth = 0; // Track nested blocks
@@ -345,9 +356,8 @@ impl VBScriptInterpreter {
         }
 
         if depth != 0 {
-            return Err(format!(
-                "Blocco non chiuso correttamente: {}...{}",
-                start_keyword, end_keyword
+            return Err(VBSErrorType::BlockMismatchError.into_error(format!(
+                "Blocco non chiuso correttamente: {}...{}", start_keyword, end_keyword)
             ));
         }
         Ok(body)
