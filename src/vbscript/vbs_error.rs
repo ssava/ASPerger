@@ -1,18 +1,22 @@
 #[derive(Debug)]
 pub struct VBSError {
-    pub code: u32,
+    pub code: u16,
     pub message: String,
 }
 
 impl VBSError {
-    pub fn new(code: u32, message: String) -> Self {
+    pub fn new(code: u16, message: String) -> Self {
         VBSError { code, message }
     }
+}
 
-    pub fn to_string(&self) -> String {
-        format!("[VBS{}]: {}", self.code, self.message)
+impl std::fmt::Display for VBSError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[Codice {}]: {}", self.code, self.message)
     }
 }
+
+impl std::error::Error for VBSError {}
 
 #[derive(Debug)]
 pub enum VBSErrorType {
@@ -27,6 +31,6 @@ pub enum VBSErrorType {
 
 impl VBSErrorType {
     pub fn into_error(self, message: String) -> VBSError {
-        VBSError::new(self as u32, message)
+        VBSError::new(self as u16, message)
     }
 }
