@@ -5,4 +5,5 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
+clap = { version = "4.0", features = ["derive"] }
 regex = "1.10.2"
