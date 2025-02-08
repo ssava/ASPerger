@@ -1,47 +1,52 @@
-use std::fs;
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use super::parser::{AspBlock, AspParser};
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::{VBScriptInterpreter, ExecutionContext};
+use crate::asp::parser::AspParser;
+use crate::asp::parser::AspBlock;
 
 pub struct AspServer {
-    interpreter: VBScriptInterpreter,
+    interpreter: Arc<VBScriptInterpreter>,
 }
 
 impl AspServer {
     pub fn new() -> Self {
         AspServer {
-            interpreter: VBScriptInterpreter,
+            interpreter: Arc::new(VBScriptInterpreter),
         }
     }
 
-    pub fn start(&self, port: u16) -> std::io::Result<()> {
-        let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port))?;
+    pub async fn start(&self, port: u16) -> std::io::Result<()> {
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
         println!("Server in ascolto sulla porta {}", port);
-
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    if let Err(e) = self.handle_connection(stream) {
-                        eprintln!("Errore nella gestione della connessione: {}", e);
-                    }
+        loop {
+            let (mut stream, _) = listener.accept().await?;
+            let interpreter = Arc::clone(&self.interpreter);
+            tokio::spawn(async move {
+                if let Err(e) = Self::handle_connection(&interpreter, &mut stream).await {
+                    eprintln!("Errore nella gestione della connessione: {}", e.to_string());
                 }
-                Err(e) => eprintln!("Errore di connessione: {}", e),
-            }
+            });
         }
-
-        Ok(())
     }
 
-    fn handle_connection(&self, mut stream: TcpStream) -> std::io::Result<()> {
+    async fn handle_connection(
+        interpreter: &VBScriptInterpreter,
+        stream: &mut tokio::net::TcpStream,
+    ) -> Result<(), VBSError> { // Cambia il tipo di ritorno in Result<(), VBSError>
         let mut buffer = [0; 1024];
-        stream.read(&mut buffer)?;
+        if let Err(e) = stream.read(&mut buffer).await.map_err(|e| VBSError::new(500, format!("Errore durante la lettura dal client: {}", e))) {
+            return Err(e);
+        }
 
-        let content = fs::read_to_string("test.asp")
+        // Leggi il contenuto del file ASP o usa un fallback
+        let content = std::fs::read_to_string("test.asp")
             .unwrap_or_else(|_| "<%Response.Write(\"Hello World\")%>".to_string());
-        
+
         let parser = AspParser::new(content);
         let blocks = parser.parse();
+
         let mut context = ExecutionContext::new();
         let mut response_content = String::new();
 
@@ -49,14 +54,17 @@ impl AspServer {
             match block {
                 AspBlock::Html(html) => response_content.push_str(&html),
                 AspBlock::Code(code) => {
-                    match self.interpreter.execute(&code, &mut context) {
+                    match interpreter.execute(&code, &mut context) {
                         Ok(_) => {
                             response_content.push_str(&context.response_buffer);
-                            context.response_buffer.clear();
-                        },
+                            context.flush_response_buffer();
+                        }
                         Err(e) => {
-                            eprintln!("Error executing code: {}", e);
-                            response_content.push_str(&format!("<!-- Error: {} -->", e));
+                            eprintln!("Error executing code: {}", e.to_string());
+                            response_content.push_str(&format!(
+                                "<!-- Error: [Codice {}]: {} -->",
+                                e.code, e.message
+                            ));
                         }
                     }
                 }
@@ -73,8 +81,13 @@ impl AspServer {
             response_content
         );
 
-        stream.write(response.as_bytes())?;
-        stream.flush()?;
+        if let Err(e) = stream.write_all(response.as_bytes()).await.map_err(|e| VBSError::new(500, format!("Errore durante la scrittura della risposta: {}", e))) {
+            return Err(e);
+        }
+
+        if let Err(e) = stream.flush().await.map_err(|e| VBSError::new(500, format!("Errore durante lo svuotamento del buffer: {}", e))) {
+            return Err(e);
+        }
 
         Ok(())
     }

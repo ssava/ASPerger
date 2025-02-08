@@ -1,4 +1,4 @@
-use crate::vbscript::{ExecutionContext, VBValue};
+use crate::vbscript::{vbs_error::{VBSError, VBSErrorType}, ExecutionContext, VBValue};
 use super::VBSyntax;
 
 pub struct Assignment {
@@ -13,7 +13,7 @@ impl Assignment {
 }
 
 impl VBSyntax for Assignment {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let value = self.value.trim();
 
         if value.starts_with('"') && value.ends_with('"') {
@@ -44,6 +44,6 @@ impl VBSyntax for Assignment {
             return Ok(());
         }
 
-        Err(format!("Valore non valido per l'assegnazione: {}", value))
+        Err(VBSErrorType::RuntimeError.into_error(format!("Valore non valido per l'assegnazione: {}", value)))
     }
 }

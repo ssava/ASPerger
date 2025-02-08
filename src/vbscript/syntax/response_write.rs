@@ -1,5 +1,5 @@
 use super::VBSyntax;
-use crate::vbscript::ExecutionContext;
+use crate::vbscript::{vbs_error::{VBSError, VBSErrorType}, ExecutionContext};
 
 pub struct ResponseWrite {
     content: String,
@@ -22,7 +22,7 @@ impl ResponseWrite {
 }
 
 impl VBSyntax for ResponseWrite {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let content = Self::extract_content(&self.content);
 
         // Handle string literals
@@ -56,13 +56,13 @@ impl VBSyntax for ResponseWrite {
                 } else if let Ok(num) = part.parse::<f64>() {
                     result.push_str(&num.to_string());
                 } else {
-                    return Err(format!("Valore non valido per Response.Write: {}", part));
+                    return Err(VBSErrorType::ValueError.into_error(format!("Valore non valido per Response.Write: {}", part)));
                 }
             }
             context.write(&result);
             return Ok(());
         }
 
-        Err(format!("Valore non valido per Response.Write: {}", content))
+        Err(VBSErrorType::ValueError.into_error(format!("Valore non valido per Response.Write: {}", content)))
     }
 }

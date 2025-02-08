@@ -1,5 +1,5 @@
 use super::VBSyntax;
-use crate::vbscript::{ExecutionContext, VBScriptInterpreter, VBValue};
+use crate::vbscript::{vbs_error::{VBSError, VBSErrorType}, ExecutionContext, VBScriptInterpreter, VBValue};
 
 pub struct IfStatement {
     condition: String,
@@ -11,10 +11,10 @@ impl IfStatement {
         IfStatement { condition, then_code }
     }
 
-    fn evaluate_condition(&self, context: &mut ExecutionContext) -> Result<bool, String> {
+    fn evaluate_condition(&self, context: &mut ExecutionContext) -> Result<bool, VBSError> {
         let condition_parts: Vec<&str> = self.condition.split_whitespace().collect();
         if condition_parts.len() != 3 {
-            return Err("Condizione non valida".to_string());
+            return Err(VBSErrorType::SyntaxError.into_error("Condizione non valida".to_string()));
         }
 
         let left = if let Some(value) = context.get_variable(condition_parts[0]) {
@@ -22,7 +22,7 @@ impl IfStatement {
         } else if let Ok(num) = condition_parts[0].parse::<f64>() {
             VBValue::Number(num)
         } else {
-            return Err("Variabile o valore non trovato".to_string());
+            return Err(VBSErrorType::RuntimeError.into_error("Variabile o valore non trovato".to_string()));
         };
 
         let operator = condition_parts[1];
@@ -33,7 +33,7 @@ impl IfStatement {
         } else if let Some(value) = context.get_variable(condition_parts[2]) {
             value
         } else {
-            return Err("Variabile o valore non trovato".to_string());
+            return Err(VBSErrorType::RuntimeError.into_error("Variabile o valore non trovato".to_string()));
         };
 
         match operator {
@@ -46,13 +46,13 @@ impl IfStatement {
                 (VBValue::Number(a), VBValue::Number(b)) => Ok(a < b),
                 _ => Ok(false),
             },
-            _ => Err("Operatore non supportato".to_string()),
+            _ => Err(VBSErrorType::NotImplementedError.into_error("Operatore non supportato".to_string())),
         }
     }
 }
 
 impl VBSyntax for IfStatement {
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), String> {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         if self.evaluate_condition(context)? {
             let interpreter = VBScriptInterpreter;
             interpreter.execute(&self.then_code, context)?;
