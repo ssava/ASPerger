@@ -1,45 +1,47 @@
-use std::fs;
-use std::io::{Read, Write};
-use std::net::TcpStream;
-use super::parser::{AspBlock, AspParser};
+use std::sync::Arc;
+use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::vbscript::{VBScriptInterpreter, ExecutionContext};
+use crate::asp::parser::AspParser;
+use crate::asp::parser::AspBlock;
 
 pub struct AspServer {
-    interpreter: VBScriptInterpreter,
+    interpreter: Arc<VBScriptInterpreter>,
 }
 
 impl AspServer {
     pub fn new() -> Self {
         AspServer {
-            interpreter: VBScriptInterpreter,
+            interpreter: Arc::new(VBScriptInterpreter),
         }
     }
 
-    pub fn start(&self, port: u16) -> std::io::Result<()> {
-        let listener = std::net::TcpListener::bind(format!("127.0.0.1:{}", port))?;
+    pub async fn start(&self, port: u16) -> std::io::Result<()> {
+        let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
         println!("Server in ascolto sulla porta {}", port);
 
-        for stream in listener.incoming() {
-            match stream {
-                Ok(stream) => {
-                    if let Err(e) = self.handle_connection(stream) {
-                        eprintln!("Errore nella gestione della connessione: {}", e);
-                    }
-                }
-                Err(e) => eprintln!("Errore di connessione: {}", e),
-            }
-        }
+        loop {
+            let (mut stream, _) = listener.accept().await?;
+            let interpreter = Arc::clone(&self.interpreter);
 
-        Ok(())
+            tokio::spawn(async move {
+                if let Err(e) = Self::handle_connection(&interpreter, &mut stream).await {
+                    eprintln!("Errore nella gestione della connessione: {}", e);
+                }
+            });
+        }
     }
 
-    fn handle_connection(&self, mut stream: TcpStream) -> std::io::Result<()> {
+    async fn handle_connection(
+        interpreter: &VBScriptInterpreter,
+        stream: &mut tokio::net::TcpStream,
+    ) -> std::io::Result<()> {
         let mut buffer = [0; 1024];
-        stream.read(&mut buffer)?;
+        stream.read(&mut buffer).await?;
 
-        let content = fs::read_to_string("test.asp")
+        let content = std::fs::read_to_string("test.asp")
             .unwrap_or_else(|_| "<%Response.Write(\"Hello World\")%>".to_string());
-        
+
         let parser = AspParser::new(content);
         let blocks = parser.parse();
         let mut context = ExecutionContext::new();
@@ -49,11 +51,11 @@ impl AspServer {
             match block {
                 AspBlock::Html(html) => response_content.push_str(&html),
                 AspBlock::Code(code) => {
-                    match self.interpreter.execute(&code, &mut context) {
+                    match interpreter.execute(&code, &mut context) {
                         Ok(_) => {
                             response_content.push_str(&context.response_buffer);
                             context.response_buffer.clear();
-                        },
+                        }
                         Err(e) => {
                             eprintln!("Error executing code: {}", e);
                             response_content.push_str(&format!("<!-- Error: {} -->", e));
@@ -73,8 +75,8 @@ impl AspServer {
             response_content
         );
 
-        stream.write(response.as_bytes())?;
-        stream.flush()?;
+        stream.write_all(response.as_bytes()).await?;
+        stream.flush().await?;
 
         Ok(())
     }
