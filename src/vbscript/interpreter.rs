@@ -1,4 +1,3 @@
-use std::collections::vec_deque;
 use std::vec::Vec;
 
 use crate::vbscript::syntax::VBSyntax;
@@ -302,7 +301,7 @@ impl VBScriptInterpreter {
             .into_error("parse_function_declaration Non implementata".to_string()))
     }
 
-    fn parse_dim_statement(&self, tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+    fn parse_dim_statement(&self, _tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
         Err(VBSErrorType::NotImplementedError
             .into_error("parse_dim_statement Non implementata".to_string()))
     }
