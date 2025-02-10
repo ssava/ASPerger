@@ -8,7 +8,6 @@ use crate::asp::asp_error::ASPError;
 use crate::asp::config::Config;
 
 pub struct AspServer {
-    interpreter: Arc<VBScriptInterpreter>,
     handler_chain: Arc<dyn Handler + Send + Sync>, // Handler chain
     config: Config, // Configurazione del server
 }
@@ -25,7 +24,6 @@ impl AspServer {
         html_handler.set_next(Arc::new(code_handler));
 
         AspServer {
-            interpreter,
             handler_chain: Arc::new(html_handler), // Set the handler chain
             config, // Salva la configurazione
         }

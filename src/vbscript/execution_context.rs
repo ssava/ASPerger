@@ -6,7 +6,6 @@ use super::VBValue;
 pub struct ExecutionContext {
     variables: HashMap<String, VBValue>,
     pub response_buffer: String,
-    functions: HashMap<String, VBValue>, // Store functions
 }
 
 impl ExecutionContext {
@@ -14,7 +13,6 @@ impl ExecutionContext {
         ExecutionContext {
             variables: HashMap::new(),
             response_buffer: String::new(),
-            functions: HashMap::new(),
         }
     }
 
@@ -32,13 +30,5 @@ impl ExecutionContext {
 
     pub fn get_variable(&self, name: &str) -> Option<VBValue> {
         self.variables.get(name).cloned()
-    }
-
-    pub fn set_function(&mut self, name: String, params: Vec<String>, body: String) {
-        self.functions.insert(name, VBValue::Function(params, body));
-    }
-
-    pub fn get_function(&self, name: &str) -> Option<&VBValue> {
-        self.functions.get(name)
     }
 }
