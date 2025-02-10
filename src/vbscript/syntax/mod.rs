@@ -14,3 +14,5 @@ mod function_decl;
 mod call_function;
 
 use super::vbs_error::VBSError;
+pub use dim::Dim;
+pub use assignment::Assignment;

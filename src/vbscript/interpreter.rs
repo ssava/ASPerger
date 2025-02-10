@@ -3,6 +3,7 @@ use std::vec::Vec;
 use crate::vbscript::syntax::VBSyntax;
 use crate::vbscript::ExecutionContext;
 
+use super::syntax::{Assignment, Dim};
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{Token, TokenType, Tokenizer};
 
@@ -301,17 +302,111 @@ impl VBScriptInterpreter {
             .into_error("parse_function_declaration Non implementata".to_string()))
     }
 
-    fn parse_dim_statement(&self, _tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_dim_statement Non implementata".to_string()))
+    fn parse_dim_statement(&self, tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        // Ensure the first token is the `Dim` keyword
+        if tokens.is_empty() || tokens[0].token_type != TokenType::Dim {
+            return Err(VBSErrorType::SyntaxError.into_error("Expected 'Dim' keyword".to_string()));
+        }
+    
+        // Collect variable names
+        let mut var_names = Vec::new();
+        let mut i = 1; // Start after the `Dim` keyword
+    
+        while i < tokens.len() {
+            // Skip whitespace
+            if tokens[i].token_type == TokenType::WhiteSpace {
+                i += 1;
+                continue;
+            }
+    
+            // Expect an identifier (variable name)
+            if tokens[i].token_type != TokenType::Identifier {
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    format!("Expected variable name, found: {}", tokens[i].value)
+                ));
+            }
+    
+            // Add the variable name to the list
+            var_names.push(tokens[i].value.clone());
+    
+            // Move to the next token
+            i += 1;
+    
+            // Check for a comma (indicating another variable)
+            if i < tokens.len() && tokens[i].token_type == TokenType::Comma {
+                i += 1; // Skip the comma
+            } else {
+                break; // No more variables
+            }
+        }
+    
+        // Ensure we have at least one variable name
+        if var_names.is_empty() {
+            return Err(VBSErrorType::SyntaxError.into_error("No variable names found in 'Dim' statement".to_string()));
+        }
+    
+        // Return a `Dim` syntax object
+        Ok(Some(Box::new(Dim::new(var_names))))
     }
 
     fn parse_assignment_statement(
         &self,
-        _tokens: &[Token],
+        tokens: &[Token],
     ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_assignment_statement Non implementata".to_string()))
+        // Ensure there are tokens to parse
+        if tokens.is_empty() {
+            return Err(VBSErrorType::SyntaxError.into_error("Empty assignment statement".to_string()));
+        }
+    
+        // Check if this is a `Set` assignment
+        let is_set_assignment = tokens[0].token_type == TokenType::Set;
+    
+        // Skip the `Set` keyword if present
+        let mut i = if is_set_assignment { 1 } else { 0 };
+    
+        // Skip leading whitespace
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Expect an identifier (variable name)
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Identifier {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected variable name, found: {:?}", tokens.get(i)),
+            ));
+        }
+    
+        let var_name = tokens[i].value.clone();
+        i += 1;
+    
+        // Skip whitespace after the variable name
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Expect an assignment operator (`=`)
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected '=', found: {:?}", tokens.get(i)),
+            ));
+        }
+        i += 1;
+    
+        // Skip whitespace after the assignment operator
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Collect the remaining tokens as the value to assign
+        let value_tokens = &tokens[i..];
+        let value = value_tokens
+            .iter()
+            .map(|token| token.value.clone())
+            .collect::<Vec<String>>()
+            .join(" ");
+    
+        // Create an Assignment syntax object
+        Ok(Some(Box::new(Assignment::new(var_name, value))))
     }
 
     fn parse_if_statement(&self, _tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {

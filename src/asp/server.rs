@@ -162,7 +162,7 @@ impl AspServer {
                     stream,
                     404,
                     "text/plain",
-                    &format!("File not found: {}", file_path)
+                    &format!("Page not found: {}", file_path)
                 ).await;
             }
         };
