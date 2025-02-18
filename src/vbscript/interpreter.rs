@@ -1,14 +1,11 @@
-use std::str::FromStr;
+use std::vec::Vec;
 
-use crate::vbscript::syntax::{
-    Assignment, CallFunction, Dim, ForLoop, Function, IfStatement, ResponseWrite, VBSyntax,
-    WhileLoop,
-};
+use crate::vbscript::syntax::VBSyntax;
 use crate::vbscript::ExecutionContext;
-use regex::Regex;
 
+use super::syntax::{Assignment, Dim};
 use super::vbs_error::{VBSError, VBSErrorType};
-use super::VBValue;
+use super::{Token, TokenType, Tokenizer};
 
 pub struct VBScriptInterpreter;
 
@@ -23,343 +20,406 @@ impl VBScriptInterpreter {
     /// * `Ok(())` if the execution is successful.
     /// * `Err(String)` if there is a syntax or runtime error.
     pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        let code = code.trim();
-        for line in code.split('\n') {
-            let line = line.trim();
+        let code = code.trim().to_string();
+
+        // Tokenize the entire code first
+        let tokens = Tokenizer::tokenize(&code); // `Tokenizer` now works with an owned `String`
+        if tokens.is_empty() {
+            return Ok(());
+        }
+
+        // Group tokens into logical lines, handling line continuations
+        let lines = self.group_tokens_into_lines(&tokens)?;
+
+        for line_tokens in lines {
             // Skip empty lines and comments
-            if line.is_empty() || line.starts_with('\'') || line.to_lowercase().starts_with("rem") {
+            if line_tokens.is_empty() || Self::is_comment_line(&line_tokens) {
                 continue;
             }
 
-            // Create a syntax object using the factory method
-            match self.create_syntax(line, code)? {
+            // Create a syntax object using the factory method with tokens
+            match self.create_syntax_from_tokens(&line_tokens)? {
                 Some(syntax) => syntax.execute(context)?,
-                None => return Err(VBSErrorType::NotImplementedError.into_error(format!("Comando non riconosciuto: {}", line))),
+                None => {
+                    let line_text = Self::tokens_to_string(&line_tokens);
+                    return Err(VBSErrorType::NotImplementedError
+                        .into_error(format!("Comando non riconosciuto: {}", line_text)));
+                }
             }
         }
         Ok(())
     }
 
-    /// Factory method to create a VBSyntax object based on the line of code.
+    /// Groups tokens into logical lines, handling line continuations and special VBScript syntax rules.
     ///
     /// # Arguments
-    /// * `line` - A string slice representing a single line of VBScript code.
-    /// * `full_code` - A string slice containing the entire VBScript code (used for block extraction).
+    /// * `tokens` - A slice of tokens from the VBScript code
     ///
     /// # Returns
-    /// * `Ok(Some(Box<dyn VBSyntax>))` if the line corresponds to a valid VBScript statement.
-    /// * `Ok(None)` if the line does not match any known VBScript statement.
-    /// * `Err(VBSError)` if there is a syntax error.
-    fn create_syntax(
-        &self,
-        line: &str,
-        full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        // Handle different types of VBScript statements
-        if line.to_lowercase().starts_with("response.write") {
-            let content = line
-                .trim()
-                .strip_prefix("Response.Write")
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            Ok(Some(Box::new(ResponseWrite::new(content))))
-        } else if line.to_lowercase().starts_with("dim") {
-            let var_names = line
-                .trim()
-                .strip_prefix("Dim")
-                .unwrap_or("")
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            Ok(Some(Box::new(Dim::new(var_names))))
-        } else if line.contains('=') {
-            let parts: Vec<&str> = line.split('=').collect();
-            if parts.len() != 2 {
-                return Err(
-                    VBSErrorType::SyntaxError.into_error("Assegnazione non valida".to_string())
-                );
-            }
-            let var_name = parts[0].trim().to_string();
-            let value = parts[1].trim().to_string();
-            Ok(Some(Box::new(Assignment::new(var_name, value))))
-        } else if line.to_lowercase().starts_with("if") {
-            self.parse_if_statement(line)
-        } else if line.to_lowercase().starts_with("for") {
-            self.parse_for_loop(line, full_code)
-        } else if line.to_lowercase().starts_with("while") {
-            self.parse_while_loop(line, full_code)
-        } else if line.to_lowercase().starts_with("function") {
-            self.parse_function(line, full_code)
-        } else if line.to_lowercase().starts_with("call") {
-            self.parse_call_function(line)
-        } else {
-            Ok(None) // Unknown command
-        }
-    }
+    /// * `Result<Vec<Vec<Token>>, VBSError>` - A vector of token vectors, each representing a logical line
+    fn group_tokens_into_lines(&self, tokens: &[Token]) -> Result<Vec<Vec<Token>>, VBSError> {
+        let mut lines: Vec<Vec<Token>> = Vec::new();
+        let mut current_line: Vec<Token> = Vec::new();
+        let mut i = 0;
 
-    /// Evaluates a condition string (e.g., "x > 5") in the given execution context.
-    ///
-    /// # Arguments
-    /// * `condition` - A string slice representing the condition to evaluate.
-    /// * `context` - A mutable reference to the execution context where variables are stored.
-    ///
-    /// # Returns
-    /// * `Ok(true)` if the condition evaluates to true.
-    /// * `Ok(false)` if the condition evaluates to false.
-    /// * `Err(String)` if there is an error in parsing or evaluating the condition.
-    pub(crate) fn evaluate_condition(
-        &self,
-        condition: &str,
-        context: &mut ExecutionContext,
-    ) -> Result<bool, VBSError> {
-        let condition_pattern = Regex::new(r"(\w+)\s*(==|!=|<=|>=|<|>|&|And|Or)\s*(.+?)").unwrap();
-        if let Some(caps) = condition_pattern.captures(condition) {
-            let lhs_name = caps.get(1).unwrap().as_str();
-            let op = caps.get(2).unwrap().as_str();
-            let rhs_str = caps.get(3).unwrap().as_str();
+        while i < tokens.len() {
+            let token = &tokens[i];
 
-            let lhs_value = match context.get_variable(lhs_name) {
-                Some(value) => VBValue::from_str(&value.to_string()).map_err(|_| {
-                    VBSErrorType::TypeError
-                        .into_error(format!("Variabile '{}' non è un tipo valido", lhs_name))
-                })?,
-                None => {
-                    return Err(VBSErrorType::NameError
-                        .into_error(format!("Variabile '{}' non definita", lhs_name)))
+            match &token.token_type {
+                TokenType::NewLine => {
+                    // Check if we should add the current line
+                    if !current_line.is_empty() {
+                        // Check if the previous token was a line continuation
+                        if !Self::is_line_continuation(&current_line) {
+                            lines.push(current_line.clone());
+                            current_line.clear();
+                        }
+                    }
                 }
-            };
 
-            let rhs_value = match context.get_variable(rhs_str) {
-                Some(value) => VBValue::from_str(&value.to_string()).map_err(|_| {
-                    VBSErrorType::TypeError
-                        .into_error(format!("Valore destro '{}' non è un tipo valido", rhs_str))
-                })?,
-                None => VBValue::from_str(rhs_str).map_err(|_| {
-                    VBSErrorType::ValueError.into_error(format!(
-                        "Impossibile interpretare '{}' come valore",
-                        rhs_str
-                    ))
-                })?,
-            };
+                TokenType::WhiteSpace => {
+                    // Look ahead for line continuation
+                    if Self::is_continuation_sequence(&tokens[i..]) {
+                        // Skip the continuation sequence and following newline
+                        i = Self::skip_continuation_sequence(&tokens[i..]);
+                        // Don't clear current_line - continue accumulating tokens
+                    } else {
+                        // Normal whitespace - add it if it's not at the start of a line
+                        if !current_line.is_empty() {
+                            current_line.push(token.clone());
+                        }
+                    }
+                }
 
-            match op {
-                "==" => Ok(self.compare_values(&lhs_value, &rhs_value)?),
-                "!=" => Ok(!self.compare_values(&lhs_value, &rhs_value)?),
-                "<=" => self.compare_numeric_values(&lhs_value, &rhs_value, |a, b| a <= b),
-                ">=" => self.compare_numeric_values(&lhs_value, &rhs_value, |a, b| a >= b),
-                "<" => self.compare_numeric_values(&lhs_value, &rhs_value, |a, b| a < b),
-                ">" => self.compare_numeric_values(&lhs_value, &rhs_value, |a, b| a > b),
-                "&" => self.combine_strings(&lhs_value, &rhs_value, context, lhs_name),
-                "And" => self.evaluate_logical_and(&lhs_value, &rhs_value),
-                "Or" => self.evaluate_logical_or(&lhs_value, &rhs_value),
-                _ => Err(VBSErrorType::SyntaxError
-                    .into_error(format!("Operatore '{}' non supportato", op))),
-            }
-        } else {
-            Err(VBSErrorType::SyntaxError.into_error("Condizione non valida".to_string()))
-        }
-    }
+                TokenType::Comment => {
+                    // Add comment to current line
+                    current_line.push(token.clone());
+                    // Skip to end of line
+                    while i + 1 < tokens.len()
+                        && !matches!(tokens[i + 1].token_type, TokenType::NewLine)
+                    {
+                        i += 1;
+                    }
+                }
 
-    /// Compares two `VBValue` instances for equality.
-    fn compare_values(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
-        match (lhs, rhs) {
-            (VBValue::String(l), VBValue::String(r)) => Ok(l == r),
-            (VBValue::Number(l), VBValue::Number(r)) => Ok((l - r).abs() < f64::EPSILON), // Handle floating-point precision
-            (VBValue::Boolean(l), VBValue::Boolean(r)) => Ok(l == r),
-            (VBValue::Null, VBValue::Null) => Ok(true),
-            _ => Ok(false), // Different types are always unequal
-        }
-    }
+                TokenType::Colon => {
+                    // Handle statement separator
+                    current_line.push(token.clone());
 
-    /// Compares two numeric `VBValue` instances using a provided comparison function.
-    fn compare_numeric_values<F>(
-        &self,
-        lhs: &VBValue,
-        rhs: &VBValue,
-        cmp: F,
-    ) -> Result<bool, VBSError>
-    where
-        F: Fn(f64, f64) -> bool,
-    {
-        match (lhs, rhs) {
-            (VBValue::Number(l), VBValue::Number(r)) => Ok(cmp(*l, *r)),
-            _ => Err(VBSErrorType::RuntimeError.into_error("Confronto numerico richiede valori di tipo Number".to_string())),
-        }
-    }
+                    // Check if this colon is inside a string literal
+                    if !Self::is_in_string_literal(&current_line) {
+                        lines.push(current_line.clone());
+                        current_line = Vec::new();
+                    }
+                }
 
-    /// Combines two string `VBValue` instances using the `&` operator.
-    fn combine_strings(
-        &self,
-        lhs: &VBValue,
-        rhs: &VBValue,
-        context: &mut ExecutionContext,
-        lhs_name: &str,
-    ) -> Result<bool, VBSError> {
-        match (lhs, rhs) {
-            (VBValue::String(l), VBValue::String(r)) => {
-                // Combine the strings and update the variable in the context
-                let combined = format!("{}{}", l, r);
-                context.set_variable(lhs_name, VBValue::String(combined));
-                Ok(true)
-            }
-            _ => Err(VBSErrorType::TypeError.into_error("Operatore '&' richiede valori di tipo String".to_string())),
-        }
-    }
-
-    /// Evaluates the logical AND operation between two `VBValue` instances.
-    fn evaluate_logical_and(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
-        match (lhs, rhs) {
-            (VBValue::Boolean(l), VBValue::Boolean(r)) => Ok(*l && *r),
-            _ => Err(VBSErrorType::TypeError.into_error("Operatore 'And' richiede valori di tipo Boolean".to_string())),
-        }
-    }
-
-    /// Evaluates the logical OR operation between two `VBValue` instances.
-    fn evaluate_logical_or(&self, lhs: &VBValue, rhs: &VBValue) -> Result<bool, VBSError> {
-        match (lhs, rhs) {
-            (VBValue::Boolean(l), VBValue::Boolean(r)) => Ok(*l || *r),
-            _ => Err(VBSErrorType::TypeError.into_error("Operatore 'Or' richiede valori di tipo Boolean".to_string())),
-        }
-    }
-
-    /// Parse an IF statement.
-    fn parse_if_statement(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        let if_pattern = Regex::new(r"If\s+(.+?)\s+Then\s+(.+?)\s+End If").unwrap();
-        if let Some(caps) = if_pattern.captures(line) {
-            let condition = caps.get(1).unwrap().as_str().to_string();
-            let then_code = caps.get(2).unwrap().as_str().to_string();
-            Ok(Some(Box::new(IfStatement::new(condition, then_code))))
-        } else {
-            Err(VBSErrorType::SyntaxError.into_error("Sintassi If non valida".to_string()))
-        }
-    }
-
-    /// Parse a FOR loop.
-    fn parse_for_loop(
-        &self,
-        line: &str,
-        full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        let for_pattern =
-            Regex::new(r"For\s+(\w+)\s*=\s*(\d+)\s+To\s+(\d+)(?:\s+Step\s+(\d+))?").unwrap();
-        if let Some(caps) = for_pattern.captures(line) {
-            let counter = caps.get(1).unwrap().as_str().to_string();
-            let start = caps.get(2).unwrap().as_str().parse::<i32>().unwrap();
-            let end = caps.get(3).unwrap().as_str().parse::<i32>().unwrap();
-            let step = caps
-                .get(4)
-                .map_or(1, |m| m.as_str().parse::<i32>().unwrap());
-            let body = self.extract_body(full_code, "For", "Next")?;
-            Ok(Some(Box::new(ForLoop::new(
-                counter, start, end, step, body,
-            ))))
-        } else {
-            Err(VBSErrorType::SyntaxError.into_error("Sintassi If non valida".to_string()))
-        }
-    }
-
-    /// Parse a WHILE loop.
-    fn parse_while_loop(
-        &self,
-        line: &str,
-        full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        let condition = line
-            .trim()
-            .strip_prefix("While")
-            .unwrap_or("")
-            .trim()
-            .to_string();
-        let body = self.extract_body(full_code, "While", "Wend")?;
-        Ok(Some(Box::new(WhileLoop::new(condition, body))))
-    }
-
-    /// Parse a FUNCTION definition.
-    fn parse_function(
-        &self,
-        line: &str,
-        full_code: &str,
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        let func_pattern = Regex::new(r"Function\s+(\w+)\s*\((.*?)\)").unwrap();
-        if let Some(caps) = func_pattern.captures(line) {
-            let name = caps.get(1).unwrap().as_str().to_string();
-            let params = caps
-                .get(2)
-                .unwrap()
-                .as_str()
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            let body = self.extract_body(full_code, "Function", "End Function")?;
-            Ok(Some(Box::new(Function::new(name, params, body))))
-        } else {
-            Err(VBSErrorType::SyntaxError.into_error("Sintassi Function non valida".to_string()))
-        }
-    }
-
-    /// Parse a CALL function.
-    fn parse_call_function(&self, line: &str) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        let call_pattern = Regex::new(r"Call\s+(\w+)\s*\((.*?)\)").unwrap();
-        if let Some(caps) = call_pattern.captures(line) {
-            let name = caps.get(1).unwrap().as_str().to_string();
-            let args = caps
-                .get(2)
-                .unwrap()
-                .as_str()
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .collect();
-            Ok(Some(Box::new(CallFunction::new(name, args))))
-        } else {
-            Err(VBSErrorType::BlockMismatchError.into_error("Sintassi Call non valida".to_string()))
-        }
-    }
-
-    /// Extract the body of a block (e.g., For, While, Function).
-    fn extract_body(
-        &self,
-        code: &str,
-        start_keyword: &str,
-        end_keyword: &str,
-    ) -> Result<String, VBSError> {
-        let mut lines = code.lines();
-        let mut body = String::new();
-        let mut depth = 0; // Track nested blocks
-
-        // Find the start of the block
-        while let Some(line) = lines.next() {
-            if line
-                .trim()
-                .to_lowercase()
-                .starts_with(&start_keyword.to_lowercase())
-            {
-                depth += 1;
-                break;
-            }
-        }
-
-        // Extract the body until the end of the block
-        while let Some(line) = lines.next() {
-            let trimmed_line = line.trim().to_lowercase();
-            if trimmed_line.starts_with(&start_keyword.to_lowercase()) {
-                depth += 1;
-            } else if trimmed_line.starts_with(&end_keyword.to_lowercase()) {
-                depth -= 1;
-                if depth == 0 {
-                    break; // End of the current block
+                _ => {
+                    current_line.push(token.clone());
                 }
             }
-            body.push_str(line);
-            body.push('\n');
+
+            i += 1;
         }
 
-        if depth != 0 {
-            return Err(VBSErrorType::BlockMismatchError.into_error(format!(
-                "Blocco non chiuso correttamente: {}...{}", start_keyword, end_keyword)
+        // Add the last line if it's not empty
+        if !current_line.is_empty() {
+            lines.push(current_line);
+        }
+
+        // Post-process: trim whitespace tokens at start/end of each line
+        let lines = lines
+            .into_iter()
+            .map(|line| Self::trim_whitespace_tokens(line))
+            .filter(|line| !line.is_empty())
+            .collect();
+
+        Ok(lines)
+    }
+
+    /// Helper function to check if a sequence of tokens represents a line continuation
+    fn is_line_continuation(line: &[Token]) -> bool {
+        if let Some(last_token) = line.last() {
+            matches!(last_token.token_type, TokenType::WhiteSpace) && last_token.value.contains('_')
+        } else {
+            false
+        }
+    }
+
+    /// Helper function to check if we're inside a string literal
+    fn is_in_string_literal(tokens: &[Token]) -> bool {
+        let mut in_string = false;
+        for token in tokens {
+            match token.token_type {
+                TokenType::StringLiteral => in_string = !in_string,
+                _ => {}
+            }
+        }
+        in_string
+    }
+
+    /// Helper function to check if a sequence of tokens starts with a line continuation
+    fn is_continuation_sequence(tokens: &[Token]) -> bool {
+        if tokens.is_empty() {
+            return false;
+        }
+
+        // Check for underscore followed by optional whitespace and newline
+        match &tokens[0].token_type {
+            TokenType::WhiteSpace => {
+                tokens[0].value.contains('_')
+                    && tokens
+                        .iter()
+                        .skip(1)
+                        .take_while(|t| matches!(t.token_type, TokenType::WhiteSpace))
+                        .any(|t| matches!(t.token_type, TokenType::NewLine))
+            }
+            _ => false,
+        }
+    }
+
+    /// Helper function to skip over a line continuation sequence
+    /// Returns the new index after the sequence
+    fn skip_continuation_sequence(tokens: &[Token]) -> usize {
+        let mut i = 0;
+
+        // Skip initial whitespace with underscore
+        if i < tokens.len() && matches!(tokens[i].token_type, TokenType::WhiteSpace) {
+            i += 1;
+        }
+
+        // Skip any additional whitespace
+        while i < tokens.len() && matches!(tokens[i].token_type, TokenType::WhiteSpace) {
+            i += 1;
+        }
+
+        // Skip the newline token
+        if i < tokens.len() && matches!(tokens[i].token_type, TokenType::NewLine) {
+            i += 1;
+        }
+
+        i
+    }
+
+    /// Helper function to trim whitespace tokens from start and end of a line
+    fn trim_whitespace_tokens(tokens: Vec<Token>) -> Vec<Token> {
+        let mut result = tokens;
+
+        // Trim from start
+        while result
+            .first()
+            .map_or(false, |t| matches!(t.token_type, TokenType::WhiteSpace))
+        {
+            result.remove(0);
+        }
+
+        // Trim from end
+        while result
+            .last()
+            .map_or(false, |t| matches!(t.token_type, TokenType::WhiteSpace))
+        {
+            result.pop();
+        }
+
+        result
+    }
+
+    /// Creates a syntax object from a sequence of tokens
+    fn create_syntax_from_tokens(
+        &self,
+        tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        if tokens.is_empty() {
+            return Ok(None);
+        }
+
+        // Get the first non-whitespace token to determine the statement type
+        let first_token = tokens
+            .iter()
+            .find(|t| t.token_type != TokenType::WhiteSpace)
+            .ok_or_else(|| VBSErrorType::SyntaxError.into_error("Empty statement".to_string()))?;
+
+        match first_token.token_type {
+            TokenType::Dim => self.parse_dim_statement(tokens),
+            TokenType::Set | TokenType::Let => self.parse_assignment_statement(tokens),
+            TokenType::If => self.parse_if_statement(tokens),
+            TokenType::Function => self.parse_function_declaration(tokens),
+            TokenType::Sub => self.parse_sub_declaration(tokens),
+            TokenType::Call => self.parse_call_statement(tokens),
+            _ => {
+                // Try to parse as expression or assignment if no keyword is recognized
+                self.parse_expression_or_assignment(tokens)
+            }
+        }
+    }
+
+    /// Helper function to check if a sequence of tokens represents a comment line
+    fn is_comment_line(tokens: &[Token]) -> bool {
+        tokens.iter().any(|token| {
+            matches!(token.token_type, TokenType::Comment)
+                || (matches!(token.token_type, TokenType::Identifier)
+                    && token.value.to_lowercase() == "rem")
+        })
+    }
+
+    /// Helper function to convert a sequence of tokens back to their string representation
+    fn tokens_to_string(tokens: &[Token]) -> String {
+        tokens
+            .iter()
+            .map(|t| t.value.clone())
+            .collect::<Vec<String>>()
+            .join(" ")
+    }
+
+    fn parse_expression_or_assignment(
+        &self,
+        _tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("parse_expression_or_assignment Non implementata".to_string()))
+    }
+
+    fn parse_call_statement(
+        &self,
+        _tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("parse_call_statement Non implementata".to_string()))
+    }
+
+    fn parse_sub_declaration(
+        &self,
+        _tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("parse_sub_declaration Non implementata".to_string()))
+    }
+
+    fn parse_function_declaration(
+        &self,
+        _tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("parse_function_declaration Non implementata".to_string()))
+    }
+
+    fn parse_dim_statement(&self, tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        // Ensure the first token is the `Dim` keyword
+        if tokens.is_empty() || tokens[0].token_type != TokenType::Dim {
+            return Err(VBSErrorType::SyntaxError.into_error("Expected 'Dim' keyword".to_string()));
+        }
+    
+        // Collect variable names
+        let mut var_names = Vec::new();
+        let mut i = 1; // Start after the `Dim` keyword
+    
+        while i < tokens.len() {
+            // Skip whitespace
+            if tokens[i].token_type == TokenType::WhiteSpace {
+                i += 1;
+                continue;
+            }
+    
+            // Expect an identifier (variable name)
+            if tokens[i].token_type != TokenType::Identifier {
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    format!("Expected variable name, found: {}", tokens[i].value)
+                ));
+            }
+    
+            // Add the variable name to the list
+            var_names.push(tokens[i].value.clone());
+    
+            // Move to the next token
+            i += 1;
+    
+            // Check for a comma (indicating another variable)
+            if i < tokens.len() && tokens[i].token_type == TokenType::Comma {
+                i += 1; // Skip the comma
+            } else {
+                break; // No more variables
+            }
+        }
+    
+        // Ensure we have at least one variable name
+        if var_names.is_empty() {
+            return Err(VBSErrorType::SyntaxError.into_error("No variable names found in 'Dim' statement".to_string()));
+        }
+    
+        // Return a `Dim` syntax object
+        Ok(Some(Box::new(Dim::new(var_names))))
+    }
+
+    fn parse_assignment_statement(
+        &self,
+        tokens: &[Token],
+    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        // Ensure there are tokens to parse
+        if tokens.is_empty() {
+            return Err(VBSErrorType::SyntaxError.into_error("Empty assignment statement".to_string()));
+        }
+    
+        // Check if this is a `Set` assignment
+        let is_set_assignment = tokens[0].token_type == TokenType::Set;
+    
+        // Skip the `Set` keyword if present
+        let mut i = if is_set_assignment { 1 } else { 0 };
+    
+        // Skip leading whitespace
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Expect an identifier (variable name)
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Identifier {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected variable name, found: {:?}", tokens.get(i)),
             ));
         }
-        Ok(body)
+    
+        let var_name = tokens[i].value.clone();
+        i += 1;
+    
+        // Skip whitespace after the variable name
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Expect an assignment operator (`=`)
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected '=', found: {:?}", tokens.get(i)),
+            ));
+        }
+        i += 1;
+    
+        // Skip whitespace after the assignment operator
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+    
+        // Collect the remaining tokens as the value to assign
+        let value_tokens = &tokens[i..];
+        let value = value_tokens
+            .iter()
+            .map(|token| token.value.clone())
+            .collect::<Vec<String>>()
+            .join(" ");
+    
+        // Create an Assignment syntax object
+        Ok(Some(Box::new(Assignment::new(var_name, value))))
+    }
+
+    fn parse_if_statement(&self, _tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("parse_if_statement Non implementata".to_string()))
+    }
+
+    pub(crate) fn evaluate_condition(
+        &self,
+        _condition: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<bool, VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error("evaluate_condition Non implementata".to_string()))
     }
 }
