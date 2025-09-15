@@ -25,9 +25,11 @@ impl VBSyntax for ResponseWrite {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let content = Self::extract_content(&self.content);
 
+        println!("Response.Write with content: {}", content);
+
         // Handle string literals
-        if content.starts_with('"') && content.ends_with('"') {
-            let content = content.trim_matches('"');
+        if content.starts_with('(') && content.ends_with(')') {
+            let content = content.trim_matches(')').trim_matches('(').trim();
             context.write(content);
             return Ok(());
         }
@@ -63,6 +65,8 @@ impl VBSyntax for ResponseWrite {
             return Ok(());
         }
 
-        Err(VBSErrorType::ValueError.into_error(format!("Valore non valido per Response.Write: {}", content)))
+        // If none of the above, treat as a raw string
+        context.write(&content);
+        return Ok(());
     }
 }

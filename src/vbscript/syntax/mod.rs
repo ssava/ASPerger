@@ -13,6 +13,7 @@ mod while_loop;
 mod function_decl;
 mod call_function;
 
+pub use response_write::ResponseWrite;
 use super::vbs_error::VBSError;
 pub use dim::Dim;
 pub use assignment::Assignment;

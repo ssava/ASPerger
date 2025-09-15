@@ -1,6 +1,6 @@
 use std::vec::Vec;
 
-use crate::vbscript::syntax::VBSyntax;
+use crate::vbscript::syntax::{ResponseWrite, VBSyntax};
 use crate::vbscript::ExecutionContext;
 
 use super::syntax::{Assignment, Dim};
@@ -272,8 +272,27 @@ impl VBScriptInterpreter {
 
     fn parse_expression_or_assignment(
         &self,
-        _tokens: &[Token],
+        tokens: &[Token],
     ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
+        // Salta spazi
+        let mut iter = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace);
+
+        let first = iter.next();
+        let second = iter.next();
+        let third = iter.next();
+
+        if let (Some(f), Some(s), Some(t)) = (first, second, third) {
+            if f.value.eq_ignore_ascii_case("response")
+                && matches!(s.token_type, TokenType::Dot)
+                && t.value.eq_ignore_ascii_case("write")
+            {
+                // Prendi tutto il resto come contenuto
+                let expr_tokens: Vec<String> = iter.map(|tok| tok.value.clone()).collect();
+                let expr = expr_tokens.join(" ");
+                return Ok(Some(Box::new(ResponseWrite::new(expr))));
+            }
+        }
+
         Err(VBSErrorType::NotImplementedError
             .into_error("parse_expression_or_assignment Non implementata".to_string()))
     }
