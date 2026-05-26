@@ -1,7 +1,7 @@
 use std::str::Chars;
 use std::iter::Peekable;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
     // Keywords
     Class,
@@ -465,9 +465,49 @@ value,
                     token_type: TokenType::Power,
                     value,
                 },
-                '&' => return Token {
-                    token_type: TokenType::Concat,
-                    value,
+                '&' => {
+                    // Check for hex literal: &HFF or &hFF
+                    if let Some(&next) = self.input.peek() {
+                        if next == 'H' || next == 'h' {
+                            value.push('H');
+                            self.advance();
+                            while let Some(&c) = self.input.peek() {
+                                if c.is_ascii_hexdigit() {
+                                    value.push(c);
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                            return Token {
+                                token_type: TokenType::HexLiteral,
+                                value,
+                            };
+                        }
+                        // Check for octal literal: &77 or &O77
+                        if next.is_ascii_digit() || next == 'O' || next == 'o' {
+                            if next == 'O' || next == 'o' {
+                                value.push(next);
+                                self.advance();
+                            }
+                            while let Some(&c) = self.input.peek() {
+                                if c.is_ascii_digit() && c != '8' && c != '9' {
+                                    value.push(c);
+                                    self.advance();
+                                } else {
+                                    break;
+                                }
+                            }
+                            return Token {
+                                token_type: TokenType::OctLiteral,
+                                value,
+                            };
+                        }
+                    }
+                    return Token {
+                        token_type: TokenType::Concat,
+                        value,
+                    };
                 },
                 '=' => {
                     if self.input.peek() == Some(&'=') {

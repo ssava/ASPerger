@@ -543,6 +543,7 @@ pub fn execute_blocks(
                         i += step;
                     }
                 }
+                context.set_variable(&counter, VBValue::Number(i));
             }
             BlockStatement::While {
                 condition_tokens,

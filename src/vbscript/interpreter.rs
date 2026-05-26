@@ -25,8 +25,8 @@ impl VBScriptInterpreter {
         let code = code.trim().to_string();
 
         // Tokenize the entire code first
-        let tokens = Tokenizer::tokenize(&code); // `Tokenizer` now works with an owned `String`
-        if tokens.is_empty() {
+        let tokens = Tokenizer::tokenize(&code);
+        if tokens.iter().all(|t| t.token_type == TokenType::EOF) {
             return Ok(());
         }
 
