@@ -7,8 +7,10 @@ pub trait VBSyntax {
 mod response_write;
 mod dim;
 mod assignment;
+mod method_call;
 
 pub use response_write::ResponseWrite;
 use super::vbs_error::VBSError;
 pub use dim::Dim;
 pub use assignment::Assignment;
+pub use method_call::MethodCall;

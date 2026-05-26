@@ -20,6 +20,9 @@ pub enum Expr {
     Variable(String),
     BinaryOp { left: Box<Expr>, op: BinOp, right: Box<Expr> },
     UnaryOp { op: UnaryOp, expr: Box<Expr> },
+    FunctionCall { name: String, args: Vec<Expr> },
+    PropertyAccess { object: Box<Expr>, property: String },
+    MethodCall { object: Box<Expr>, method: String, args: Vec<Expr> },
 }
 
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
@@ -152,7 +155,44 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
         TokenType::Empty => Ok(Expr::Literal(VBValue::Empty)),
         TokenType::Nothing => Ok(Expr::Literal(VBValue::Empty)),
         TokenType::Identifier => {
-            Ok(Expr::Variable(token.value.clone()))
+            let name = token.value.clone();
+            match peek(tokens, *pos) {
+                Some(next) if next.token_type == TokenType::LeftParen => {
+                    advance(tokens, pos);
+                    let mut args = Vec::new();
+                    loop {
+                        if let Some(t) = peek(tokens, *pos) {
+                            if t.token_type == TokenType::RightParen {
+                                advance(tokens, pos);
+                                break;
+                            }
+                        } else {
+                            return Err(VBSErrorType::SyntaxError.into_error(
+                                "Unclosed parentheses in function call".to_string()
+                            ));
+                        }
+                        let arg = parse_binary(tokens, pos, 0)?;
+                        args.push(arg);
+                        match peek(tokens, *pos) {
+                            Some(t) if t.token_type == TokenType::Comma => {
+                                advance(tokens, pos);
+                            }
+                            Some(t) if t.token_type == TokenType::RightParen => {
+                                advance(tokens, pos);
+                                break;
+                            }
+                            Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
+                                format!("Expected ',' or ')' after argument, got '{}'", t.value)
+                            )),
+                            None => return Err(VBSErrorType::SyntaxError.into_error(
+                                "Unclosed parentheses in function call".to_string()
+                            )),
+                        }
+                    }
+                    Ok(Expr::FunctionCall { name, args })
+                }
+                _ => Ok(Expr::Variable(name)),
+            }
         }
         _ => Err(VBSErrorType::SyntaxError.into_error(
             format!("Unexpected token in expression: '{}' ({:?})", token.value, token.token_type)
@@ -238,6 +278,68 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
             break;
         }
 
+        // Handle property/method access: obj.Prop or obj.Method(args)
+        if token.token_type == TokenType::Dot {
+            advance(tokens, pos);
+            let prop = advance(tokens, pos).ok_or_else(|| {
+                VBSErrorType::SyntaxError.into_error("Expected property name after '.'".to_string())
+            })?;
+            if prop.token_type != TokenType::Identifier {
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    format!("Expected property name after '.', got '{}'", prop.value)
+                ));
+            }
+            let prop_name = prop.value.clone();
+
+            if let Some(next) = peek(tokens, *pos) {
+                if next.token_type == TokenType::LeftParen {
+                    advance(tokens, pos);
+                    let mut args = Vec::new();
+                    loop {
+                        if let Some(t) = peek(tokens, *pos) {
+                            if t.token_type == TokenType::RightParen {
+                                advance(tokens, pos);
+                                break;
+                            }
+                        } else {
+                            return Err(VBSErrorType::SyntaxError.into_error(
+                                "Unclosed parentheses in method call".to_string()
+                            ));
+                        }
+                        let arg = parse_binary(tokens, pos, 0)?;
+                        args.push(arg);
+                        match peek(tokens, *pos) {
+                            Some(t) if t.token_type == TokenType::Comma => {
+                                advance(tokens, pos);
+                            }
+                            Some(t) if t.token_type == TokenType::RightParen => {
+                                advance(tokens, pos);
+                                break;
+                            }
+                            Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
+                                format!("Expected ',' or ')' after argument, got '{}'", t.value)
+                            )),
+                            None => return Err(VBSErrorType::SyntaxError.into_error(
+                                "Unclosed parentheses in method call".to_string()
+                            )),
+                        }
+                    }
+                    lhs = Expr::MethodCall {
+                        object: Box::new(lhs),
+                        method: prop_name,
+                        args,
+                    };
+                    continue;
+                }
+            }
+
+            lhs = Expr::PropertyAccess {
+                object: Box::new(lhs),
+                property: prop_name,
+            };
+            continue;
+        }
+
         if let Some(op) = token_to_binop(token) {
             advance(tokens, pos);
             let next_min_prec = prec + 1;
@@ -275,6 +377,47 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
             let rv = evaluate(right, context)?;
             eval_binary(&lv, op, &rv)
         }
+        Expr::FunctionCall { name, args } => {
+            let evaluated_args: Result<Vec<VBValue>, VBSError> = args.iter()
+                .map(|arg| evaluate(arg, context))
+                .collect();
+            let evaluated_args = evaluated_args?;
+
+            if let Some(var) = context.get_variable(name) {
+                match var {
+                    VBValue::Object(obj) => {
+                        if evaluated_args.len() == 1 {
+                            return obj.indexed_get(&evaluated_args[0]);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            crate::vbscript::builtins::call_builtin(name, evaluated_args)
+        }
+        Expr::PropertyAccess { object, property } => {
+            let obj_val = evaluate(object, context)?;
+            match obj_val {
+                VBValue::Object(obj) => obj.get_property(property),
+                _ => Err(VBSErrorType::RuntimeError.into_error(
+                    format!("Object doesn't support this property or method: '{}'", property)
+                )),
+            }
+        }
+        Expr::MethodCall { object, method, args } => {
+            let obj_val = evaluate(object, context)?;
+            match obj_val {
+                VBValue::Object(mut obj) => {
+                    let evaluated_args: Result<Vec<VBValue>, VBSError> = args.iter()
+                        .map(|arg| evaluate(arg, context))
+                        .collect();
+                    obj.call_method(method, &evaluated_args?)
+                }
+                _ => Err(VBSErrorType::RuntimeError.into_error(
+                    format!("Object doesn't support this property or method: '{}'", method)
+                )),
+            }
+        }
     }
 }
 
@@ -286,6 +429,7 @@ fn to_number(val: &VBValue) -> f64 {
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
         VBValue::Array(_) => 0.0,
+        VBValue::Object(_) => 0.0,
     }
 }
 
@@ -296,6 +440,7 @@ fn to_bool(val: &VBValue) -> bool {
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
         VBValue::Array(v) => !v.is_empty(),
+        VBValue::Object(_) => true,
     }
 }
 
@@ -308,11 +453,12 @@ fn to_string_val(val: &VBValue) -> String {
         VBValue::Null => "Null".to_string(),
         VBValue::Empty => "".to_string(),
         VBValue::Array(_) => "Array".to_string(),
+        VBValue::Object(_) => "Object".to_string(),
     }
 }
 
 fn negate(val: VBValue) -> Result<VBValue, VBSError> {
-    if matches!(val, VBValue::Array(_)) {
+    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match val {
@@ -322,6 +468,7 @@ fn negate(val: VBValue) -> Result<VBValue, VBSError> {
         VBValue::Boolean(false) => Ok(VBValue::Number(0.0)),
         VBValue::Null => Ok(VBValue::Null),
         VBValue::Array(_) => unreachable!(),
+        VBValue::Object(_) => unreachable!(),
         VBValue::String(s) => {
             if let Ok(n) = s.parse::<f64>() {
                 Ok(VBValue::Number(-n))
@@ -333,14 +480,14 @@ fn negate(val: VBValue) -> Result<VBValue, VBSError> {
 }
 
 fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
-    if matches!(val, VBValue::Array(_)) {
+    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(VBValue::Boolean(!to_bool(&val)))
 }
 
 fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
-    if matches!(left, VBValue::Array(_)) || matches!(right, VBValue::Array(_)) {
+    if matches!(left, VBValue::Array(_) | VBValue::Object(_)) || matches!(right, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match op {
@@ -435,6 +582,7 @@ fn values_equal(left: &VBValue, right: &VBValue) -> bool {
         (VBValue::Null, VBValue::Null) => true,
         (VBValue::Empty, VBValue::Empty) => true,
         (VBValue::Array(_), _) | (_, VBValue::Array(_)) => false,
+        (VBValue::Object(_), _) | (_, VBValue::Object(_)) => false,
         _ => to_string_val(left) == to_string_val(right),
     }
 }

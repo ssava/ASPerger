@@ -517,7 +517,7 @@ fn eval_token_expression(tokens: &[Token], context: &ExecutionContext) -> Result
 
 fn evaluate_condition(tokens: &[Token], context: &ExecutionContext) -> Result<bool, VBSError> {
     let val = eval_token_expression(tokens, context)?;
-    if matches!(val, VBValue::Array(_)) {
+    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(match val {
@@ -526,12 +526,13 @@ fn evaluate_condition(tokens: &[Token], context: &ExecutionContext) -> Result<bo
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
         VBValue::Array(_) => unreachable!(),
+        VBValue::Object(_) => unreachable!(),
     })
 }
 
 fn evaluate_numeric(tokens: &[Token], context: &ExecutionContext) -> Result<f64, VBSError> {
     let val = eval_token_expression(tokens, context)?;
-    if matches!(val, VBValue::Array(_)) {
+    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(match val {
@@ -541,6 +542,7 @@ fn evaluate_numeric(tokens: &[Token], context: &ExecutionContext) -> Result<f64,
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
         VBValue::Array(_) => unreachable!(),
+        VBValue::Object(_) => unreachable!(),
     })
 }
 

@@ -1,6 +1,7 @@
+use super::vbobject::VBScriptObject;
 use std::{fmt, str::FromStr};
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub enum VBValue {
     String(String),
     Number(f64),
@@ -9,6 +10,36 @@ pub enum VBValue {
     Empty,
     #[allow(dead_code)]
     Array(Vec<VBValue>),
+    Object(Box<dyn VBScriptObject>),
+}
+
+impl Clone for VBValue {
+    fn clone(&self) -> Self {
+        match self {
+            VBValue::String(s) => VBValue::String(s.clone()),
+            VBValue::Number(n) => VBValue::Number(*n),
+            VBValue::Boolean(b) => VBValue::Boolean(*b),
+            VBValue::Null => VBValue::Null,
+            VBValue::Empty => VBValue::Empty,
+            VBValue::Array(v) => VBValue::Array(v.clone()),
+            VBValue::Object(obj) => VBValue::Object(obj.clone_box()),
+        }
+    }
+}
+
+impl PartialEq for VBValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (VBValue::String(a), VBValue::String(b)) => a == b,
+            (VBValue::Number(a), VBValue::Number(b)) => (a - b).abs() < f64::EPSILON,
+            (VBValue::Boolean(a), VBValue::Boolean(b)) => a == b,
+            (VBValue::Null, VBValue::Null) => true,
+            (VBValue::Empty, VBValue::Empty) => true,
+            (VBValue::Array(a), VBValue::Array(b)) => a == b,
+            (VBValue::Object(_), VBValue::Object(_)) => false,
+            _ => false,
+        }
+    }
 }
 
 impl fmt::Display for VBValue {
@@ -22,6 +53,7 @@ impl fmt::Display for VBValue {
             VBValue::Null => write!(f, "null"),
             VBValue::Empty => write!(f, "Empty"),
             VBValue::Array(v) => write!(f, "Array({})", v.len()),
+            VBValue::Object(_) => write!(f, "Object"),
         }
     }
 }

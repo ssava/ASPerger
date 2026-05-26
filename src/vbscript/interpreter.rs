@@ -100,6 +100,11 @@ impl VBScriptInterpreter {
                     }
                 }
 
+                TokenType::EOF => {
+                    // End of file — stop processing tokens
+                    break;
+                }
+
                 _ => {
                     current_line.push(token.clone());
                 }
@@ -290,6 +295,27 @@ impl VBScriptInterpreter {
             return Ok(Some(Box::new(Assignment::new(var_name, expr))));
         }
 
+        // Case 3: obj.Method arg1, arg2, ... (method call)
+        if non_ws.len() >= 3
+            && non_ws[0].token_type == TokenType::Identifier
+            && non_ws[1].token_type == TokenType::Dot
+            && non_ws[2].token_type == TokenType::Identifier
+        {
+            let object_name = non_ws[0].value.clone();
+            let method_name = non_ws[2].value.clone();
+
+            let args = if let Some(mi) = Self::find_method_token(tokens, &method_name) {
+                let arg_tokens = &tokens[mi + 1..];
+                Self::parse_comma_args(arg_tokens)?
+            } else {
+                Vec::new()
+            };
+
+            return Ok(Some(Box::new(
+                crate::vbscript::syntax::MethodCall::new(object_name, method_name, args)
+            )));
+        }
+
         // Replicate old behavior for unrecognized commands
         let line_text = Self::tokens_to_string(tokens);
         Err(VBSErrorType::NotImplementedError
@@ -383,5 +409,42 @@ impl VBScriptInterpreter {
         Ok(Some(Box::new(Assignment::new(var_name, expr))))
     }
 
+    /// Find the position of a method name identifier in a token list,
+    /// searching after the first Dot.
+    fn find_method_token(tokens: &[Token], method_name: &str) -> Option<usize> {
+        let dot_idx = tokens.iter().position(|t| t.token_type == TokenType::Dot)?;
+        let start = dot_idx + 1;
+        tokens[start..].iter().position(|t| {
+            t.token_type == TokenType::Identifier && t.value == method_name
+        }).map(|offset| start + offset)
+    }
 
+    /// Parse comma-separated arguments from tokens.
+    fn parse_comma_args(tokens: &[Token]) -> Result<Vec<Expr>, VBSError> {
+        if tokens.is_empty() {
+            return Ok(Vec::new());
+        }
+        // If no commas, single argument
+        if !tokens.iter().any(|t| t.token_type == TokenType::Comma) {
+            return Ok(vec![parse_expression(tokens)?]);
+        }
+        // Multiple arguments: split on commas
+        let mut args = Vec::new();
+        let mut start = 0;
+        for (i, tok) in tokens.iter().enumerate() {
+            if tok.token_type == TokenType::Comma {
+                if i > start {
+                    let arg_tokens: Vec<Token> = tokens[start..i].to_vec();
+                    args.push(parse_expression(&arg_tokens)?);
+                }
+                start = i + 1;
+            }
+        }
+        // Last argument (after last comma)
+        if start < tokens.len() {
+            let arg_tokens: Vec<Token> = tokens[start..].to_vec();
+            args.push(parse_expression(&arg_tokens)?);
+        }
+        Ok(args)
+    }
 }

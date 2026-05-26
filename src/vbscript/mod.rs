@@ -6,6 +6,8 @@ pub mod expr;
 pub mod vbs_error;
 pub mod tokenizer;
 pub mod block;
+pub mod builtins;
+pub mod vbobject;
 
 #[cfg(test)]
 mod tests;

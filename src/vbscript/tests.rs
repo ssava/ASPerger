@@ -1334,4 +1334,187 @@ mod tests {
         // For x=2: 1+2=3. For x=3: 1+2+3=6. For x=4: 1+2+3+4=10. total=3+6+10=19
         assert_eq!(context.get_variable("total"), Some(VBValue::Number(19.0)));
     }
+
+    // ===== FUNCTION CALLS =====
+
+    #[test]
+    fn test_function_call_array() {
+        let mut context = ExecutionContext::new();
+        context.set_variable("result", VBValue::String("".to_string()));
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = Array(10, 20, 30)", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::Array(vec![
+            VBValue::Number(10.0), VBValue::Number(20.0), VBValue::Number(30.0),
+        ])));
+    }
+
+    #[test]
+    fn test_function_call_array_in_for_each() {
+        let mut context = ExecutionContext::new();
+        context.set_variable("sum", VBValue::Number(0.0));
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute(
+            "For Each x In Array(1, 2, 3, 4, 5)\n    sum = sum + x\nNext",
+            &mut context
+        ).unwrap();
+        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(15.0)));
+    }
+
+    #[test]
+    fn test_function_call_len() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = Len(\"hello\")", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::Number(5.0)));
+    }
+
+    #[test]
+    fn test_function_call_ucase() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = UCase(\"hello\")", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::String("HELLO".to_string())));
+    }
+
+    #[test]
+    fn test_function_call_mid() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = Mid(\"hello\", 2, 3)", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::String("ell".to_string())));
+    }
+
+    #[test]
+    fn test_function_call_unknown() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        let result = interpreter.execute("result = UnknownFunc(42)", &mut context);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_function_call_empty_args() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = Array()", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::Array(vec![])));
+    }
+
+    #[test]
+    fn test_function_call_in_expression() {
+        let mut context = ExecutionContext::new();
+        context.set_variable("x", VBValue::Number(3.0));
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("result = Len(\"abc\") + x", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::Number(6.0)));
+    }
+
+    // ===== OBJECT / DICTIONARY / METHOD CALLS =====
+
+    #[test]
+    fn test_createobject_dictionary() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        let val = context.get_variable("dict");
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), VBValue::Object(_)));
+    }
+
+    #[test]
+    fn test_dictionary_method_call() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        interpreter.execute("dict.Add \"b\", \"Beta\"", &mut context).unwrap();
+    }
+
+    #[test]
+    fn test_dictionary_property_keys() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        interpreter.execute("dict.Add \"b\", \"Beta\"", &mut context).unwrap();
+        context.set_variable("keys", VBValue::Empty);
+        interpreter.execute("keys = dict.Keys", &mut context).unwrap();
+        let keys = context.get_variable("keys");
+        assert!(matches!(keys, Some(VBValue::Array(_))));
+        if let Some(VBValue::Array(items)) = keys {
+            assert_eq!(items.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_dictionary_indexed_access() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        context.set_variable("val", VBValue::Empty);
+        interpreter.execute("val = dict(\"a\")", &mut context).unwrap();
+        assert_eq!(context.get_variable("val"), Some(VBValue::String("Alpha".to_string())));
+    }
+
+    #[test]
+    fn test_for_each_with_dictionary_keys() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        interpreter.execute("dict.Add \"b\", \"Beta\"", &mut context).unwrap();
+        interpreter.execute("dict.Add \"g\", \"Gamma\"", &mut context).unwrap();
+        context.set_variable("result", VBValue::String("".to_string()));
+        interpreter.execute(
+            "For Each key In dict.Keys\n    result = result & key\nNext",
+            &mut context
+        ).unwrap();
+        let result = context.get_variable("result");
+        assert!(result.is_some());
+        // Keys may be in any order
+        let s = match result.unwrap() {
+            VBValue::String(s) => s,
+            _ => String::new(),
+        };
+        assert_eq!(s.len(), 3);
+        assert!(s.contains('a'));
+        assert!(s.contains('b'));
+        assert!(s.contains('g'));
+    }
+
+    #[test]
+    fn test_dictionary_count() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        interpreter.execute("dict.Add \"b\", \"Beta\"", &mut context).unwrap();
+        context.set_variable("cnt", VBValue::Empty);
+        interpreter.execute("cnt = dict.Count", &mut context).unwrap();
+        assert_eq!(context.get_variable("cnt"), Some(VBValue::Number(2.0)));
+    }
+
+    #[test]
+    fn test_dictionary_exists() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        context.set_variable("found", VBValue::Empty);
+        interpreter.execute("found = dict.Exists(\"a\")", &mut context).unwrap();
+        assert_eq!(context.get_variable("found"), Some(VBValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_method_call_no_args() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
+        interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
+        interpreter.execute("dict.RemoveAll", &mut context).unwrap();
+        context.set_variable("cnt", VBValue::Empty);
+        interpreter.execute("cnt = dict.Count", &mut context).unwrap();
+        assert_eq!(context.get_variable("cnt"), Some(VBValue::Number(0.0)));
+    }
 }
