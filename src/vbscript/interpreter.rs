@@ -1,11 +1,13 @@
 use std::vec::Vec;
 
+use crate::vbscript::expr::{parse_expression, Expr};
 use crate::vbscript::syntax::{ResponseWrite, VBSyntax};
 use crate::vbscript::ExecutionContext;
 
 use super::syntax::{Assignment, Dim};
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{Token, TokenType, Tokenizer};
+use super::VBValue;
 
 pub struct VBScriptInterpreter;
 
@@ -31,23 +33,8 @@ impl VBScriptInterpreter {
         // Group tokens into logical lines, handling line continuations
         let lines = self.group_tokens_into_lines(&tokens)?;
 
-        for line_tokens in lines {
-            // Skip empty lines and comments
-            if line_tokens.is_empty() || Self::is_comment_line(&line_tokens) {
-                continue;
-            }
-
-            // Create a syntax object using the factory method with tokens
-            match self.create_syntax_from_tokens(&line_tokens)? {
-                Some(syntax) => syntax.execute(context)?,
-                None => {
-                    let line_text = Self::tokens_to_string(&line_tokens);
-                    return Err(VBSErrorType::NotImplementedError
-                        .into_error(format!("Unrecognized command: {}", line_text)));
-                }
-            }
-        }
-        Ok(())
+        let blocks = crate::vbscript::block::parse_blocks(&lines)?;
+        crate::vbscript::block::execute_blocks(&blocks, self, context)
     }
 
     /// Groups tokens into logical lines, handling line continuations and special VBScript syntax rules.
@@ -224,7 +211,7 @@ impl VBScriptInterpreter {
     }
 
     /// Creates a syntax object from a sequence of tokens
-    fn create_syntax_from_tokens(
+    pub(crate) fn create_syntax_from_tokens(
         &self,
         tokens: &[Token],
     ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
@@ -249,15 +236,6 @@ impl VBScriptInterpreter {
         }
     }
 
-    /// Helper function to check if a sequence of tokens represents a comment line
-    fn is_comment_line(tokens: &[Token]) -> bool {
-        tokens.iter().any(|token| {
-            matches!(token.token_type, TokenType::Comment)
-                || (matches!(token.token_type, TokenType::Identifier)
-                    && token.value.to_lowercase() == "rem")
-        })
-    }
-
     /// Helper function to convert a sequence of tokens back to their string representation
     fn tokens_to_string(tokens: &[Token]) -> String {
         tokens
@@ -271,27 +249,51 @@ impl VBScriptInterpreter {
         &self,
         tokens: &[Token],
     ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        // Salta spazi
-        let mut iter = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace);
+        let non_ws: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
 
-        let first = iter.next();
-        let second = iter.next();
-        let third = iter.next();
-
-        if let (Some(f), Some(s), Some(t)) = (first, second, third) {
-            if f.value.eq_ignore_ascii_case("response")
-                && matches!(s.token_type, TokenType::Dot)
-                && t.value.eq_ignore_ascii_case("write")
-            {
-                // Prendi tutto il resto come contenuto
-                let expr_tokens: Vec<String> = iter.map(|tok| tok.value.clone()).collect();
-                let expr = expr_tokens.join(" ");
-                return Ok(Some(Box::new(ResponseWrite::new(expr))));
+        // Case 1: Response.Write expr
+        if non_ws.len() >= 3
+            && non_ws[0].value.eq_ignore_ascii_case("response")
+            && non_ws[1].token_type == TokenType::Dot
+            && non_ws[2].value.eq_ignore_ascii_case("write")
+        {
+            // Find where the expression starts in the original token list
+            let mut expr_start = tokens.len();
+            let mut found_write = false;
+            for (i, tok) in tokens.iter().enumerate() {
+                if tok.token_type != TokenType::WhiteSpace && tok.value.eq_ignore_ascii_case("write") {
+                    found_write = true;
+                    continue;
+                }
+                if found_write {
+                    expr_start = i;
+                    break;
+                }
             }
+
+            let expr = if expr_start < tokens.len() {
+                parse_expression(&tokens[expr_start..])?
+            } else {
+                Expr::Literal(VBValue::Empty)
+            };
+            return Ok(Some(Box::new(ResponseWrite::new(expr))));
         }
 
+        // Case 2: var = expr (bare assignment, no Set keyword)
+        if non_ws.len() >= 2
+            && non_ws[0].token_type == TokenType::Identifier
+            && non_ws[1].token_type == TokenType::Assign
+        {
+            let var_name = non_ws[0].value.clone();
+            let assign_idx = tokens.iter().position(|t| t.token_type == TokenType::Assign).unwrap();
+            let expr = parse_expression(&tokens[assign_idx + 1..])?;
+            return Ok(Some(Box::new(Assignment::new(var_name, expr))));
+        }
+
+        // Replicate old behavior for unrecognized commands
+        let line_text = Self::tokens_to_string(tokens);
         Err(VBSErrorType::NotImplementedError
-            .into_error("parse_expression_or_assignment Non implementata".to_string()))
+            .into_error(format!("Unrecognized command: {}", line_text)))
     }
 
     fn parse_dim_statement(&self, tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
@@ -345,60 +347,40 @@ impl VBScriptInterpreter {
         &self,
         tokens: &[Token],
     ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        // Ensure there are tokens to parse
         if tokens.is_empty() {
             return Err(VBSErrorType::SyntaxError.into_error("Empty assignment statement".to_string()));
         }
-    
-        // Check if this is a `Set` assignment
+
         let is_set_assignment = tokens[0].token_type == TokenType::Set;
-    
-        // Skip the `Set` keyword if present
         let mut i = if is_set_assignment { 1 } else { 0 };
-    
+
         // Skip leading whitespace
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
         }
-    
-        // Expect an identifier (variable name)
+
         if i >= tokens.len() || tokens[i].token_type != TokenType::Identifier {
             return Err(VBSErrorType::SyntaxError.into_error(
                 format!("Expected variable name, found: {:?}", tokens.get(i)),
             ));
         }
-    
+
         let var_name = tokens[i].value.clone();
         i += 1;
-    
-        // Skip whitespace after the variable name
+
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
         }
-    
-        // Expect an assignment operator (`=`)
+
         if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
             return Err(VBSErrorType::SyntaxError.into_error(
                 format!("Expected '=', found: {:?}", tokens.get(i)),
             ));
         }
         i += 1;
-    
-        // Skip whitespace after the assignment operator
-        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
-            i += 1;
-        }
-    
-        // Collect the remaining tokens as the value to assign
-        let value_tokens = &tokens[i..];
-        let value = value_tokens
-            .iter()
-            .map(|token| token.value.clone())
-            .collect::<Vec<String>>()
-            .join(" ");
-    
-        // Create an Assignment syntax object
-        Ok(Some(Box::new(Assignment::new(var_name, value))))
+
+        let expr = parse_expression(&tokens[i..])?;
+        Ok(Some(Box::new(Assignment::new(var_name, expr))))
     }
 
 

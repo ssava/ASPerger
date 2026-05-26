@@ -14,7 +14,7 @@ impl Dim {
 impl VBSyntax for Dim {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         for var_name in &self.var_names {
-            context.set_variable(var_name, VBValue::Null);
+            context.set_variable(var_name, VBValue::Empty);
         }
         Ok(())
     }

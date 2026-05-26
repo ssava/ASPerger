@@ -6,6 +6,7 @@ pub enum VBValue {
     Number(f64),
     Boolean(bool),
     Null,
+    Empty,
 }
 
 impl fmt::Display for VBValue {
@@ -13,8 +14,11 @@ impl fmt::Display for VBValue {
         match self {
             VBValue::String(s) => write!(f, "{}", s),
             VBValue::Number(n) => write!(f, "{}", n),
-            VBValue::Boolean(b) => write!(f, "{}", b),
+            VBValue::Boolean(b) => {
+                if *b { write!(f, "True") } else { write!(f, "False") }
+            },
             VBValue::Null => write!(f, "null"),
+            VBValue::Empty => write!(f, "Empty"),
         }
     }
 }

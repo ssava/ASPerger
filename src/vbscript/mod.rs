@@ -2,8 +2,10 @@ pub mod value;
 pub mod execution_context;
 pub mod interpreter;
 pub mod syntax;
+pub mod expr;
 pub mod vbs_error;
 pub mod tokenizer;
+pub mod block;
 
 #[cfg(test)]
 mod tests;
