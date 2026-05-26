@@ -1,41 +1,43 @@
 use super::vbs_error::{VBSError, VBSErrorType};
-use super::expr::{evaluate, parse_expression};
-use super::{ExecutionContext, Token, TokenType, VBScriptInterpreter, VBValue};
+use super::expr::{evaluate, parse_expression, Expr};
+use super::syntax::{Assignment, Dim, MethodCall, ResponseWrite, VBSyntax};
+use super::{ExecutionContext, Token, TokenType, VBValue};
 
 pub enum BlockStatement {
-    Line(Vec<Token>),
+    Syntax(Box<dyn VBSyntax>),
+    Unrecognized(String),
     If {
-        condition_tokens: Vec<Token>,
+        condition: Expr,
         then_body: Vec<BlockStatement>,
         else_if_blocks: Vec<ElseIfBlock>,
         else_body: Option<Vec<BlockStatement>>,
     },
     For {
         counter: String,
-        start_tokens: Vec<Token>,
-        end_tokens: Vec<Token>,
-        step_tokens: Option<Vec<Token>>,
+        start: Expr,
+        end: Expr,
+        step: Option<Expr>,
         body: Vec<BlockStatement>,
     },
     While {
-        condition_tokens: Vec<Token>,
+        condition: Expr,
         body: Vec<BlockStatement>,
     },
     Do {
         body: Vec<BlockStatement>,
-        condition_tokens: Option<Vec<Token>>,
+        condition: Option<Expr>,
         is_until: bool,
         is_post_test: bool,
     },
     ForEach {
         element: String,
-        group_tokens: Vec<Token>,
+        group: Expr,
         body: Vec<BlockStatement>,
     },
 }
 
 pub struct ElseIfBlock {
-    pub condition_tokens: Vec<Token>,
+    pub condition: Expr,
     pub body: Vec<BlockStatement>,
 }
 
@@ -49,10 +51,207 @@ fn find_token(tokens: &[Token], target: TokenType) -> Option<usize> {
 
 fn find_keyword_or_type(tokens: &[Token], keyword: &str, token_type: TokenType) -> Option<usize> {
     tokens.iter().position(|t| {
-        t.token_type == token_type || 
+        t.token_type == token_type ||
         (t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case(keyword))
     })
 }
+
+// ===== Line-level parsing (migrated from VBScriptInterpreter) =====
+
+fn tokens_to_string(tokens: &[Token]) -> String {
+    tokens.iter().map(|t| t.value.clone()).collect::<Vec<String>>().join(" ")
+}
+
+fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<String>, VBSError> {
+    let mut var_names = Vec::new();
+    let mut i = 1;
+
+    while i < tokens.len() {
+        if tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+            continue;
+        }
+        if tokens[i].token_type != TokenType::Identifier {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected variable name, found: {}", tokens[i].value)
+            ));
+        }
+        var_names.push(tokens[i].value.clone());
+        i += 1;
+        if i < tokens.len() && tokens[i].token_type == TokenType::Comma {
+            i += 1;
+        } else {
+            break;
+        }
+    }
+
+    if var_names.is_empty() {
+        return Err(VBSErrorType::SyntaxError.into_error("No variable names found in 'Dim' statement".to_string()));
+    }
+    Ok(var_names)
+}
+
+fn parse_assignment_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    if tokens.is_empty() {
+        return Err(VBSErrorType::SyntaxError.into_error("Empty assignment statement".to_string()));
+    }
+
+    let is_set_assignment = tokens[0].token_type == TokenType::Set;
+    let mut i = if is_set_assignment { 1 } else { 0 };
+
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+        i += 1;
+    }
+
+    if i >= tokens.len() || tokens[i].token_type != TokenType::Identifier {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            format!("Expected variable name, found: {:?}", tokens.get(i)),
+        ));
+    }
+
+    let var_name = tokens[i].value.clone();
+    i += 1;
+
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+        i += 1;
+    }
+
+    if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            format!("Expected '=', found: {:?}", tokens.get(i)),
+        ));
+    }
+    i += 1;
+
+    let expr = parse_expression(&tokens[i..])?;
+    Ok(Box::new(Assignment::new(var_name, expr)))
+}
+
+fn find_method_token(tokens: &[Token], method_name: &str) -> Option<usize> {
+    let dot_idx = tokens.iter().position(|t| t.token_type == TokenType::Dot)?;
+    let start = dot_idx + 1;
+    tokens[start..].iter().position(|t| {
+        t.token_type == TokenType::Identifier && t.value == method_name
+    }).map(|offset| start + offset)
+}
+
+fn parse_comma_args(tokens: &[Token]) -> Result<Vec<Expr>, VBSError> {
+    if tokens.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !tokens.iter().any(|t| t.token_type == TokenType::Comma) {
+        return Ok(vec![parse_expression(tokens)?]);
+    }
+    let mut args = Vec::new();
+    let mut start = 0;
+    for (i, tok) in tokens.iter().enumerate() {
+        if tok.token_type == TokenType::Comma {
+            if i > start {
+                let arg_tokens: Vec<Token> = tokens[start..i].to_vec();
+                args.push(parse_expression(&arg_tokens)?);
+            }
+            start = i + 1;
+        }
+    }
+    if start < tokens.len() {
+        let arg_tokens: Vec<Token> = tokens[start..].to_vec();
+        args.push(parse_expression(&arg_tokens)?);
+    }
+    Ok(args)
+}
+
+fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let non_ws: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+
+    // Response.Write expr
+    if non_ws.len() >= 3
+        && non_ws[0].value.eq_ignore_ascii_case("response")
+        && non_ws[1].token_type == TokenType::Dot
+        && non_ws[2].value.eq_ignore_ascii_case("write")
+    {
+        let mut expr_start = tokens.len();
+        let mut found_write = false;
+        for (i, tok) in tokens.iter().enumerate() {
+            if tok.token_type != TokenType::WhiteSpace && tok.value.eq_ignore_ascii_case("write") {
+                found_write = true;
+                continue;
+            }
+            if found_write {
+                expr_start = i;
+                break;
+            }
+        }
+        let expr = if expr_start < tokens.len() {
+            parse_expression(&tokens[expr_start..])?
+        } else {
+            Expr::Literal(VBValue::Empty)
+        };
+        return Ok(Box::new(ResponseWrite::new(expr)));
+    }
+
+    // var = expr (bare assignment, no Set keyword)
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::Assign
+    {
+        let var_name = non_ws[0].value.clone();
+        let assign_idx = tokens.iter().position(|t| t.token_type == TokenType::Assign).unwrap();
+        let expr = parse_expression(&tokens[assign_idx + 1..])?;
+        return Ok(Box::new(Assignment::new(var_name, expr)));
+    }
+
+    // obj.Method arg1, arg2, ... (method call)
+    if non_ws.len() >= 3
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::Dot
+        && non_ws[2].token_type == TokenType::Identifier
+    {
+        let object_name = non_ws[0].value.clone();
+        let method_name = non_ws[2].value.clone();
+
+        let args = if let Some(mi) = find_method_token(tokens, &method_name) {
+            let arg_tokens = &tokens[mi + 1..];
+            parse_comma_args(arg_tokens)?
+        } else {
+            Vec::new()
+        };
+
+        return Ok(Box::new(MethodCall::new(object_name, method_name, args)));
+    }
+
+    Err(VBSErrorType::NotImplementedError
+        .into_error(format!("Unrecognized command: {}", tokens_to_string(tokens))))
+}
+
+fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let first_token = tokens.iter()
+        .find(|t| t.token_type != TokenType::WhiteSpace)
+        .ok_or_else(|| VBSErrorType::SyntaxError.into_error("Empty statement".to_string()))?;
+
+    match first_token.token_type {
+        TokenType::Dim => {
+            let var_names = parse_dim_statement(tokens)?;
+            Ok(Box::new(Dim::new(var_names)))
+        }
+        TokenType::Set => {
+            parse_assignment_statement(tokens)
+        }
+        _ => {
+            parse_expression_or_assignment(tokens)
+        }
+    }
+}
+
+// ===== Token-to-Expr helpers =====
+
+fn parse_tokens_to_expr(tokens: &[Token]) -> Result<Expr, VBSError> {
+    if tokens.is_empty() {
+        return Ok(Expr::Literal(VBValue::Empty));
+    }
+    parse_expression(tokens)
+}
+
+// ===== Block parsing =====
 
 pub fn parse_blocks(lines: &[Vec<Token>]) -> Result<Vec<BlockStatement>, VBSError> {
     let mut pos = 0;
@@ -99,7 +298,11 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
                     *pos += 1;
                     continue;
                 }
-                blocks.push(BlockStatement::Line(line.clone()));
+                let line_text = tokens_to_string(line);
+                blocks.push(match parse_line_into_syntax(line) {
+                    Ok(syntax) => BlockStatement::Syntax(syntax),
+                    Err(_) => BlockStatement::Unrecognized(line_text),
+                });
                 *pos += 1;
             }
         }
@@ -108,17 +311,30 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
     Ok(blocks)
 }
 
-fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
-    let line = lines[*pos].clone();
-    *pos += 1;
-
-    let then_idx = find_keyword_or_type(&line, "then", TokenType::Then)
-        .ok_or_else(|| VBSErrorType::SyntaxError.into_error("If without Then".to_string()))?;
-
-    let condition_tokens: Vec<Token> = line[1..then_idx].iter()
+fn parse_expr_from_range(tokens: &[Token], start: usize, end: usize) -> Result<Expr, VBSError> {
+    let filtered: Vec<Token> = tokens[start..end].iter()
         .filter(|t| t.token_type != TokenType::WhiteSpace)
         .cloned()
         .collect();
+    parse_tokens_to_expr(&filtered)
+}
+
+fn parse_expr_from_slice(tokens: &[Token], start: usize) -> Result<Expr, VBSError> {
+    let filtered: Vec<Token> = tokens[start..].iter()
+        .filter(|t| t.token_type != TokenType::WhiteSpace)
+        .cloned()
+        .collect();
+    parse_tokens_to_expr(&filtered)
+}
+
+fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let then_idx = find_keyword_or_type(line, "then", TokenType::Then)
+        .ok_or_else(|| VBSErrorType::SyntaxError.into_error("If without Then".to_string()))?;
+
+    let condition = parse_expr_from_range(line, 1, then_idx)?;
 
     let after_then: Vec<&Token> = line[then_idx + 1..].iter()
         .filter(|t| t.token_type != TokenType::WhiteSpace)
@@ -126,16 +342,25 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
 
     if !after_then.is_empty() {
         let inline_tokens: Vec<Token> = line[then_idx + 1..].to_vec();
-        let then_body = vec![BlockStatement::Line(inline_tokens)];
+        let line_text = tokens_to_string(&inline_tokens);
+        let syntax = match parse_line_into_syntax(&inline_tokens) {
+            Ok(s) => s,
+            Err(_) => return Ok(BlockStatement::If {
+                condition,
+                then_body: vec![BlockStatement::Unrecognized(line_text)],
+                else_if_blocks: Vec::new(),
+                else_body: None,
+            }),
+        };
+        let then_body = vec![BlockStatement::Syntax(syntax)];
         return Ok(BlockStatement::If {
-            condition_tokens,
+            condition,
             then_body,
             else_if_blocks: Vec::new(),
             else_body: None,
         });
     }
 
-    // Block If: use an enum to track which section we're collecting into
     enum Section {
         Then,
         ElseIf(usize),
@@ -167,36 +392,41 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
                         break;
                     }
                 }
+                let line_text = tokens_to_string(next_line);
+                let syntax = parse_line_into_syntax(next_line).unwrap_or_else(|_| Box::new(create_error_syntax(line_text.clone())));
                 match &section {
-                    Section::Then => then_body.push(BlockStatement::Line(next_line.clone())),
-                    Section::ElseIf(idx) => else_if_blocks[*idx].body.push(BlockStatement::Line(next_line.clone())),
-                    Section::Else => { if let Some(ref mut eb) = else_body { eb.push(BlockStatement::Line(next_line.clone())); } }
+                    Section::Then => then_body.push(BlockStatement::Syntax(syntax)),
+                    Section::ElseIf(idx) => else_if_blocks[*idx].body.push(BlockStatement::Syntax(syntax)),
+                    Section::Else => { if let Some(ref mut eb) = else_body { eb.push(BlockStatement::Syntax(syntax)); } }
                 }
                 *pos += 1;
             }
             Some(t) if t.token_type == TokenType::ElseIf => {
-                let elseif_line = lines[*pos].clone();
+                let elseif_line = &lines[*pos];
                 *pos += 1;
 
-                let then_idx = find_keyword_or_type(&elseif_line, "then", TokenType::Then)
+                let then_idx = find_keyword_or_type(elseif_line, "then", TokenType::Then)
                     .ok_or_else(|| VBSErrorType::SyntaxError.into_error("ElseIf without Then".to_string()))?;
 
-                let elseif_cond: Vec<Token> = elseif_line[1..then_idx].iter()
-                    .filter(|t| t.token_type != TokenType::WhiteSpace)
-                    .cloned()
-                    .collect();
+                let elseif_cond = parse_expr_from_range(elseif_line, 1, then_idx)?;
 
                 let after_then: Vec<&Token> = elseif_line[then_idx + 1..].iter()
                     .filter(|t| t.token_type != TokenType::WhiteSpace)
                     .collect();
 
                 if !after_then.is_empty() {
-                    let inline_body = vec![BlockStatement::Line(elseif_line[then_idx + 1..].to_vec())];
-                    else_if_blocks.push(ElseIfBlock { condition_tokens: elseif_cond, body: inline_body });
+                    let inline_tokens: Vec<Token> = elseif_line[then_idx + 1..].to_vec();
+                    let line_text = tokens_to_string(&inline_tokens);
+                    let syntax = match parse_line_into_syntax(&inline_tokens) {
+                        Ok(s) => s,
+                        Err(_) => Box::new(create_error_syntax(line_text)),
+                    };
+                    let inline_body = vec![BlockStatement::Syntax(syntax)];
+                    else_if_blocks.push(ElseIfBlock { condition: elseif_cond, body: inline_body });
                     else_body.get_or_insert_with(Vec::new);
                     section = Section::Else;
                 } else {
-                    else_if_blocks.push(ElseIfBlock { condition_tokens: elseif_cond, body: Vec::new() });
+                    else_if_blocks.push(ElseIfBlock { condition: elseif_cond, body: Vec::new() });
                     section = Section::ElseIf(else_if_blocks.len() - 1);
                 }
             }
@@ -217,7 +447,7 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
     }
 
     Ok(BlockStatement::If {
-        condition_tokens,
+        condition,
         then_body,
         else_if_blocks,
         else_body,
@@ -225,62 +455,39 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
 }
 
 fn parse_for_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
-    let line = lines[*pos].clone();
+    let line = &lines[*pos];
     *pos += 1;
 
-    // For counter = start To end [Step step]
-    // Find the counter (first Identifier after For)
     let for_line_no_ws: Vec<&Token> = line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
 
     if for_line_no_ws.len() < 5 {
         return Err(VBSErrorType::SyntaxError.into_error("Invalid For statement".to_string()));
     }
 
-    // After "For", expect Identifier "=" expr "To" expr [ "Step" expr ]
     let counter = for_line_no_ws[1].value.clone();
 
-    // Check for "For Each" syntax: For Each element In group ... Next
     if counter.eq_ignore_ascii_case("each") {
-        return parse_for_each_block(&line, pos, lines, &for_line_no_ws);
+        return parse_for_each_block(line, pos, lines, &for_line_no_ws);
     }
 
-    // Find Assign, To, and Step positions in the original (with whitespace) token list
-    let assign_idx = find_token(&line, TokenType::Assign)
+    let assign_idx = find_token(line, TokenType::Assign)
         .ok_or_else(|| VBSErrorType::SyntaxError.into_error("For without =".to_string()))?;
 
-    let to_idx = find_keyword_or_type(&line, "to", TokenType::To)
+    let to_idx = find_keyword_or_type(line, "to", TokenType::To)
         .ok_or_else(|| VBSErrorType::SyntaxError.into_error("For without To".to_string()))?;
 
-    let step_idx = find_keyword_or_type(&line, "step", TokenType::Step);
+    let step_idx = find_keyword_or_type(line, "step", TokenType::Step);
 
-    // start tokens: between = and To
-    let start_tokens: Vec<Token> = line[assign_idx + 1..to_idx].iter()
-        .filter(|t| t.token_type != TokenType::WhiteSpace)
-        .cloned()
-        .collect();
+    let start = parse_expr_from_range(line, assign_idx + 1, to_idx)?;
 
-    // end tokens: between To and Step (or To and end of line)
-    let end_tokens: Vec<Token> = if let Some(si) = step_idx {
-        line[to_idx + 1..si].iter()
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .cloned()
-            .collect()
+    let end = if let Some(si) = step_idx {
+        parse_expr_from_range(line, to_idx + 1, si)?
     } else {
-        line[to_idx + 1..].iter()
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .cloned()
-            .collect()
+        parse_expr_from_slice(line, to_idx + 1)?
     };
 
-    // step tokens: after Step
-    let step_tokens: Option<Vec<Token>> = step_idx.map(|si| {
-        line[si + 1..].iter()
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .cloned()
-            .collect()
-    });
+    let step: Option<Expr> = step_idx.map(|si| parse_expr_from_slice(line, si + 1)).transpose()?;
 
-    // Parse body until Next
     let mut body = Vec::new();
     loop {
         if *pos >= lines.len() {
@@ -304,42 +511,31 @@ fn parse_for_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
 
     Ok(BlockStatement::For {
         counter,
-        start_tokens,
-        end_tokens,
-        step_tokens,
+        start,
+        end,
+        step,
         body,
     })
 }
 
 fn parse_for_each_block(
-    line: &Vec<Token>,
+    line: &[Token],
     pos: &mut usize,
     lines: &[Vec<Token>],
     for_line_no_ws: &[&Token],
 ) -> Result<BlockStatement, VBSError> {
-    // for_line_no_ws = [For, Each, element, In, group_expr...]
     if for_line_no_ws.len() < 5 {
         return Err(VBSErrorType::SyntaxError.into_error("Invalid For Each statement".to_string()));
     }
 
     let element = for_line_no_ws[2].value.clone();
 
-    // Find In keyword in the original token line
     let in_idx = line.iter().position(|t| {
         t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("in")
     }).ok_or_else(|| VBSErrorType::SyntaxError.into_error("For Each without In".to_string()))?;
 
-    // Group expression tokens: everything after In
-    let group_tokens: Vec<Token> = line[in_idx + 1..].iter()
-        .filter(|t| t.token_type != TokenType::WhiteSpace)
-        .cloned()
-        .collect();
+    let group = parse_expr_from_slice(line, in_idx + 1)?;
 
-    if group_tokens.is_empty() {
-        return Err(VBSErrorType::SyntaxError.into_error("For Each without group expression".to_string()));
-    }
-
-    // Parse body until Next
     let mut body = Vec::new();
     loop {
         if *pos >= lines.len() {
@@ -361,18 +557,14 @@ fn parse_for_each_block(
         }
     }
 
-    Ok(BlockStatement::ForEach { element, group_tokens, body })
+    Ok(BlockStatement::ForEach { element, group, body })
 }
 
 fn parse_while_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
-    let line = lines[*pos].clone();
+    let line = &lines[*pos];
     *pos += 1;
 
-    // While condition
-    let condition_tokens: Vec<Token> = line[1..].iter()
-        .filter(|t| t.token_type != TokenType::WhiteSpace)
-        .cloned()
-        .collect();
+    let condition = parse_expr_from_slice(line, 1)?;
 
     let mut body = Vec::new();
     loop {
@@ -399,22 +591,18 @@ fn parse_while_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockState
         }
     }
 
-    Ok(BlockStatement::While {
-        condition_tokens,
-        body,
-    })
+    Ok(BlockStatement::While { condition, body })
 }
 
 fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
-    let line = lines[*pos].clone();
+    let line = &lines[*pos];
     *pos += 1;
 
-    // Do [{While|Until} condition] ... Loop [{While|Until} condition]
     let do_line_no_ws: Vec<&Token> = line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
 
     let mut is_pre_test = false;
     let mut is_until = false;
-    let mut pre_condition_tokens: Option<Vec<Token>> = None;
+    let mut pre_condition: Option<Expr> = None;
 
     if do_line_no_ws.len() > 1 {
         let second = &do_line_no_ws[1];
@@ -422,27 +610,20 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
         if second_upper == "WHILE" || second.token_type == TokenType::While {
             is_pre_test = true;
             is_until = false;
-            // Extract condition tokens after While
-            let while_idx = find_keyword_or_type(&line, "while", TokenType::While).unwrap();
-            pre_condition_tokens = Some(line[while_idx + 1..].iter()
-                .filter(|t| t.token_type != TokenType::WhiteSpace)
-                .cloned()
-                .collect());
+            let while_idx = find_keyword_or_type(line, "while", TokenType::While).unwrap();
+            pre_condition = Some(parse_expr_from_slice(line, while_idx + 1)?);
         } else if second_upper == "UNTIL" {
             is_pre_test = true;
             is_until = true;
             let until_idx = line.iter().position(|t| {
                 t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("until")
             }).unwrap();
-            pre_condition_tokens = Some(line[until_idx + 1..].iter()
-                .filter(|t| t.token_type != TokenType::WhiteSpace)
-                .cloned()
-                .collect());
+            pre_condition = Some(parse_expr_from_slice(line, until_idx + 1)?);
         }
     }
 
     let mut body = Vec::new();
-    let mut post_condition_tokens: Option<Vec<Token>> = None;
+    let mut post_condition: Option<Expr> = None;
     let mut is_post_until = false;
 
     loop {
@@ -455,7 +636,7 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
 
         match first {
             Some(t) if t.token_type == TokenType::Loop => {
-                let loop_line = lines[*pos].clone();
+                let loop_line = &lines[*pos];
                 *pos += 1;
 
                 let loop_no_ws: Vec<&Token> = loop_line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
@@ -464,20 +645,14 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
                     let second_upper = second.value.to_uppercase();
                     if second_upper == "WHILE" || second.token_type == TokenType::While {
                         is_post_until = false;
-                        let while_idx = find_keyword_or_type(&loop_line, "while", TokenType::While).unwrap();
-                        post_condition_tokens = Some(loop_line[while_idx + 1..].iter()
-                            .filter(|t| t.token_type != TokenType::WhiteSpace)
-                            .cloned()
-                            .collect());
+                        let while_idx = find_keyword_or_type(loop_line, "while", TokenType::While).unwrap();
+                        post_condition = Some(parse_expr_from_slice(loop_line, while_idx + 1)?);
                     } else if second_upper == "UNTIL" {
                         is_post_until = true;
                         let until_idx = loop_line.iter().position(|t| {
-                        t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("until")
-                    }).unwrap();
-                        post_condition_tokens = Some(loop_line[until_idx + 1..].iter()
-                            .filter(|t| t.token_type != TokenType::WhiteSpace)
-                            .cloned()
-                            .collect());
+                            t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("until")
+                        }).unwrap();
+                        post_condition = Some(parse_expr_from_slice(loop_line, until_idx + 1)?);
                     }
                 }
                 break;
@@ -489,34 +664,27 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
         }
     }
 
-    // If there's a pre-test condition, use it; otherwise use post-test condition
     if is_pre_test {
         Ok(BlockStatement::Do {
             body,
-            condition_tokens: pre_condition_tokens,
+            condition: pre_condition,
             is_until,
             is_post_test: false,
         })
     } else {
         Ok(BlockStatement::Do {
             body,
-            condition_tokens: post_condition_tokens,
+            condition: post_condition,
             is_until: is_post_until,
             is_post_test: true,
         })
     }
 }
 
-fn eval_token_expression(tokens: &[Token], context: &ExecutionContext) -> Result<VBValue, VBSError> {
-    if tokens.is_empty() {
-        return Ok(VBValue::Empty);
-    }
-    let expr = parse_expression(tokens)?;
-    evaluate(&expr, context)
-}
+// ===== Execution =====
 
-fn evaluate_condition(tokens: &[Token], context: &ExecutionContext) -> Result<bool, VBSError> {
-    let val = eval_token_expression(tokens, context)?;
+fn evaluate_condition(expr: &Expr, context: &ExecutionContext) -> Result<bool, VBSError> {
+    let val = evaluate(expr, context)?;
     if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
@@ -530,8 +698,8 @@ fn evaluate_condition(tokens: &[Token], context: &ExecutionContext) -> Result<bo
     })
 }
 
-fn evaluate_numeric(tokens: &[Token], context: &ExecutionContext) -> Result<f64, VBSError> {
-    let val = eval_token_expression(tokens, context)?;
+fn evaluate_numeric(expr: &Expr, context: &ExecutionContext) -> Result<f64, VBSError> {
+    let val = evaluate(expr, context)?;
     if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
@@ -546,85 +714,94 @@ fn evaluate_numeric(tokens: &[Token], context: &ExecutionContext) -> Result<f64,
     })
 }
 
+struct ErrorSyntax {
+    message: String,
+}
+
+impl VBSyntax for ErrorSyntax {
+    fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+        Err(VBSErrorType::NotImplementedError
+            .into_error(format!("Unrecognized command: {}", self.message)))
+    }
+}
+
+fn create_error_syntax(message: String) -> ErrorSyntax {
+    ErrorSyntax { message }
+}
+
 pub fn execute_blocks(
     blocks: &[BlockStatement],
-    interpreter: &VBScriptInterpreter,
     context: &mut ExecutionContext,
 ) -> Result<(), VBSError> {
     for block in blocks {
         match block {
-            BlockStatement::Line(tokens) => {
-                let result = interpreter.create_syntax_from_tokens(tokens);
-                match result {
-                    Ok(Some(syntax)) => syntax.execute(context)?,
-                    Ok(None) => {
-                        let line_text: String = tokens.iter().map(|t| t.value.clone()).collect::<Vec<_>>().join(" ");
-                        return Err(VBSErrorType::NotImplementedError
-                            .into_error(format!("Unrecognized command: {}", line_text)));
-                    }
-                    Err(e) => return Err(e),
-                }
+            BlockStatement::Syntax(syntax) => {
+                syntax.execute(context)?;
+            }
+            BlockStatement::Unrecognized(line_text) => {
+                return Err(VBSErrorType::NotImplementedError
+                    .into_error(format!("Unrecognized command: {}", line_text)));
             }
             BlockStatement::If {
-                condition_tokens,
+                condition,
                 then_body,
                 else_if_blocks,
                 else_body,
             } => {
-                if evaluate_condition(condition_tokens, context)? {
-                    execute_blocks(then_body, interpreter, context)?;
+                if evaluate_condition(condition, context)? {
+                    execute_blocks(then_body, context)?;
                 } else {
                     let mut handled = false;
                     for elseif in else_if_blocks {
-                        if evaluate_condition(&elseif.condition_tokens, context)? {
-                            execute_blocks(&elseif.body, interpreter, context)?;
+                        if evaluate_condition(&elseif.condition, context)? {
+                            execute_blocks(&elseif.body, context)?;
                             handled = true;
                             break;
                         }
                     }
                     if !handled {
                         if let Some(body) = else_body {
-                            execute_blocks(body, interpreter, context)?;
+                            execute_blocks(body, context)?;
                         }
                     }
                 }
             }
             BlockStatement::For {
                 counter,
-                start_tokens,
-                end_tokens,
-                step_tokens,
+                start,
+                end,
+                step,
                 body,
             } => {
-                let start = evaluate_numeric(start_tokens, context)?;
-                let end = evaluate_numeric(end_tokens, context)?;
-                let step = step_tokens.as_ref()
-                    .map(|t| evaluate_numeric(t, context))
+                let start_val = evaluate_numeric(start, context)?;
+                let end_val = evaluate_numeric(end, context)?;
+                let step_val = step.as_ref()
+                    .map(|s| evaluate_numeric(s, context))
                     .unwrap_or(Ok(1.0))?;
 
-                let mut i = start;
-                if step > 0.0 {
-                    while i <= end {
-                        context.set_variable(&counter, VBValue::Number(i));
-                        execute_blocks(body, interpreter, context)?;
-                        i += step;
+                let mut i = start_val;
+                if step_val > 0.0 {
+                    while i <= end_val {
+                        context.set_variable(counter, VBValue::Number(i));
+                        execute_blocks(body, context)?;
+                        i += step_val;
                     }
-                } else if step < 0.0 {
-                    while i >= end {
-                        context.set_variable(&counter, VBValue::Number(i));
-                        execute_blocks(body, interpreter, context)?;
-                        i += step;
+                } else if step_val < 0.0 {
+                    while i >= end_val {
+                        context.set_variable(counter, VBValue::Number(i));
+                        execute_blocks(body, context)?;
+                        i += step_val;
                     }
                 }
-                context.set_variable(&counter, VBValue::Number(i));
+                context.set_variable(counter, VBValue::Number(i));
             }
-            BlockStatement::ForEach { element, group_tokens, body } => {
-                let group = eval_token_expression(group_tokens, context)?;
-                match group {
+            BlockStatement::ForEach { element, group, body } => {
+                let group_val = evaluate(group, context)?;
+                match group_val {
                     VBValue::Array(items) => {
                         for item in items {
                             context.set_variable(element, item);
-                            execute_blocks(body, interpreter, context)?;
+                            execute_blocks(body, context)?;
                         }
                     }
                     _ => {
@@ -634,24 +811,21 @@ pub fn execute_blocks(
                     }
                 }
             }
-            BlockStatement::While {
-                condition_tokens,
-                body,
-            } => {
-                while evaluate_condition(condition_tokens, context)? {
-                    execute_blocks(body, interpreter, context)?;
+            BlockStatement::While { condition, body } => {
+                while evaluate_condition(condition, context)? {
+                    execute_blocks(body, context)?;
                 }
             }
             BlockStatement::Do {
                 body,
-                condition_tokens,
+                condition,
                 is_until,
                 is_post_test,
             } => {
                 if *is_post_test {
                     loop {
-                        execute_blocks(body, interpreter, context)?;
-                        if let Some(cond) = condition_tokens {
+                        execute_blocks(body, context)?;
+                        if let Some(cond) = condition {
                             let result = evaluate_condition(cond, context)?;
                             if *is_until {
                                 if result { break; }
@@ -659,13 +833,12 @@ pub fn execute_blocks(
                                 if !result { break; }
                             }
                         } else {
-                            break; // No condition — execute once? Actually Do...Loop without condition is infinite
+                            break;
                         }
                     }
                 } else {
-                    // Pre-test
                     loop {
-                        if let Some(cond) = condition_tokens {
+                        if let Some(cond) = condition {
                             let result = evaluate_condition(cond, context)?;
                             if *is_until {
                                 if result { break; }
@@ -673,7 +846,7 @@ pub fn execute_blocks(
                                 if !result { break; }
                             }
                         }
-                        execute_blocks(body, interpreter, context)?;
+                        execute_blocks(body, context)?;
                     }
                 }
             }
