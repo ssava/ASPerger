@@ -5,14 +5,14 @@ pub struct ASPError {
 }
 
 impl ASPError {
-    pub fn new(code: u16, message: String) -> Self {
-        ASPError { code, message }
+    pub fn new(code: u16, message: impl Into<String>) -> Self {
+        ASPError { code, message: message.into() }
     }
 }
 
 impl std::fmt::Display for ASPError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Codice {}]: {}", self.code, self.message)
+        write!(f, "[Code {}]: {}", self.code, self.message)
     }
 }
 

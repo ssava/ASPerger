@@ -12,7 +12,7 @@ impl VBSError {
 
 impl std::fmt::Display for VBSError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[Codice {}]: {}", self.code, self.message)
+        write!(f, "[Code {}]: {}", self.code, self.message)
     }
 }
 
@@ -21,12 +21,9 @@ impl std::error::Error for VBSError {}
 #[derive(Debug)]
 pub enum VBSErrorType {
     SyntaxError = 1001,
-    TypeError = 1002,
-    NameError = 1003,
-    ValueError = 1004,
-    RuntimeError = 1005,
-    NotImplementedError = 1006,
-    BlockMismatchError = 1007,
+    ValueError = 1002,
+    RuntimeError = 1003,
+    NotImplementedError = 1004,
 }
 
 impl VBSErrorType {

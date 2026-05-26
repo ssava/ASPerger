@@ -1,4 +1,5 @@
 use regex::Regex;
+use std::sync::OnceLock;
 
 #[derive(Debug)]
 pub enum AspBlock {
@@ -10,6 +11,11 @@ pub struct AspParser {
     content: String,
 }
 
+fn get_asp_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"<%(?s)(.*?)%>").unwrap())
+}
+
 impl AspParser {
     pub fn new(content: String) -> Self {
         AspParser { content }
@@ -17,7 +23,7 @@ impl AspParser {
 
     pub fn parse(&self) -> Vec<AspBlock> {
         let mut blocks = Vec::new();
-        let re = Regex::new(r"<%(?s)(.*?)%>").unwrap();
+        let re = get_asp_regex();
         let mut last_end = 0;
 
         for cap in re.captures_iter(&self.content) {
@@ -26,9 +32,7 @@ impl AspParser {
             
             if whole_match.start() > last_end {
                 let html = &self.content[last_end..whole_match.start()];
-                if !html.trim().is_empty() {
-                    blocks.push(AspBlock::Html(html.to_string()));
-                }
+                blocks.push(AspBlock::Html(html.to_string()));
             }
 
             if !code.trim().is_empty() {
@@ -40,9 +44,7 @@ impl AspParser {
 
         if last_end < self.content.len() {
             let html = &self.content[last_end..];
-            if !html.trim().is_empty() {
-                blocks.push(AspBlock::Html(html.to_string()));
-            }
+            blocks.push(AspBlock::Html(html.to_string()));
         }
 
         blocks

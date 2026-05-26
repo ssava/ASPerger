@@ -6,7 +6,6 @@ pub enum VBValue {
     Number(f64),
     Boolean(bool),
     Null,
-    Function(Vec<String>, String),
 }
 
 impl fmt::Display for VBValue {
@@ -16,9 +15,6 @@ impl fmt::Display for VBValue {
             VBValue::Number(n) => write!(f, "{}", n),
             VBValue::Boolean(b) => write!(f, "{}", b),
             VBValue::Null => write!(f, "null"),
-            VBValue::Function(params, body) => {
-                write!(f, "Function({}) {{\n{}\n}}", params.join(", "), body)
-            }
         }
     }
 }
@@ -44,7 +40,7 @@ impl FromStr for VBValue {
             // Parse as a string (remove surrounding quotes)
             Ok(VBValue::String(trimmed[1..trimmed.len() - 1].to_string()))
         } else {
-            Err(format!("Impossibile interpretare '{}' come un valore valido", s))
+            Err(format!("Cannot interpret '{}' as a valid value", s))
         }
     }
 }

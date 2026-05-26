@@ -7,7 +7,6 @@ pub enum TokenType {
     Class,
     Function,
     Sub,
-    Call,
     Dim,
     If,
     Then,
@@ -24,18 +23,13 @@ pub enum TokenType {
     Case,
     With,
     Set,
-    Let,
     New,
     True,
     False,
     Nothing,
     Null,
     Empty,
-    Option,
-    Explicit,
-    Private,
-    Public,
-    
+
     // Operators
     Plus,
     Minus,
@@ -56,7 +50,7 @@ pub enum TokenType {
     LessEqual,
     NotEqual,
     Equal,
-    
+
     // Literals
     Identifier,
     StringLiteral,
@@ -65,11 +59,12 @@ pub enum TokenType {
     DateLiteral,
     HexLiteral,
     OctLiteral,
-    
+
     // Other
     NewLine,
     Comment,
     WhiteSpace,
+    Invalid,
     EOF,
 }
 
@@ -77,8 +72,6 @@ pub enum TokenType {
 pub struct Token {
     pub token_type: TokenType,
     pub value: String,
-    pub line: usize,
-    pub column: usize,
 }
 
 pub struct Tokenizer<'a> {
@@ -160,8 +153,6 @@ impl<'a> Tokenizer<'a> {
         Some(Token {
             token_type: TokenType::EOF,
             value: String::new(),
-            line: self.current_line,
-            column: self.current_column,
         })
     }
 
@@ -175,7 +166,6 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn handle_newline(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         
         while let Some(&c) = self.input.peek() {
@@ -192,14 +182,11 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type: TokenType::NewLine,
-            value,
-            line: self.current_line - 1,
-            column: start_column,
+value,
         }
     }
 
     fn tokenize_string(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         self.advance(); // consume opening quote
         
@@ -219,14 +206,11 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type: TokenType::StringLiteral,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
 
     fn tokenize_number(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         let mut is_float = false;
         let mut is_hex = false;
@@ -293,14 +277,11 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
 
     fn tokenize_identifier(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         
         while let Some(&c) = self.input.peek() {
@@ -316,9 +297,7 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
 
@@ -396,7 +375,6 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn tokenize_comment(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         
         self.advance(); // consume the comment character
@@ -411,14 +389,11 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type: TokenType::Comment,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
 
     fn tokenize_date(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         
         self.advance(); // consume opening #
@@ -434,14 +409,11 @@ impl<'a> Tokenizer<'a> {
         
         Token {
             token_type: TokenType::DateLiteral,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
     
     fn tokenize_operator(&mut self) -> Token {
-        let start_column = self.current_column;
         let mut value = String::new();
         
         // Get the first character of the operator
@@ -454,80 +426,64 @@ impl<'a> Tokenizer<'a> {
                 '+' => return Token {
                     token_type: TokenType::Plus,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '-' => return Token {
                     token_type: TokenType::Minus,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '*' => return Token {
                     token_type: TokenType::Multiply,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '/' => return Token {
                     token_type: TokenType::Divide,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '\\' => return Token {
                     token_type: TokenType::IntDivide,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '^' => return Token {
                     token_type: TokenType::Power,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '&' => return Token {
                     token_type: TokenType::Concat,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
-                '=' => return Token {
-                    token_type: TokenType::Assign,
-                    value,
-                    line: self.current_line,
-                    column: start_column,
+                '=' => {
+                    if self.input.peek() == Some(&'=') {
+                        value.push('=');
+                        self.advance();
+                        return Token {
+                            token_type: TokenType::Equal,
+                            value,
+                        };
+                    }
+                    return Token {
+                        token_type: TokenType::Assign,
+                        value,
+                    };
                 },
                 '.' => return Token {
                     token_type: TokenType::Dot,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 ',' => return Token {
                     token_type: TokenType::Comma,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 ':' => return Token {
                     token_type: TokenType::Colon,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '(' => return Token {
                     token_type: TokenType::LeftParen,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 ')' => return Token {
                     token_type: TokenType::RightParen,
                     value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 '>' => {
                     if self.input.peek() == Some(&'=') {
@@ -536,15 +492,11 @@ impl<'a> Tokenizer<'a> {
                         return Token {
                             token_type: TokenType::GreaterEqual,
                             value,
-                            line: self.current_line,
-                            column: start_column,
                         };
                     }
                     return Token {
                         token_type: TokenType::GreaterThan,
                         value,
-                        line: self.current_line,
-                        column: start_column,
                     };
                 },
                 '<' => {
@@ -554,8 +506,6 @@ impl<'a> Tokenizer<'a> {
                         return Token {
                             token_type: TokenType::LessEqual,
                             value,
-                            line: self.current_line,
-                            column: start_column,
                         };
                     } else if self.input.peek() == Some(&'>') {
                         value.push('>');
@@ -563,31 +513,19 @@ impl<'a> Tokenizer<'a> {
                         return Token {
                             token_type: TokenType::NotEqual,
                             value,
-                            line: self.current_line,
-                            column: start_column,
                         };
                     }
                     return Token {
                         token_type: TokenType::LessThan,
                         value,
-                        line: self.current_line,
-                        column: start_column,
                     };
-                },
-                '=' => return Token {
-                    token_type: TokenType::Equal,
-                    value,
-                    line: self.current_line,
-                    column: start_column,
                 },
                 _ => {
                     // Handle invalid operator
                     self.advance(); // Consume invalid character
                     return Token {
-                        token_type: TokenType::EOF, // Represent invalid operator as EOF or handle accordingly
+                        token_type: TokenType::Invalid,
                         value,
-                        line: self.current_line,
-                        column: start_column,
                     };
                 },
             }
@@ -596,9 +534,7 @@ impl<'a> Tokenizer<'a> {
         // Default return for unknown operator
         Token {
             token_type: TokenType::EOF,
-            value,
-            line: self.current_line,
-            column: start_column,
+value,
         }
     }
 }

@@ -4,6 +4,10 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct Config {
+    /// Indirizzo su cui il server sarà in ascolto
+    #[clap(long, default_value = "127.0.0.1")]
+    pub host: String,
+
     /// Porta su cui il server sarà in ascolto
     #[clap(short, long, default_value = "8080")]
     pub port: u16,

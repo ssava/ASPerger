@@ -43,7 +43,7 @@ impl VBScriptInterpreter {
                 None => {
                     let line_text = Self::tokens_to_string(&line_tokens);
                     return Err(VBSErrorType::NotImplementedError
-                        .into_error(format!("Comando non riconosciuto: {}", line_text)));
+                        .into_error(format!("Unrecognized command: {}", line_text)));
                 }
             }
         }
@@ -240,11 +240,8 @@ impl VBScriptInterpreter {
 
         match first_token.token_type {
             TokenType::Dim => self.parse_dim_statement(tokens),
-            TokenType::Set | TokenType::Let => self.parse_assignment_statement(tokens),
-            TokenType::If => self.parse_if_statement(tokens),
-            TokenType::Function => self.parse_function_declaration(tokens),
-            TokenType::Sub => self.parse_sub_declaration(tokens),
-            TokenType::Call => self.parse_call_statement(tokens),
+            TokenType::Set => self.parse_assignment_statement(tokens),
+
             _ => {
                 // Try to parse as expression or assignment if no keyword is recognized
                 self.parse_expression_or_assignment(tokens)
@@ -295,30 +292,6 @@ impl VBScriptInterpreter {
 
         Err(VBSErrorType::NotImplementedError
             .into_error("parse_expression_or_assignment Non implementata".to_string()))
-    }
-
-    fn parse_call_statement(
-        &self,
-        _tokens: &[Token],
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_call_statement Non implementata".to_string()))
-    }
-
-    fn parse_sub_declaration(
-        &self,
-        _tokens: &[Token],
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_sub_declaration Non implementata".to_string()))
-    }
-
-    fn parse_function_declaration(
-        &self,
-        _tokens: &[Token],
-    ) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_function_declaration Non implementata".to_string()))
     }
 
     fn parse_dim_statement(&self, tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
@@ -428,17 +401,5 @@ impl VBScriptInterpreter {
         Ok(Some(Box::new(Assignment::new(var_name, value))))
     }
 
-    fn parse_if_statement(&self, _tokens: &[Token]) -> Result<Option<Box<dyn VBSyntax>>, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("parse_if_statement Non implementata".to_string()))
-    }
 
-    pub(crate) fn evaluate_condition(
-        &self,
-        _condition: &str,
-        _context: &mut ExecutionContext,
-    ) -> Result<bool, VBSError> {
-        Err(VBSErrorType::NotImplementedError
-            .into_error("evaluate_condition Non implementata".to_string()))
-    }
 }

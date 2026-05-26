@@ -32,7 +32,7 @@ impl AspServer {
     }
 
     pub async fn start(&self) -> std::io::Result<()> {
-        let listener = TcpListener::bind(format!("127.0.0.1:{}", self.config.port)).await?;
+        let listener = TcpListener::bind(format!("{}:{}", self.config.host, self.config.port)).await?;
         println!(
             "Server listening on port {} serving files from {}",
             self.config.port, self.config.folder
@@ -86,6 +86,15 @@ impl AspServer {
         content_type: &str,
         content: &str
     ) -> Result<(), ASPError> {
+        let reason = match status {
+            200 => "OK",
+            400 => "Bad Request",
+            403 => "Forbidden",
+            404 => "Not Found",
+            405 => "Method Not Allowed",
+            500 => "Internal Server Error",
+            _ => "Unknown",
+        };
         let response = format!(
             "HTTP/1.1 {} {}\r\n\
              Content-Type: {}; charset=utf-8\r\n\
@@ -93,7 +102,7 @@ impl AspServer {
              \r\n\
              {}",
             status,
-            if status == 200 { "OK" } else { "Not Found" },
+            reason,
             content_type,
             content.len(),
             content
@@ -120,8 +129,17 @@ impl AspServer {
             ASPError::new(500, format!("Error reading from client: {}", e))
         })?;
 
-        let (method, path, headers) = Self::parse_request(&buffer)
-            .unwrap_or_else(|| (String::from("GET"), String::from("index.asp"), HashMap::new()));
+        let (method, path, _headers) = match Self::parse_request(&buffer) {
+            Some(result) => result,
+            None => {
+                return Self::send_response(
+                    stream,
+                    400,
+                    "text/plain",
+                    "Bad Request"
+                ).await;
+            }
+        };
 
         // Only handle GET requests for now
         if method != "GET" {
@@ -176,12 +194,15 @@ impl AspServer {
             let mut response_content = String::new();
 
             for block in blocks {
-                if let Err(e) = handler_chain.handle(&block, &mut context) {
-                    response_content.push_str(&format!("<!-- Error: {} -->", e));
-                } else {
-                    response_content.push_str(&context.response_buffer);
-                    context.flush_response_buffer();
+                match handler_chain.handle(&block, &mut context) {
+                    Ok(()) => {
+                        response_content.push_str(&context.response_buffer);
+                    }
+                    Err(e) => {
+                        response_content.push_str(&format!("<!-- Error: {} -->", e));
+                    }
                 }
+                context.flush_response_buffer();
             }
 
             Self::send_response(stream, 200, "text/html", &response_content).await

@@ -14,6 +14,6 @@ async fn main() {
     // Avvia il server con la configurazione specificata
     let server = AspServer::new(config);
     if let Err(e) = server.start().await {
-        eprintln!("Errore del server: {}", e);
+        eprintln!("Server error: {}", e);
     }
 }

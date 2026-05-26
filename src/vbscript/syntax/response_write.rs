@@ -27,13 +27,6 @@ impl VBSyntax for ResponseWrite {
 
         println!("Response.Write with content: {}", content);
 
-        // Handle string literals
-        if content.starts_with('(') && content.ends_with(')') {
-            let content = content.trim_matches(')').trim_matches('(').trim();
-            context.write(content);
-            return Ok(());
-        }
-
         // Handle variables
         if let Some(value) = context.get_variable(&content) {
             context.write(&value.to_string());
@@ -58,7 +51,7 @@ impl VBSyntax for ResponseWrite {
                 } else if let Ok(num) = part.parse::<f64>() {
                     result.push_str(&num.to_string());
                 } else {
-                    return Err(VBSErrorType::ValueError.into_error(format!("Valore non valido per Response.Write: {}", part)));
+                    return Err(VBSErrorType::ValueError.into_error(format!("Invalid value for Response.Write: {}", part)));
                 }
             }
             context.write(&result);
