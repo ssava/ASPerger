@@ -1231,4 +1231,107 @@ mod tests {
         let blocks = parser.parse();
         assert_eq!(blocks.len(), 3);
     }
+
+    // ===== FOR EACH =====
+
+    #[test]
+    fn test_for_each_basic() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("items", VBValue::Array(vec![
+            VBValue::Number(10.0),
+            VBValue::Number(20.0),
+            VBValue::Number(30.0),
+        ]));
+        context.set_variable("sum", VBValue::Number(0.0));
+        interpreter.execute("For Each x In items\n    sum = sum + x\nNext", &mut context).unwrap();
+        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(60.0)));
+    }
+
+    #[test]
+    fn test_for_each_empty_array() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("items", VBValue::Array(vec![]));
+        context.set_variable("flag", VBValue::Boolean(false));
+        interpreter.execute("For Each x In items\n    flag = True\nNext", &mut context).unwrap();
+        assert_eq!(context.get_variable("flag"), Some(VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_for_each_string_array() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("items", VBValue::Array(vec![
+            VBValue::String("a".to_string()),
+            VBValue::String("b".to_string()),
+            VBValue::String("c".to_string()),
+        ]));
+        context.set_variable("result", VBValue::String("".to_string()));
+        interpreter.execute("For Each x In items\n    result = result & x\nNext", &mut context).unwrap();
+        assert_eq!(context.get_variable("result"), Some(VBValue::String("abc".to_string())));
+    }
+
+    #[test]
+    fn test_for_each_non_array_error() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        let result = interpreter.execute("For Each x In 42\nNext", &mut context);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Object doesn't support"));
+    }
+
+    #[test]
+    fn test_for_each_nested() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("outer", VBValue::Array(vec![
+            VBValue::Array(vec![VBValue::Number(1.0), VBValue::Number(2.0)]),
+            VBValue::Array(vec![VBValue::Number(3.0), VBValue::Number(4.0)]),
+        ]));
+        context.set_variable("sum", VBValue::Number(0.0));
+        interpreter.execute(
+            "For Each row In outer\n    For Each col In row\n        sum = sum + col\n    Next\nNext",
+            &mut context
+        ).unwrap();
+        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(10.0)));
+    }
+
+    #[test]
+    fn test_for_each_modifies_element() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("items", VBValue::Array(vec![
+            VBValue::Number(1.0),
+            VBValue::Number(2.0),
+            VBValue::Number(3.0),
+        ]));
+        context.set_variable("sum", VBValue::Number(0.0));
+        interpreter.execute(
+            "For Each x In items\n    sum = sum + x\n    x = 999\nNext",
+            &mut context
+        ).unwrap();
+        // x is overwritten each iteration, so sum is still 1+2+3=6
+        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(6.0)));
+        assert_eq!(context.get_variable("x"), Some(VBValue::Number(999.0)));
+    }
+
+    #[test]
+    fn test_for_each_with_for() {
+        let mut context = ExecutionContext::new();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        context.set_variable("items", VBValue::Array(vec![
+            VBValue::Number(2.0),
+            VBValue::Number(3.0),
+            VBValue::Number(4.0),
+        ]));
+        context.set_variable("total", VBValue::Number(0.0));
+        interpreter.execute(
+            "For Each x In items\n    For i = 1 To x\n        total = total + i\n    Next\nNext",
+            &mut context
+        ).unwrap();
+        // For x=2: 1+2=3. For x=3: 1+2+3=6. For x=4: 1+2+3+4=10. total=3+6+10=19
+        assert_eq!(context.get_variable("total"), Some(VBValue::Number(19.0)));
+    }
 }

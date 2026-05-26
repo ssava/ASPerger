@@ -27,6 +27,11 @@ pub enum BlockStatement {
         is_until: bool,
         is_post_test: bool,
     },
+    ForEach {
+        element: String,
+        group_tokens: Vec<Token>,
+        body: Vec<BlockStatement>,
+    },
 }
 
 pub struct ElseIfBlock {
@@ -234,6 +239,11 @@ fn parse_for_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
     // After "For", expect Identifier "=" expr "To" expr [ "Step" expr ]
     let counter = for_line_no_ws[1].value.clone();
 
+    // Check for "For Each" syntax: For Each element In group ... Next
+    if counter.eq_ignore_ascii_case("each") {
+        return parse_for_each_block(&line, pos, lines, &for_line_no_ws);
+    }
+
     // Find Assign, To, and Step positions in the original (with whitespace) token list
     let assign_idx = find_token(&line, TokenType::Assign)
         .ok_or_else(|| VBSErrorType::SyntaxError.into_error("For without =".to_string()))?;
@@ -299,6 +309,59 @@ fn parse_for_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
         step_tokens,
         body,
     })
+}
+
+fn parse_for_each_block(
+    line: &Vec<Token>,
+    pos: &mut usize,
+    lines: &[Vec<Token>],
+    for_line_no_ws: &[&Token],
+) -> Result<BlockStatement, VBSError> {
+    // for_line_no_ws = [For, Each, element, In, group_expr...]
+    if for_line_no_ws.len() < 5 {
+        return Err(VBSErrorType::SyntaxError.into_error("Invalid For Each statement".to_string()));
+    }
+
+    let element = for_line_no_ws[2].value.clone();
+
+    // Find In keyword in the original token line
+    let in_idx = line.iter().position(|t| {
+        t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("in")
+    }).ok_or_else(|| VBSErrorType::SyntaxError.into_error("For Each without In".to_string()))?;
+
+    // Group expression tokens: everything after In
+    let group_tokens: Vec<Token> = line[in_idx + 1..].iter()
+        .filter(|t| t.token_type != TokenType::WhiteSpace)
+        .cloned()
+        .collect();
+
+    if group_tokens.is_empty() {
+        return Err(VBSErrorType::SyntaxError.into_error("For Each without group expression".to_string()));
+    }
+
+    // Parse body until Next
+    let mut body = Vec::new();
+    loop {
+        if *pos >= lines.len() {
+            return Err(VBSErrorType::SyntaxError.into_error("For Each without Next".to_string()));
+        }
+
+        let next_line = &lines[*pos];
+        let first = first_non_ws(next_line);
+
+        match first {
+            Some(t) if t.token_type == TokenType::Next => {
+                *pos += 1;
+                break;
+            }
+            _ => {
+                let sub_blocks = parse_blocks_inner(lines, pos)?;
+                body.extend(sub_blocks);
+            }
+        }
+    }
+
+    Ok(BlockStatement::ForEach { element, group_tokens, body })
 }
 
 fn parse_while_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
@@ -454,22 +517,30 @@ fn eval_token_expression(tokens: &[Token], context: &ExecutionContext) -> Result
 
 fn evaluate_condition(tokens: &[Token], context: &ExecutionContext) -> Result<bool, VBSError> {
     let val = eval_token_expression(tokens, context)?;
+    if matches!(val, VBValue::Array(_)) {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+    }
     Ok(match val {
         VBValue::Boolean(b) => b,
         VBValue::Number(n) => n != 0.0,
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
+        VBValue::Array(_) => unreachable!(),
     })
 }
 
 fn evaluate_numeric(tokens: &[Token], context: &ExecutionContext) -> Result<f64, VBSError> {
     let val = eval_token_expression(tokens, context)?;
+    if matches!(val, VBValue::Array(_)) {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+    }
     Ok(match val {
         VBValue::Number(n) => n,
         VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
         VBValue::Boolean(true) => -1.0,
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
+        VBValue::Array(_) => unreachable!(),
     })
 }
 
@@ -544,6 +615,22 @@ pub fn execute_blocks(
                     }
                 }
                 context.set_variable(&counter, VBValue::Number(i));
+            }
+            BlockStatement::ForEach { element, group_tokens, body } => {
+                let group = eval_token_expression(group_tokens, context)?;
+                match group {
+                    VBValue::Array(items) => {
+                        for item in items {
+                            context.set_variable(element, item);
+                            execute_blocks(body, interpreter, context)?;
+                        }
+                    }
+                    _ => {
+                        return Err(VBSErrorType::RuntimeError.into_error(
+                            "Object doesn't support this property or method".to_string()
+                        ));
+                    }
+                }
             }
             BlockStatement::While {
                 condition_tokens,

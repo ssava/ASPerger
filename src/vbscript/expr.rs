@@ -285,6 +285,7 @@ fn to_number(val: &VBValue) -> f64 {
         VBValue::Boolean(true) => -1.0,
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
+        VBValue::Array(_) => 0.0,
     }
 }
 
@@ -294,6 +295,7 @@ fn to_bool(val: &VBValue) -> bool {
         VBValue::Number(n) => *n != 0.0,
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
+        VBValue::Array(v) => !v.is_empty(),
     }
 }
 
@@ -305,16 +307,21 @@ fn to_string_val(val: &VBValue) -> String {
         VBValue::Boolean(false) => "False".to_string(),
         VBValue::Null => "Null".to_string(),
         VBValue::Empty => "".to_string(),
+        VBValue::Array(_) => "Array".to_string(),
     }
 }
 
 fn negate(val: VBValue) -> Result<VBValue, VBSError> {
+    if matches!(val, VBValue::Array(_)) {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+    }
     match val {
         VBValue::Number(n) => Ok(VBValue::Number(-n)),
         VBValue::Empty => Ok(VBValue::Number(-0.0)),
         VBValue::Boolean(true) => Ok(VBValue::Number(1.0)),
         VBValue::Boolean(false) => Ok(VBValue::Number(0.0)),
         VBValue::Null => Ok(VBValue::Null),
+        VBValue::Array(_) => unreachable!(),
         VBValue::String(s) => {
             if let Ok(n) = s.parse::<f64>() {
                 Ok(VBValue::Number(-n))
@@ -326,10 +333,16 @@ fn negate(val: VBValue) -> Result<VBValue, VBSError> {
 }
 
 fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
+    if matches!(val, VBValue::Array(_)) {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+    }
     Ok(VBValue::Boolean(!to_bool(&val)))
 }
 
 fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
+    if matches!(left, VBValue::Array(_)) || matches!(right, VBValue::Array(_)) {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+    }
     match op {
         BinOp::Add => {
             match (left, right) {
@@ -421,6 +434,7 @@ fn values_equal(left: &VBValue, right: &VBValue) -> bool {
         (VBValue::Boolean(a), VBValue::Boolean(b)) => a == b,
         (VBValue::Null, VBValue::Null) => true,
         (VBValue::Empty, VBValue::Empty) => true,
+        (VBValue::Array(_), _) | (_, VBValue::Array(_)) => false,
         _ => to_string_val(left) == to_string_val(right),
     }
 }

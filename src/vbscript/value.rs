@@ -7,6 +7,8 @@ pub enum VBValue {
     Boolean(bool),
     Null,
     Empty,
+    #[allow(dead_code)]
+    Array(Vec<VBValue>),
 }
 
 impl fmt::Display for VBValue {
@@ -19,6 +21,7 @@ impl fmt::Display for VBValue {
             },
             VBValue::Null => write!(f, "null"),
             VBValue::Empty => write!(f, "Empty"),
+            VBValue::Array(v) => write!(f, "Array({})", v.len()),
         }
     }
 }
