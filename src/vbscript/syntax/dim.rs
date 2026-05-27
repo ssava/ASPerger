@@ -2,19 +2,23 @@ use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 use super::VBSyntax;
 
 pub struct Dim {
-    var_names: Vec<String>,
+    var_names: Vec<(String, bool)>,
 }
 
 impl Dim {
-    pub fn new(var_names: Vec<String>) -> Self {
+    pub fn new(var_names: Vec<(String, bool)>) -> Self {
         Dim { var_names }
     }
 }
 
 impl VBSyntax for Dim {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        for var_name in &self.var_names {
-            context.set_variable(var_name, VBValue::Empty);
+        for (var_name, is_array) in &self.var_names {
+            if *is_array {
+                context.set_variable(var_name, VBValue::Array(Vec::new()));
+            } else {
+                context.set_variable(var_name, VBValue::Empty);
+            }
         }
         Ok(())
     }

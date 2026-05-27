@@ -393,6 +393,17 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
                             return obj.indexed_get(&evaluated_args[0]);
                         }
                     }
+                    VBValue::Array(ref items) => {
+                        if evaluated_args.len() == 1 {
+                            let idx = to_number(&evaluated_args[0]) as usize;
+                            if idx < items.len() {
+                                return Ok(items[idx].clone());
+                            }
+                            return Err(VBSErrorType::RuntimeError.into_error(
+                                format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())
+                            ));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -424,7 +435,7 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
     }
 }
 
-fn to_number(val: &VBValue) -> f64 {
+pub(crate) fn to_number(val: &VBValue) -> f64 {
     match val {
         VBValue::Number(n) => *n,
         VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),

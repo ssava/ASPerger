@@ -806,7 +806,7 @@ mod tests {
     #[test]
     fn test_dim_initializes_to_empty() {
         let mut context = ExecutionContext::new();
-        let dim = Dim::new(vec!["x".into()]);
+        let dim = Dim::new(vec![("x".into(), false)]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("x"), Some(VBValue::Empty));
     }
@@ -814,7 +814,7 @@ mod tests {
     #[test]
     fn test_dim_multiple_variables() {
         let mut context = ExecutionContext::new();
-        let dim = Dim::new(vec!["a".into(), "b".into(), "c".into()]);
+        let dim = Dim::new(vec![("a".into(), false), ("b".into(), false), ("c".into(), false)]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("a"), Some(VBValue::Empty));
         assert_eq!(context.get_variable("b"), Some(VBValue::Empty));
@@ -1559,8 +1559,8 @@ mod tests {
                     let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
                     let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
                     assert_eq!(total, 27, "Expected 27 total tests, got {}", total);
-                    // 20 tests pass — 7 are unimplemented features (13, 15-20)
-                    assert_eq!(passed, 20, "Expected 20 passing tests, got {}. Check if unimplemented features changed", passed);
+                    // 21 tests pass — 6 are unimplemented features (13, 15, 17, 18, 19, 20)
+                    assert_eq!(passed, 21, "Expected 21 passing tests, got {}. Check if unimplemented features changed", passed);
                     return;
                 }
             }

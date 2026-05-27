@@ -8,9 +8,13 @@ mod response_write;
 mod dim;
 mod assignment;
 mod method_call;
+mod redim;
+mod array_assignment;
 
 pub use response_write::ResponseWrite;
 use super::vbs_error::VBSError;
 pub use dim::Dim;
 pub use assignment::Assignment;
 pub use method_call::MethodCall;
+pub use redim::ReDim;
+pub use array_assignment::ArrayAssignment;

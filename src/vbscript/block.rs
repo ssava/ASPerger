@@ -1,6 +1,6 @@
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::expr::{evaluate, parse_expression, Expr};
-use super::syntax::{Assignment, Dim, MethodCall, ResponseWrite, VBSyntax};
+use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, ReDim, ResponseWrite, VBSyntax};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 
 pub enum BlockStatement {
@@ -62,7 +62,7 @@ fn tokens_to_string(tokens: &[Token]) -> String {
     tokens.iter().map(|t| t.value.clone()).collect::<Vec<String>>().join(" ")
 }
 
-fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<String>, VBSError> {
+fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, bool)>, VBSError> {
     let mut var_names = Vec::new();
     let mut i = 1;
 
@@ -76,8 +76,33 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<String>, VBSError> {
                 format!("Expected variable name, found: {}", tokens[i].value)
             ));
         }
-        var_names.push(tokens[i].value.clone());
+        let name = tokens[i].value.clone();
         i += 1;
+
+        // Check for array declaration: arr()
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+        let is_array = if i < tokens.len() && tokens[i].token_type == TokenType::LeftParen {
+            i += 1;
+            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+                i += 1;
+            }
+            if i >= tokens.len() || tokens[i].token_type != TokenType::RightParen {
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    "Expected ')' after '(' in array declaration".to_string()
+                ));
+            }
+            i += 1;
+            true
+        } else {
+            false
+        };
+        var_names.push((name, is_array));
+
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
         if i < tokens.len() && tokens[i].token_type == TokenType::Comma {
             i += 1;
         } else {
@@ -125,6 +150,64 @@ fn parse_assignment_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBS
 
     let expr = parse_expression(&tokens[i..])?;
     Ok(Box::new(Assignment::new(var_name, expr)))
+}
+
+fn parse_redim_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let mut i = 1;
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+        i += 1;
+    }
+
+    // Check for Preserve
+    let preserve = if i < tokens.len() && tokens[i].token_type == TokenType::Preserve {
+        i += 1;
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+        true
+    } else {
+        false
+    };
+
+    if i >= tokens.len() || tokens[i].token_type != TokenType::Identifier {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            "Expected variable name after ReDim".to_string()
+        ));
+    }
+    let var_name = tokens[i].value.clone();
+    i += 1;
+
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+        i += 1;
+    }
+
+    if i >= tokens.len() || tokens[i].token_type != TokenType::LeftParen {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            "Expected '(' after variable name in ReDim".to_string()
+        ));
+    }
+    i += 1;
+
+    let paren_start = i;
+    let mut depth = 1;
+    while i < tokens.len() && depth > 0 {
+        if tokens[i].token_type == TokenType::LeftParen {
+            depth += 1;
+        } else if tokens[i].token_type == TokenType::RightParen {
+            depth -= 1;
+        }
+        if depth > 0 {
+            i += 1;
+        }
+    }
+    if depth != 0 {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            "Unmatched parentheses in ReDim".to_string()
+        ));
+    }
+
+    let size_expr = parse_expression(&tokens[paren_start..i])?;
+    Ok(Box::new(ReDim::new(var_name, size_expr, preserve)))
 }
 
 fn find_method_token(tokens: &[Token], method_name: &str) -> Option<usize> {
@@ -200,6 +283,51 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(Assignment::new(var_name, expr)));
     }
 
+    // arr(idx) = expr (array element assignment)
+    if non_ws.len() >= 4
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::LeftParen
+    {
+        let var_name = non_ws[0].value.clone();
+        let mut i = 0;
+        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
+            i += 1;
+        }
+        if i < tokens.len() && tokens[i].token_type == TokenType::LeftParen {
+            i += 1;
+        }
+        let paren_start = i;
+        let mut depth = 1;
+        while i < tokens.len() && depth > 0 {
+            if tokens[i].token_type == TokenType::LeftParen {
+                depth += 1;
+            } else if tokens[i].token_type == TokenType::RightParen {
+                depth -= 1;
+            }
+            if depth > 0 {
+                i += 1;
+            }
+        }
+        if depth != 0 {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                "Unmatched parentheses in array assignment".to_string()
+            ));
+        }
+        let index_expr = parse_expression(&tokens[paren_start..i])?;
+        i += 1;
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                "Expected '=' after array index".to_string()
+            ));
+        }
+        i += 1;
+        let value_expr = parse_expression(&tokens[i..])?;
+        return Ok(Box::new(ArrayAssignment::new(var_name, index_expr, value_expr)));
+    }
+
     // obj.Method arg1, arg2, ... (method call)
     if non_ws.len() >= 3
         && non_ws[0].token_type == TokenType::Identifier
@@ -235,6 +363,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Set => {
             parse_assignment_statement(tokens)
+        }
+        TokenType::ReDim => {
+            parse_redim_statement(tokens)
         }
         _ => {
             parse_expression_or_assignment(tokens)

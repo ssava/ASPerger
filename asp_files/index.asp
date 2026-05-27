@@ -226,10 +226,13 @@
         ReDim Preserve arr(4)
         arr(3) = "Quarto"
         Response.Write("Dopo ReDim Preserve: " & arr(3))
-        %>
-        <%
         testTotal = testTotal + 1
-        Response.Write("<span class='error'>FAIL (not implemented)</span>")
+        If arr(0) = "Primo" And arr(3) = "Quarto" Then
+            testPassed = testPassed + 1
+            Response.Write("<span class='success'>PASS</span>")
+        Else
+            Response.Write("<span class='error'>FAIL (arr(0)='" & arr(0) & "', arr(3)='" & arr(3) & "')</span>")
+        End If
         %>
     </div>
 

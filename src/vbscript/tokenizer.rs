@@ -38,6 +38,8 @@ pub enum TokenType {
     Imp,
     To,
     Step,
+    ReDim,
+    Preserve,
 
     // Operators
     Plus,
@@ -346,6 +348,8 @@ value,
             "IMP" => TokenType::Imp,
             "TO" => TokenType::To,
             "STEP" => TokenType::Step,
+            "REDIM" => TokenType::ReDim,
+            "PRESERVE" => TokenType::Preserve,
             _ => TokenType::Identifier,
         }
     }
