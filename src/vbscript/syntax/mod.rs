@@ -11,6 +11,7 @@ mod method_call;
 mod redim;
 mod array_assignment;
 mod property_set;
+mod on_error;
 
 pub use response_write::ResponseWrite;
 use super::vbs_error::VBSError;
@@ -20,3 +21,4 @@ pub use method_call::MethodCall;
 pub use redim::ReDim;
 pub use array_assignment::ArrayAssignment;
 pub use property_set::PropertySet;
+pub use on_error::{OnErrorResumeNext, OnErrorGoto0};

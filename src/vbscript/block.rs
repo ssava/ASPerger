@@ -1,7 +1,7 @@
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::expr::{evaluate, parse_expression, Expr};
-use super::execution_context::{ClassDefinition, PropertyDef};
-use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, PropertySet, ReDim, ResponseWrite, VBSyntax};
+use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
+use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext, PropertySet, ReDim, ResponseWrite, VBSyntax};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 use ahash::AHashMap;
 
@@ -417,6 +417,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("call") => {
             parse_call_statement(tokens)
+        }
+        TokenType::Identifier if first_token.value.eq_ignore_ascii_case("on") => {
+            parse_on_error_statement(tokens)
         }
         _ => {
             parse_expression_or_assignment(tokens)
@@ -1209,6 +1212,30 @@ fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError>
     }
 }
 
+fn parse_on_error_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let non_ws: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+    if non_ws.len() >= 4
+        && non_ws[0].value.eq_ignore_ascii_case("on")
+        && non_ws[1].value.eq_ignore_ascii_case("error")
+        && non_ws[2].value.eq_ignore_ascii_case("resume")
+        && non_ws[3].value.eq_ignore_ascii_case("next")
+    {
+        return Ok(Box::new(OnErrorResumeNext));
+    }
+    if non_ws.len() >= 4
+        && non_ws[0].value.eq_ignore_ascii_case("on")
+        && non_ws[1].value.eq_ignore_ascii_case("error")
+        && non_ws[2].value.eq_ignore_ascii_case("goto")
+        && non_ws[3].token_type == TokenType::IntegerLiteral
+        && non_ws[3].value == "0"
+    {
+        return Ok(Box::new(OnErrorGoto0));
+    }
+    Err(VBSErrorType::SyntaxError.into_error(
+        format!("Invalid On Error statement: {}", tokens_to_string(tokens))
+    ))
+}
+
 pub(crate) fn execute_user_defined_function(
     func: &UserDefinedFunction,
     args: &[VBValue],
@@ -1350,7 +1377,14 @@ pub fn execute_blocks(
                 });
             }
             BlockStatement::Syntax(syntax) => {
-                syntax.execute(context)?;
+                let result = syntax.execute(context);
+                if let Err(e) = result {
+                    if *context.get_error_mode() == ErrorMode::ResumeNext {
+                        context.set_err(e);
+                    } else {
+                        return Err(e);
+                    }
+                }
             }
             BlockStatement::Unrecognized(line_text) => {
                 return Err(VBSErrorType::NotImplementedError

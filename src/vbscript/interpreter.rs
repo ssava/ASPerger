@@ -2,7 +2,8 @@ use std::vec::Vec;
 
 use crate::vbscript::block;
 use crate::vbscript::vbs_error::VBSError;
-use crate::vbscript::{Token, TokenType, Tokenizer};
+use crate::vbscript::vbobject::ErrObject;
+use crate::vbscript::{Token, TokenType, Tokenizer, VBValue};
 use crate::vbscript::ExecutionContext;
 
 pub struct VBScriptInterpreter;
@@ -17,6 +18,10 @@ impl VBScriptInterpreter {
         }
 
         let lines = self.group_tokens_into_lines(&tokens)?;
+
+        if context.get_variable("ERR").is_none() {
+            context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
+        }
 
         let blocks = block::parse_blocks(&lines)?;
         block::execute_blocks(&blocks, context)

@@ -5,6 +5,18 @@ use super::tokenizer::Token;
 use super::vbs_error::VBSError;
 use super::VBValue;
 
+#[derive(PartialEq)]
+pub enum ErrorMode {
+    Normal,
+    ResumeNext,
+}
+
+impl Default for ErrorMode {
+    fn default() -> Self {
+        ErrorMode::Normal
+    }
+}
+
 #[allow(dead_code)]
 pub struct PropertyDef {
     pub name: String,
@@ -27,6 +39,9 @@ pub struct ExecutionContext {
     pub response_buffer: String,
     functions: AHashMap<String, UserDefinedFunction>,
     classes: AHashMap<String, ClassDefinition>,
+    error_mode: ErrorMode,
+    pub err_number: f64,
+    pub err_description: String,
 }
 
 impl ExecutionContext {
@@ -36,6 +51,9 @@ impl ExecutionContext {
             response_buffer: String::new(),
             functions: AHashMap::new(),
             classes: AHashMap::new(),
+            error_mode: ErrorMode::Normal,
+            err_number: 0.0,
+            err_description: String::new(),
         }
     }
 
@@ -84,5 +102,23 @@ impl ExecutionContext {
         let result = f(self);
         *instance_vars = std::mem::replace(&mut self.variables, saved);
         result
+    }
+
+    pub fn get_error_mode(&self) -> &ErrorMode {
+        &self.error_mode
+    }
+
+    pub fn set_error_mode(&mut self, mode: ErrorMode) {
+        self.error_mode = mode;
+    }
+
+    pub fn set_err(&mut self, err: VBSError) {
+        self.err_number = err.code as f64;
+        self.err_description = err.message;
+    }
+
+    pub fn clear_err(&mut self) {
+        self.err_number = 0.0;
+        self.err_description.clear();
     }
 }

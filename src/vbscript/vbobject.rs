@@ -228,6 +228,60 @@ impl VBScriptObject for ClassInstance {
     }
 }
 
+// ---- ErrObject ----
+
+#[derive(Debug, Clone)]
+pub struct ErrObject;
+
+impl ErrObject {
+    pub fn new() -> Self {
+        ErrObject
+    }
+}
+
+impl VBScriptObject for ErrObject {
+    fn clone_box(&self) -> Box<dyn VBScriptObject> {
+        Box::new(self.clone())
+    }
+
+    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+        match name.to_uppercase().as_str() {
+            "NUMBER" => Ok(VBValue::Number(context.err_number)),
+            "DESCRIPTION" => Ok(VBValue::String(context.err_description.clone())),
+            _ => Err(VBSErrorType::RuntimeError.into_error(
+                format!("Property '{}' not found on Err object", name)
+            )),
+        }
+    }
+
+    fn set_property(&mut self, _name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Cannot set properties on Err object".to_string()
+        ))
+    }
+
+    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+        match name.to_uppercase().as_str() {
+            "CLEAR" => Ok(VBValue::Empty),
+            _ => Err(VBSErrorType::RuntimeError.into_error(
+                format!("Method '{}' not found on Err object", name)
+            )),
+        }
+    }
+
+    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Err object does not support indexed access".to_string()
+        ))
+    }
+
+    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Err object does not support indexed access".to_string()
+        ))
+    }
+}
+
 fn to_arg_string(val: &VBValue) -> String {
     match val {
         VBValue::String(s) => s.clone(),
