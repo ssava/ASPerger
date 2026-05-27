@@ -10,8 +10,8 @@ A lightweight ASP Classic / VBScript server written in Rust.
 - **Operators** — arithmetic (`+`, `-`, `*`, `/`, `\`, `^`, `Mod`), comparison (`=`, `<>`, `<`, `>`, `<=`, `>=`, `Is`), logical (`And`, `Or`, `Not`, `Xor`, `Eqv`, `Imp`), string concatenation (`&`, `+`)
 - **Built-in functions** — `Len`, `UCase`, `LCase`, `Mid`, `Left`, `Right`, `Trim`, `CInt`, `CStr`, `Abs`, `IsNull`, `IsEmpty`, `InStr`, `Array`, `CreateObject`
 - **Objects** — `Scripting.Dictionary` with `Count`/`Keys`/`Items` properties and `Add`/`Remove`/`Exists`/`RemoveAll` methods, indexed access (`dict(key)`)
-- **Classes** — `Class`/`End Class` with `Public`/`Private` members, `Property Get`/`Property Let`
-- **Error handling** — `On Error Resume Next` / `On Error Goto 0`, `Err.Number` / `Err.Description`
+- **Classes** — `Class`/`End Class` with `Public`/`Private` members, `Property Get`/`Property Let` (in progress)
+- **Error handling** — `On Error Resume Next` / `On Error Goto 0`, `Err.Number` / `Err.Description` (in progress)
 - **Response.Write** — output from VBScript blocks into the response
 - **Static file serving** — CSS, JS, HTML, TXT, and other static files
 - **Path traversal protection** — canonical path validation
@@ -46,7 +46,7 @@ cargo run -- --host 0.0.0.0 --port 3000 --folder ./www
 
 ## Demo
 
-The repository includes a test suite at `asp_files/index.asp` that exercises most of the interpreter's capabilities. Run the server and open the page to see:
+The repository includes a self-evaluating test suite at `asp_files/index.asp` that exercises most of the interpreter's capabilities. Each test section displays **PASS** or **FAIL** with a summary at the bottom. Run the server and open the page to see:
 
 - `Response.Write` (with and without parentheses)
 - Variable declaration (`Dim`) and assignment
@@ -56,12 +56,12 @@ The repository includes a test suite at `asp_files/index.asp` that exercises mos
 - Multi-part concatenated output
 - `For i = 1 To 5 ... Next` loops
 - `While ... Wend` loops
-- User-defined `Function` / `Sub` with `Call`
+- User-defined `Function` / `Sub` with `Call` (planned)
 - `Array` and `ReDim` / `ReDim Preserve`
-- `Select Case`
-- `Class` / `End Class` with `With` / `End With`
-- `Property Get` / `Property Let`
-- `On Error Resume Next` and `Err` object
+- `Select Case` (planned)
+- `Class` / `End Class` with `With` / `End With` (planned)
+- `Property Get` / `Property Let` (planned)
+- `On Error Resume Next` and `Err` object (planned)
 - `Do ... Loop Until` (post-test)
 - `For Each ... In ... Next` with `Scripting.Dictionary`
 - Comparison operators (`=`, `Is`, `>=`, `<=`)
@@ -75,18 +75,24 @@ The repository includes a test suite at `asp_files/index.asp` that exercises mos
 | Category | Status |
 |----------|--------|
 | Variables (`Dim`, `Set`, assignment) | ✅ |
-| Control flow (If, For, While, Do, Select) | ✅ |
-| Functions (`Function`, `Sub`, `Call`) | ✅ |
-| Class (`Class`/`End Class`, Properties) | ✅ |
+| Control flow (If, For, While, Do) | ✅ |
+| `Select Case` | 🚧 Planned |
+| Functions (`Function`, `Sub`, `Call`) | 🚧 Planned |
+| Class / `With` / Properties | 🚧 Planned |
 | Arrays (`Array()`, `ReDim`, index access) | ✅ |
 | Built-in functions (string, numeric, type) | ✅ |
 | `Scripting.Dictionary` | ✅ |
 | `Response.Write` | ✅ |
-| Error handling (`On Error Resume Next`) | ✅ |
+| Error handling (`On Error Resume Next`) | 🚧 Planned |
 | Line continuation (`_`) / `:` separator | ✅ |
 | Date literals (`#...#`) | ✅ |
-| `With` / `End With` | ✅ |
+| `For Each ... In ... Next` | ✅ |
 | HEX & octal literals (`&HFF`, `&77`) | ✅ |
+| Logical operators (`Eqv`, `Imp`) | ✅ |
+| `For` loops (including `Step`, negative `Step`) | ✅ |
+| `Do` / `Loop` (While, Until, pre/post-test) | ✅ |
+| `While` / `Wend` | ✅ |
+| Comparison operators (`Is`, `=`, `<>`, etc.) | ✅ |
 
 ## Building from source
 
