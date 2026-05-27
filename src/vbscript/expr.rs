@@ -360,7 +360,7 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
     Ok(lhs)
 }
 
-pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSError> {
+pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
     match expr {
         Expr::Literal(val) => Ok(val.clone()),
         Expr::Variable(name) => {
@@ -405,6 +405,15 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
                         }
                     }
                     _ => {}
+                }
+            }
+            if let Some(func) = context.get_function(name).cloned() {
+                if func.is_function {
+                    return super::block::execute_user_defined_function(&func, &evaluated_args, context);
+                } else {
+                    return Err(VBSErrorType::RuntimeError.into_error(
+                        format!("Sub '{}' cannot be used as a function", name)
+                    ));
                 }
             }
             crate::vbscript::builtins::call_builtin(name, evaluated_args)

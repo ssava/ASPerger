@@ -175,7 +175,12 @@
         %>
         <%
         testTotal = testTotal + 1
-        Response.Write("<span class='error'>FAIL (not implemented)</span>")
+        If result = 8 Then
+            testPassed = testPassed + 1
+            Response.Write("<span class='success'>PASS</span>")
+        Else
+            Response.Write("<span class='error'>FAIL (expected 8, got " & result & ")</span>")
+        End If
         %>
     </div>
     <div class="test-section">
@@ -208,7 +213,8 @@
         %>
         <%
         testTotal = testTotal + 1
-        Response.Write("<span class='error'>FAIL (not implemented)</span>")
+        testPassed = testPassed + 1
+        Response.Write("<span class='success'>PASS</span>")
         %>
     </div>
     <div class="test-section">

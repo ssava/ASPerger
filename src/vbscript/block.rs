@@ -34,11 +34,29 @@ pub enum BlockStatement {
         group: Expr,
         body: Vec<BlockStatement>,
     },
+    FunctionDef {
+        name: String,
+        params: Vec<String>,
+        body_lines: Vec<Vec<Token>>,
+    },
+    SubDef {
+        name: String,
+        params: Vec<String>,
+        body_lines: Vec<Vec<Token>>,
+    },
 }
 
 pub struct ElseIfBlock {
     pub condition: Expr,
     pub body: Vec<BlockStatement>,
+}
+
+#[derive(Clone)]
+pub struct UserDefinedFunction {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body_lines: Vec<Vec<Token>>,
+    pub is_function: bool,
 }
 
 fn first_non_ws<'a>(tokens: &'a [Token]) -> Option<&'a Token> {
@@ -367,6 +385,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         TokenType::ReDim => {
             parse_redim_statement(tokens)
         }
+        TokenType::Identifier if first_token.value.eq_ignore_ascii_case("call") => {
+            parse_call_statement(tokens)
+        }
         _ => {
             parse_expression_or_assignment(tokens)
         }
@@ -380,6 +401,75 @@ fn parse_tokens_to_expr(tokens: &[Token]) -> Result<Expr, VBSError> {
         return Ok(Expr::Literal(VBValue::Empty));
     }
     parse_expression(tokens)
+}
+
+// ===== Function/Sub parsing =====
+
+fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let no_ws: Vec<&Token> = line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+
+    if no_ws.len() < 2 {
+        return Err(VBSErrorType::SyntaxError.into_error(
+            "Expected Function/Sub name".to_string()
+        ));
+    }
+
+    let is_function = no_ws[0].token_type == TokenType::Function;
+    let name = no_ws[1].value.clone();
+
+    let mut params = Vec::new();
+    if no_ws.len() > 2 && no_ws[2].token_type == TokenType::LeftParen {
+        let mut i = 3;
+        while i < no_ws.len() && no_ws[i].token_type != TokenType::RightParen {
+            if no_ws[i].token_type == TokenType::Identifier {
+                params.push(no_ws[i].value.clone());
+            }
+            i += 1;
+        }
+    }
+
+    let body_start = *pos;
+
+    loop {
+        if *pos >= lines.len() {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("{} without End {}", if is_function { "Function" } else { "Sub" },
+                        if is_function { "Function" } else { "Sub" })
+            ));
+        }
+
+        let next_line = &lines[*pos];
+        let first = first_non_ws(next_line);
+
+        match first {
+            Some(t) if t.token_type == TokenType::End => {
+                let second = next_line.iter()
+                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                    .skip(1)
+                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                if let Some(s) = second {
+                    if (is_function && (s.value.eq_ignore_ascii_case("function") || s.token_type == TokenType::Function)) ||
+                       (!is_function && (s.value.eq_ignore_ascii_case("sub") || s.token_type == TokenType::Sub))
+                    {
+                        let body_lines: Vec<Vec<Token>> = lines[body_start..*pos].to_vec();
+                        *pos += 1;
+                        if is_function {
+                            return Ok(BlockStatement::FunctionDef { name, params, body_lines });
+                        } else {
+                            return Ok(BlockStatement::SubDef { name, params, body_lines });
+                        }
+                    }
+                }
+                *pos += 1;
+            }
+            _ => {
+                *pos += 1;
+            }
+        }
+    }
 }
 
 // ===== Block parsing =====
@@ -409,15 +499,16 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
             Some(t) if t.token_type == TokenType::Do => {
                 blocks.push(parse_do_block(lines, pos)?);
             }
+            Some(t) if t.token_type == TokenType::Function || t.token_type == TokenType::Sub => {
+                blocks.push(parse_function_def(lines, pos)?);
+            }
             Some(t)
                 if t.token_type == TokenType::End
                     || t.token_type == TokenType::Next
                     || t.token_type == TokenType::WEnd
                     || t.token_type == TokenType::Loop
                     || t.token_type == TokenType::ElseIf
-                    || t.token_type == TokenType::Else
-                    || t.token_type == TokenType::Function
-                    || t.token_type == TokenType::Sub =>
+                    || t.token_type == TokenType::Else =>
             {
                 break;
             }
@@ -811,7 +902,7 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
 
 // ===== Execution =====
 
-fn evaluate_condition(expr: &Expr, context: &ExecutionContext) -> Result<bool, VBSError> {
+fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<bool, VBSError> {
     let val = evaluate(expr, context)?;
     if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
@@ -826,7 +917,7 @@ fn evaluate_condition(expr: &Expr, context: &ExecutionContext) -> Result<bool, V
     })
 }
 
-fn evaluate_numeric(expr: &Expr, context: &ExecutionContext) -> Result<f64, VBSError> {
+fn evaluate_numeric(expr: &Expr, context: &mut ExecutionContext) -> Result<f64, VBSError> {
     let val = evaluate(expr, context)?;
     if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
@@ -857,12 +948,106 @@ fn create_error_syntax(message: String) -> ErrorSyntax {
     ErrorSyntax { message }
 }
 
+pub(crate) struct CallStatement {
+    name: String,
+    args: Vec<Expr>,
+}
+
+impl CallStatement {
+    pub(crate) fn new(name: String, args: Vec<Expr>) -> Self {
+        CallStatement { name, args }
+    }
+}
+
+impl VBSyntax for CallStatement {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
+        let args: Result<Vec<VBValue>, VBSError> = self.args.iter()
+            .map(|arg| evaluate(arg, context))
+            .collect();
+        let args = args?;
+
+        if let Some(func) = context.get_function(&self.name).cloned() {
+            execute_user_defined_function(&func, &args, context)?;
+            return Ok(());
+        }
+
+        match crate::vbscript::builtins::call_builtin(&self.name, args) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let rest: Vec<Token> = tokens.iter()
+        .skip_while(|t| {
+            t.token_type == TokenType::WhiteSpace ||
+            (t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("call"))
+        })
+        .cloned()
+        .collect();
+
+    let expr = parse_expression(&rest)?;
+    match expr {
+        Expr::FunctionCall { name, args } => {
+            Ok(Box::new(CallStatement::new(name, args)))
+        }
+        _ => {
+            Err(VBSErrorType::SyntaxError.into_error(
+                "Invalid Call statement: expected function call".to_string()
+            ))
+        }
+    }
+}
+
+pub(crate) fn execute_user_defined_function(
+    func: &UserDefinedFunction,
+    args: &[VBValue],
+    context: &mut ExecutionContext,
+) -> Result<VBValue, VBSError> {
+    for (i, param) in func.params.iter().enumerate() {
+        let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
+        context.set_variable(param, val);
+    }
+
+    if func.is_function {
+        context.set_variable(&func.name, VBValue::Empty);
+    }
+
+    let body_blocks = parse_blocks(&func.body_lines)?;
+    execute_blocks(&body_blocks, context)?;
+
+    if func.is_function {
+        Ok(context.get_variable(&func.name)
+            .cloned()
+            .unwrap_or(VBValue::Empty))
+    } else {
+        Ok(VBValue::Empty)
+    }
+}
+
 pub fn execute_blocks(
     blocks: &[BlockStatement],
     context: &mut ExecutionContext,
 ) -> Result<(), VBSError> {
     for block in blocks {
         match block {
+            BlockStatement::FunctionDef { name, params, body_lines } => {
+                context.define_function(UserDefinedFunction {
+                    name: name.clone(),
+                    params: params.clone(),
+                    body_lines: body_lines.clone(),
+                    is_function: true,
+                });
+            }
+            BlockStatement::SubDef { name, params, body_lines } => {
+                context.define_function(UserDefinedFunction {
+                    name: name.clone(),
+                    params: params.clone(),
+                    body_lines: body_lines.clone(),
+                    is_function: false,
+                });
+            }
             BlockStatement::Syntax(syntax) => {
                 syntax.execute(context)?;
             }

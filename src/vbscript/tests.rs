@@ -281,9 +281,9 @@ mod tests {
 
     #[test]
     fn test_evaluate_literal() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::Literal(VBValue::Number(42.0));
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(42.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(42.0));
     }
 
     #[test]
@@ -291,143 +291,143 @@ mod tests {
         let mut context = ExecutionContext::new();
         context.set_variable("x", VBValue::Number(10.0));
         let expr = Expr::Variable("x".into());
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(10.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(10.0));
     }
 
     #[test]
     fn test_evaluate_undefined_variable_error() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::Variable("undefined".into());
-        assert!(evaluate(&expr, &context).is_err());
+        assert!(evaluate(&expr, &mut context).is_err());
     }
 
     #[test]
     fn test_evaluate_add() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Add,
             right: Box::new(Expr::Literal(VBValue::Number(2.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(3.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(3.0));
     }
 
     #[test]
     fn test_evaluate_sub() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Sub,
             right: Box::new(Expr::Literal(VBValue::Number(3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(7.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(7.0));
     }
 
     #[test]
     fn test_evaluate_mul() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(3.0))),
             op: BinOp::Mul,
             right: Box::new(Expr::Literal(VBValue::Number(4.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(12.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(12.0));
     }
 
     #[test]
     fn test_evaluate_div() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Div,
             right: Box::new(Expr::Literal(VBValue::Number(2.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(5.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(5.0));
     }
 
     #[test]
     fn test_evaluate_division_by_zero() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Div,
             right: Box::new(Expr::Literal(VBValue::Number(0.0))),
         };
-        assert!(evaluate(&expr, &context).is_err());
+        assert!(evaluate(&expr, &mut context).is_err());
     }
 
     #[test]
     fn test_evaluate_power() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(2.0))),
             op: BinOp::Pow,
             right: Box::new(Expr::Literal(VBValue::Number(3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(8.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(8.0));
     }
 
     #[test]
     fn test_evaluate_int_divide() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::IntDiv,
             right: Box::new(Expr::Literal(VBValue::Number(3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(3.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(3.0));
     }
 
     #[test]
     fn test_evaluate_modulo() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Mod,
             right: Box::new(Expr::Literal(VBValue::Number(3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(1.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(1.0));
     }
 
     #[test]
     fn test_evaluate_unary_neg() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::UnaryOp {
             op: UnaryOp::Neg,
             expr: Box::new(Expr::Literal(VBValue::Number(5.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(-5.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(-5.0));
     }
 
     #[test]
     fn test_evaluate_neg_of_negative() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::UnaryOp {
             op: UnaryOp::Neg,
             expr: Box::new(Expr::Literal(VBValue::Number(-3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(3.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(3.0));
     }
 
     // ===== EXPRESSION EVALUATOR — STRING CONCAT =====
 
     #[test]
     fn test_evaluate_concat() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("Hello ".into()))),
             op: BinOp::Concat,
             right: Box::new(Expr::Literal(VBValue::String("World".into()))),
         };
         assert_eq!(
-            evaluate(&expr, &context).unwrap(),
+            evaluate(&expr, &mut context).unwrap(),
             VBValue::String("Hello World".into())
         );
     }
 
     #[test]
     fn test_evaluate_concat_number_coercion() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // "a" & 42 → "a42"
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("a".into()))),
@@ -435,7 +435,7 @@ mod tests {
             right: Box::new(Expr::Literal(VBValue::Number(42.0))),
         };
         assert_eq!(
-            evaluate(&expr, &context).unwrap(),
+            evaluate(&expr, &mut context).unwrap(),
             VBValue::String("a42".into())
         );
     }
@@ -444,46 +444,46 @@ mod tests {
 
     #[test]
     fn test_evaluate_and() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::And,
             right: Box::new(Expr::Literal(VBValue::Boolean(false))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(false));
     }
 
     #[test]
     fn test_evaluate_or() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Or,
             right: Box::new(Expr::Literal(VBValue::Boolean(false))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     #[test]
     fn test_evaluate_not() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::UnaryOp {
             op: UnaryOp::Not,
             expr: Box::new(Expr::Literal(VBValue::Boolean(true))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(false));
     }
 
     #[test]
     fn test_evaluate_xor() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // true XOR true = false
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Xor,
             right: Box::new(Expr::Literal(VBValue::Boolean(true))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(false));
 
         // true XOR false = true
         let expr2 = Expr::BinaryOp {
@@ -491,131 +491,131 @@ mod tests {
             op: BinOp::Xor,
             right: Box::new(Expr::Literal(VBValue::Boolean(false))),
         };
-        assert_eq!(evaluate(&expr2, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr2, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     #[test]
     fn test_evaluate_eqv() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // true Eqv true = true
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Eqv,
             right: Box::new(Expr::Literal(VBValue::Boolean(true))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(true));
         // true Eqv false = false
         let expr2 = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Eqv,
             right: Box::new(Expr::Literal(VBValue::Boolean(false))),
         };
-        assert_eq!(evaluate(&expr2, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr2, &mut context).unwrap(), VBValue::Boolean(false));
     }
 
     #[test]
     fn test_evaluate_imp() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // true Imp false = false
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Imp,
             right: Box::new(Expr::Literal(VBValue::Boolean(false))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(false));
         // false Imp anything = true
         let expr2 = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(false))),
             op: BinOp::Imp,
             right: Box::new(Expr::Literal(VBValue::Boolean(true))),
         };
-        assert_eq!(evaluate(&expr2, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr2, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     // ===== EXPRESSION EVALUATOR — COMPARISON =====
 
     #[test]
     fn test_evaluate_comparison_eq() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(5.0))),
             op: BinOp::Eq,
             right: Box::new(Expr::Literal(VBValue::Number(5.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     #[test]
     fn test_evaluate_comparison_ne() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(5.0))),
             op: BinOp::Ne,
             right: Box::new(Expr::Literal(VBValue::Number(3.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(true));
 
         let expr2 = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(5.0))),
             op: BinOp::Ne,
             right: Box::new(Expr::Literal(VBValue::Number(5.0))),
         };
-        assert_eq!(evaluate(&expr2, &context).unwrap(), VBValue::Boolean(false));
+        assert_eq!(evaluate(&expr2, &mut context).unwrap(), VBValue::Boolean(false));
     }
 
     #[test]
     fn test_evaluate_comparison_lt_gt() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let lt = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Lt,
             right: Box::new(Expr::Literal(VBValue::Number(2.0))),
         };
-        assert_eq!(evaluate(&lt, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&lt, &mut context).unwrap(), VBValue::Boolean(true));
 
         let gt = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(2.0))),
             op: BinOp::Gt,
             right: Box::new(Expr::Literal(VBValue::Number(1.0))),
         };
-        assert_eq!(evaluate(&gt, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&gt, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     #[test]
     fn test_evaluate_comparison_le_ge() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let le = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(2.0))),
             op: BinOp::Le,
             right: Box::new(Expr::Literal(VBValue::Number(2.0))),
         };
-        assert_eq!(evaluate(&le, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&le, &mut context).unwrap(), VBValue::Boolean(true));
 
         let ge = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(3.0))),
             op: BinOp::Ge,
             right: Box::new(Expr::Literal(VBValue::Number(2.0))),
         };
-        assert_eq!(evaluate(&ge, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&ge, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     #[test]
     fn test_evaluate_is_operator() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // Is compares values — two nulls are equivalent
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Null)),
             op: BinOp::Is,
             right: Box::new(Expr::Literal(VBValue::Null)),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Boolean(true));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Boolean(true));
     }
 
     // ===== EXPRESSION EVALUATOR — TYPE COERCION =====
 
     #[test]
     fn test_evaluate_add_string_coercion() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // Number + String → string concat in VBScript-semantics
         // Our implementation: if both are numeric, add; else concat
         let expr = Expr::BinaryOp {
@@ -624,63 +624,63 @@ mod tests {
             right: Box::new(Expr::Literal(VBValue::Number(1.0))),
         };
         // String + Number → concat as strings
-        let result = evaluate(&expr, &context).unwrap();
+        let result = evaluate(&expr, &mut context).unwrap();
         assert_eq!(result, VBValue::String("a1".into()));
     }
 
     #[test]
     fn test_evaluate_empty_as_number() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // Empty acts as 0 in numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Empty)),
             op: BinOp::Add,
             right: Box::new(Expr::Literal(VBValue::Number(5.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(5.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(5.0));
     }
 
     #[test]
     fn test_evaluate_empty_as_string() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // Empty acts as "" in string context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("x".into()))),
             op: BinOp::Concat,
             right: Box::new(Expr::Literal(VBValue::Empty)),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::String("x".into()));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::String("x".into()));
     }
 
     #[test]
     fn test_evaluate_empty() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         let expr = Expr::Literal(VBValue::Empty);
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Empty);
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Empty);
     }
 
     #[test]
     fn test_evaluate_null_as_number() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // Null acts as 0 in numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Null)),
             op: BinOp::Add,
             right: Box::new(Expr::Literal(VBValue::Number(5.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(5.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(5.0));
     }
 
     #[test]
     fn test_evaluate_boolean_as_number() {
-        let context = ExecutionContext::new();
+        let mut context = ExecutionContext::new();
         // True = -1 in VBScript numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Add,
             right: Box::new(Expr::Literal(VBValue::Number(1.0))),
         };
-        assert_eq!(evaluate(&expr, &context).unwrap(), VBValue::Number(0.0));
+        assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(0.0));
 
         // False = 0
         let expr2 = Expr::BinaryOp {
@@ -688,7 +688,7 @@ mod tests {
             op: BinOp::Add,
             right: Box::new(Expr::Literal(VBValue::Number(1.0))),
         };
-        assert_eq!(evaluate(&expr2, &context).unwrap(), VBValue::Number(1.0));
+        assert_eq!(evaluate(&expr2, &mut context).unwrap(), VBValue::Number(1.0));
     }
 
     // ===== ASSIGNMENT =====
@@ -1559,8 +1559,8 @@ mod tests {
                     let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
                     let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
                     assert_eq!(total, 27, "Expected 27 total tests, got {}", total);
-                    // 21 tests pass — 6 are unimplemented features (13, 15, 17, 18, 19, 20)
-                    assert_eq!(passed, 21, "Expected 21 passing tests, got {}. Check if unimplemented features changed", passed);
+                    // 23 tests pass — 4 are unimplemented features (17, 18, 19, 20)
+                    assert_eq!(passed, 23, "Expected 23 passing tests, got {}. Check if unimplemented features changed", passed);
                     return;
                 }
             }
