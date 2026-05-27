@@ -75,6 +75,9 @@ fn token_to_binop(token: &Token) -> Option<BinOp> {
         TokenType::And => Some(BinOp::And),
         TokenType::Or => Some(BinOp::Or),
         TokenType::Mod => Some(BinOp::Mod),
+        TokenType::Is => Some(BinOp::Is),
+        TokenType::Eqv => Some(BinOp::Eqv),
+        TokenType::Imp => Some(BinOp::Imp),
         _ => {
             match token.token_type {
                 TokenType::Identifier => match token.value.to_uppercase().as_str() {

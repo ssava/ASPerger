@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::asp::parser::AspParser;
+    use std::fs;
     use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr, UnaryOp};
     use crate::vbscript::syntax::{Assignment, Dim, ResponseWrite, VBSyntax};
     use crate::vbscript::{ExecutionContext, TokenType, Tokenizer, VBValue};
@@ -1516,5 +1517,54 @@ mod tests {
         context.set_variable("cnt", VBValue::Empty);
         interpreter.execute("cnt = dict.Count", &mut context).unwrap();
         assert_eq!(context.get_variable("cnt"), Some(VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_asp_index_page() {
+        let content = fs::read_to_string("asp_files/index.asp")
+            .expect("Failed to read asp_files/index.asp");
+        let parser = AspParser::new(content);
+        let blocks = parser.parse();
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        let mut context = crate::vbscript::ExecutionContext::new();
+        let mut output = String::new();
+
+        for block in &blocks {
+            match block {
+                crate::asp::parser::AspBlock::Html(html) => {
+                    output.push_str(html);
+                }
+                crate::asp::parser::AspBlock::Code(code) => {
+                    match interpreter.execute(code, &mut context) {
+                        Ok(()) => {
+                            output.push_str(&context.response_buffer);
+                        }
+                        Err(e) => {
+                            output.push_str(&format!("<!-- Error: {} -->", e));
+                        }
+                    }
+                    context.flush_response_buffer();
+                }
+            }
+        }
+
+        // Find the summary header and extract counts
+        let summary_prefix = "Summary: ";
+        let summary_suffix = " passed";
+        if let Some(start) = output.find(summary_prefix) {
+            let after_prefix = &output[start + summary_prefix.len()..];
+            if let Some(end) = after_prefix.find(summary_suffix) {
+                let counts = &after_prefix[..end];
+                if let Some(slash) = counts.find('/') {
+                    let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
+                    let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
+                    assert_eq!(total, 27, "Expected 27 total tests, got {}", total);
+                    // 20 tests pass — 7 are unimplemented features (13, 15-20)
+                    assert_eq!(passed, 20, "Expected 20 passing tests, got {}. Check if unimplemented features changed", passed);
+                    return;
+                }
+            }
+        }
+        panic!("Summary not found in output. Output snippet (last 500 chars):\n{}\n---", &output[output.len().saturating_sub(500)..]);
     }
 }
