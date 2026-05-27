@@ -25,10 +25,10 @@ impl ExecutionContext {
     }
 
     pub fn set_variable(&mut self, name: &str, value: VBValue) {
-        self.variables.insert(name.to_string(), value);
+        self.variables.insert(name.to_uppercase(), value);
     }
 
     pub fn get_variable(&self, name: &str) -> Option<VBValue> {
-        self.variables.get(name).cloned()
+        self.variables.get(&name.to_uppercase()).cloned()
     }
 }

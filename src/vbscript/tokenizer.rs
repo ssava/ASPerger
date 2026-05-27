@@ -304,7 +304,7 @@ value,
             }
         }
         
-        let token_type = self.get_keyword_type(&value.to_uppercase());
+        let token_type = self.get_keyword_type(&value);
         
         Token {
             token_type,
@@ -313,45 +313,43 @@ value,
     }
 
     fn get_keyword_type(&self, word: &str) -> TokenType {
-        match word {
-            "CLASS" => TokenType::Class,
-            "FUNCTION" => TokenType::Function,
-            "SUB" => TokenType::Sub,
-            "DIM" => TokenType::Dim,
-            "IF" => TokenType::If,
-            "THEN" => TokenType::Then,
-            "ELSE" => TokenType::Else,
-            "ELSEIF" => TokenType::ElseIf,
-            "END" => TokenType::End,
-            "FOR" => TokenType::For,
-            "NEXT" => TokenType::Next,
-            "DO" => TokenType::Do,
-            "LOOP" => TokenType::Loop,
-            "WHILE" => TokenType::While,
-            "WEND" => TokenType::WEnd,
-            "SELECT" => TokenType::Select,
-            "CASE" => TokenType::Case,
-            "WITH" => TokenType::With,
-            "SET" => TokenType::Set,
-            "NEW" => TokenType::New,
-            "TRUE" => TokenType::True,
-            "FALSE" => TokenType::False,
-            "NOTHING" => TokenType::Nothing,
-            "NULL" => TokenType::Null,
-            "EMPTY" => TokenType::Empty,
-            "AND" => TokenType::And,
-            "OR" => TokenType::Or,
-            "NOT" => TokenType::Not,
-            "MOD" => TokenType::Mod,
-            "IS" => TokenType::Is,
-            "EQV" => TokenType::Eqv,
-            "IMP" => TokenType::Imp,
-            "TO" => TokenType::To,
-            "STEP" => TokenType::Step,
-            "REDIM" => TokenType::ReDim,
-            "PRESERVE" => TokenType::Preserve,
-            _ => TokenType::Identifier,
-        }
+        if word.eq_ignore_ascii_case("CLASS") { return TokenType::Class; }
+        if word.eq_ignore_ascii_case("FUNCTION") { return TokenType::Function; }
+        if word.eq_ignore_ascii_case("SUB") { return TokenType::Sub; }
+        if word.eq_ignore_ascii_case("DIM") { return TokenType::Dim; }
+        if word.eq_ignore_ascii_case("IF") { return TokenType::If; }
+        if word.eq_ignore_ascii_case("THEN") { return TokenType::Then; }
+        if word.eq_ignore_ascii_case("ELSE") { return TokenType::Else; }
+        if word.eq_ignore_ascii_case("ELSEIF") { return TokenType::ElseIf; }
+        if word.eq_ignore_ascii_case("END") { return TokenType::End; }
+        if word.eq_ignore_ascii_case("FOR") { return TokenType::For; }
+        if word.eq_ignore_ascii_case("NEXT") { return TokenType::Next; }
+        if word.eq_ignore_ascii_case("DO") { return TokenType::Do; }
+        if word.eq_ignore_ascii_case("LOOP") { return TokenType::Loop; }
+        if word.eq_ignore_ascii_case("WHILE") { return TokenType::While; }
+        if word.eq_ignore_ascii_case("WEND") { return TokenType::WEnd; }
+        if word.eq_ignore_ascii_case("SELECT") { return TokenType::Select; }
+        if word.eq_ignore_ascii_case("CASE") { return TokenType::Case; }
+        if word.eq_ignore_ascii_case("WITH") { return TokenType::With; }
+        if word.eq_ignore_ascii_case("SET") { return TokenType::Set; }
+        if word.eq_ignore_ascii_case("NEW") { return TokenType::New; }
+        if word.eq_ignore_ascii_case("TRUE") { return TokenType::True; }
+        if word.eq_ignore_ascii_case("FALSE") { return TokenType::False; }
+        if word.eq_ignore_ascii_case("NOTHING") { return TokenType::Nothing; }
+        if word.eq_ignore_ascii_case("NULL") { return TokenType::Null; }
+        if word.eq_ignore_ascii_case("EMPTY") { return TokenType::Empty; }
+        if word.eq_ignore_ascii_case("AND") { return TokenType::And; }
+        if word.eq_ignore_ascii_case("OR") { return TokenType::Or; }
+        if word.eq_ignore_ascii_case("NOT") { return TokenType::Not; }
+        if word.eq_ignore_ascii_case("MOD") { return TokenType::Mod; }
+        if word.eq_ignore_ascii_case("IS") { return TokenType::Is; }
+        if word.eq_ignore_ascii_case("EQV") { return TokenType::Eqv; }
+        if word.eq_ignore_ascii_case("IMP") { return TokenType::Imp; }
+        if word.eq_ignore_ascii_case("TO") { return TokenType::To; }
+        if word.eq_ignore_ascii_case("STEP") { return TokenType::Step; }
+        if word.eq_ignore_ascii_case("REDIM") { return TokenType::ReDim; }
+        if word.eq_ignore_ascii_case("PRESERVE") { return TokenType::Preserve; }
+        TokenType::Identifier
     }
 
     fn is_identifier_start(&self, c: char) -> bool {

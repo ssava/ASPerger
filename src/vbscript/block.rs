@@ -424,15 +424,14 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
             _ => {
                 // Skip comment lines
                 if line.iter().any(|t| t.token_type == TokenType::Comment ||
-                    (t.token_type == TokenType::Identifier && t.value.to_lowercase() == "rem"))
+                    (t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("rem")))
                 {
                     *pos += 1;
                     continue;
                 }
-                let line_text = tokens_to_string(line);
                 blocks.push(match parse_line_into_syntax(line) {
                     Ok(syntax) => BlockStatement::Syntax(syntax),
-                    Err(_) => BlockStatement::Unrecognized(line_text),
+                    Err(_) => BlockStatement::Unrecognized(tokens_to_string(line)),
                 });
                 *pos += 1;
             }
@@ -737,13 +736,12 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
 
     if do_line_no_ws.len() > 1 {
         let second = &do_line_no_ws[1];
-        let second_upper = second.value.to_uppercase();
-        if second_upper == "WHILE" || second.token_type == TokenType::While {
+        if second.value.eq_ignore_ascii_case("while") || second.token_type == TokenType::While {
             is_pre_test = true;
             is_until = false;
             let while_idx = find_keyword_or_type(line, "while", TokenType::While).unwrap();
             pre_condition = Some(parse_expr_from_slice(line, while_idx + 1)?);
-        } else if second_upper == "UNTIL" {
+        } else if second.value.eq_ignore_ascii_case("until") {
             is_pre_test = true;
             is_until = true;
             let until_idx = line.iter().position(|t| {
@@ -773,12 +771,11 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
                 let loop_no_ws: Vec<&Token> = loop_line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
                 if loop_no_ws.len() > 1 {
                     let second = &loop_no_ws[1];
-                    let second_upper = second.value.to_uppercase();
-                    if second_upper == "WHILE" || second.token_type == TokenType::While {
+                    if second.value.eq_ignore_ascii_case("while") || second.token_type == TokenType::While {
                         is_post_until = false;
                         let while_idx = find_keyword_or_type(loop_line, "while", TokenType::While).unwrap();
                         post_condition = Some(parse_expr_from_slice(loop_line, while_idx + 1)?);
-                    } else if second_upper == "UNTIL" {
+                    } else if second.value.eq_ignore_ascii_case("until") {
                         is_post_until = true;
                         let until_idx = loop_line.iter().position(|t| {
                             t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("until")

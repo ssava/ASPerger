@@ -80,16 +80,17 @@ fn token_to_binop(token: &Token) -> Option<BinOp> {
         TokenType::Imp => Some(BinOp::Imp),
         _ => {
             match token.token_type {
-                TokenType::Identifier => match token.value.to_uppercase().as_str() {
-                    "AND" => Some(BinOp::And),
-                    "OR" => Some(BinOp::Or),
-                    "MOD" => Some(BinOp::Mod),
-                    "IS" => Some(BinOp::Is),
-                    "EQV" => Some(BinOp::Eqv),
-                    "IMP" => Some(BinOp::Imp),
-                    "XOR" => Some(BinOp::Xor),
-                    "NOT" => None,
-                    _ => None,
+                TokenType::Identifier => {
+                    let v = &token.value;
+                    if v.eq_ignore_ascii_case("AND") { Some(BinOp::And) }
+                    else if v.eq_ignore_ascii_case("OR") { Some(BinOp::Or) }
+                    else if v.eq_ignore_ascii_case("MOD") { Some(BinOp::Mod) }
+                    else if v.eq_ignore_ascii_case("IS") { Some(BinOp::Is) }
+                    else if v.eq_ignore_ascii_case("EQV") { Some(BinOp::Eqv) }
+                    else if v.eq_ignore_ascii_case("IMP") { Some(BinOp::Imp) }
+                    else if v.eq_ignore_ascii_case("XOR") { Some(BinOp::Xor) }
+                    else if v.eq_ignore_ascii_case("NOT") { None }
+                    else { None }
                 },
                 _ => None,
             }
@@ -100,7 +101,7 @@ fn token_to_binop(token: &Token) -> Option<BinOp> {
 fn is_unary_op(token: &Token) -> bool {
     matches!(token.token_type, TokenType::Minus)
         || matches!(token.token_type, TokenType::Plus)
-        || (token.token_type == TokenType::Identifier && token.value.to_uppercase() == "NOT")
+        || (token.token_type == TokenType::Identifier && token.value.eq_ignore_ascii_case("not"))
         || matches!(token.token_type, TokenType::Not)
 }
 
@@ -113,8 +114,7 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
         let op = match token.token_type {
             TokenType::Minus => UnaryOp::Neg,
             _ => {
-                let val = token.value.to_uppercase();
-                if val == "NOT" || token.token_type == TokenType::Not {
+                if token.value.eq_ignore_ascii_case("not") || token.token_type == TokenType::Not {
                     UnaryOp::Not
                 } else {
                     return parse_primary(tokens, pos);

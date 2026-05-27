@@ -3,23 +3,22 @@ use super::vbobject::Dictionary;
 use super::vbs_error::{VBSError, VBSErrorType};
 
 pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError> {
-    let upper = name.to_uppercase();
-    match upper.as_str() {
-        "ARRAY" => builtin_array(&args),
-        "CREATEOBJECT" => builtin_createobject(&args),
-        "LEN" => builtin_len(&args),
-        "UCASE" => builtin_ucase(&args),
-        "LCASE" => builtin_lcase(&args),
-        "MID" => builtin_mid(&args),
-        "LEFT" => builtin_left(&args),
-        "RIGHT" => builtin_right(&args),
-        "TRIM" => builtin_trim(&args),
-        "CINT" => builtin_cint(&args),
-        "CSTR" => builtin_cstr(&args),
-        "ABS" => builtin_abs(&args),
-        "ISNULL" => builtin_isnull(&args),
-        "ISEMPTY" => builtin_isempty(&args),
-        "INSTR" => builtin_instr(&args),
+    match name {
+        n if n.eq_ignore_ascii_case("ARRAY") => builtin_array(&args),
+        n if n.eq_ignore_ascii_case("CREATEOBJECT") => builtin_createobject(&args),
+        n if n.eq_ignore_ascii_case("LEN") => builtin_len(&args),
+        n if n.eq_ignore_ascii_case("UCASE") => builtin_ucase(&args),
+        n if n.eq_ignore_ascii_case("LCASE") => builtin_lcase(&args),
+        n if n.eq_ignore_ascii_case("MID") => builtin_mid(&args),
+        n if n.eq_ignore_ascii_case("LEFT") => builtin_left(&args),
+        n if n.eq_ignore_ascii_case("RIGHT") => builtin_right(&args),
+        n if n.eq_ignore_ascii_case("TRIM") => builtin_trim(&args),
+        n if n.eq_ignore_ascii_case("CINT") => builtin_cint(&args),
+        n if n.eq_ignore_ascii_case("CSTR") => builtin_cstr(&args),
+        n if n.eq_ignore_ascii_case("ABS") => builtin_abs(&args),
+        n if n.eq_ignore_ascii_case("ISNULL") => builtin_isnull(&args),
+        n if n.eq_ignore_ascii_case("ISEMPTY") => builtin_isempty(&args),
+        n if n.eq_ignore_ascii_case("INSTR") => builtin_instr(&args),
         _ => Err(VBSErrorType::NotImplementedError.into_error(
             format!("Function '{}' is not implemented", name)
         )),
