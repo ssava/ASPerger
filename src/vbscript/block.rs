@@ -1,7 +1,9 @@
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::expr::{evaluate, parse_expression, Expr};
-use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, ReDim, ResponseWrite, VBSyntax};
+use super::execution_context::{ClassDefinition, PropertyDef};
+use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, PropertySet, ReDim, ResponseWrite, VBSyntax};
 use super::{ExecutionContext, Token, TokenType, VBValue};
+use ahash::AHashMap;
 
 pub enum BlockStatement {
     Syntax(Box<dyn VBSyntax>),
@@ -48,6 +50,10 @@ pub enum BlockStatement {
         expression: Expr,
         cases: Vec<CaseClause>,
         else_body: Option<Vec<BlockStatement>>,
+    },
+    ClassDef {
+        name: String,
+        body_lines: Vec<Vec<Token>>,
     },
 }
 
@@ -356,6 +362,20 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(ArrayAssignment::new(var_name, index_expr, value_expr)));
     }
 
+    // obj.Property = expr (property set)
+    if non_ws.len() >= 4
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::Dot
+        && non_ws[2].token_type == TokenType::Identifier
+        && non_ws[3].token_type == TokenType::Assign
+    {
+        let object_name = non_ws[0].value.clone();
+        let property_name = non_ws[2].value.clone();
+        let assign_idx = tokens.iter().position(|t| t.token_type == TokenType::Assign).unwrap();
+        let value_expr = parse_expression(&tokens[assign_idx + 1..])?;
+        return Ok(Box::new(PropertySet::new(object_name, property_name, value_expr)));
+    }
+
     // obj.Method arg1, arg2, ... (method call)
     if non_ws.len() >= 3
         && non_ws[0].token_type == TokenType::Identifier
@@ -574,6 +594,83 @@ fn parse_select_case_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<Bloc
     Ok(BlockStatement::SelectCase { expression, cases, else_body })
 }
 
+fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let name_idx = line.iter()
+        .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+        .position(|t| t.token_type != TokenType::Class && t.token_type == TokenType::Identifier)
+        .and_then(|_idx| {
+            let mut count = 0;
+            for (i, t) in line.iter().enumerate() {
+                if t.token_type == TokenType::WhiteSpace { continue; }
+                if count == 1 { return Some(i); }
+                count += 1;
+            }
+            None
+        });
+
+    let class_name = name_idx.map(|i| line[i].value.clone())
+        .unwrap_or_else(|| "".to_string());
+
+    let mut body_lines: Vec<Vec<Token>> = Vec::new();
+    let mut depth = 0;
+
+    loop {
+        if *pos >= lines.len() {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                "Class without End Class".to_string()
+            ));
+        }
+
+        let next_line = &lines[*pos];
+        let first = first_non_ws(next_line);
+
+        match first {
+            Some(t) if t.token_type == TokenType::End => {
+                let second = next_line.iter()
+                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                    .skip(1)
+                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                if let Some(s) = second {
+                    if s.value.eq_ignore_ascii_case("class") || s.token_type == TokenType::Class {
+                        if depth == 0 {
+                            *pos += 1;
+                            break;
+                        }
+                        depth -= 1;
+                    } else if s.value.eq_ignore_ascii_case("property") || s.token_type == TokenType::Property {
+                        if depth == 0 {
+                            return Err(VBSErrorType::SyntaxError.into_error(
+                                "End Property without matching Property".to_string()
+                            ));
+                        }
+                        depth -= 1;
+                    }
+                }
+                body_lines.push(next_line.clone());
+                *pos += 1;
+            }
+            Some(t) if t.token_type == TokenType::Property => {
+                depth += 1;
+                body_lines.push(next_line.clone());
+                *pos += 1;
+            }
+            Some(t) if t.token_type == TokenType::Public || t.token_type == TokenType::Private => {
+                body_lines.push(next_line.clone());
+                *pos += 1;
+            }
+            _ => {
+                body_lines.push(next_line.clone());
+                *pos += 1;
+            }
+        }
+    }
+
+    Ok(BlockStatement::ClassDef { name: class_name, body_lines })
+}
+
 // ===== Block parsing =====
 
 pub fn parse_blocks(lines: &[Vec<Token>]) -> Result<Vec<BlockStatement>, VBSError> {
@@ -607,6 +704,9 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
             Some(t) if t.token_type == TokenType::Select => {
                 blocks.push(parse_select_case_block(lines, pos)?);
             }
+            Some(t) if t.token_type == TokenType::Class => {
+                blocks.push(parse_class_def(lines, pos)?);
+            }
             Some(t)
                 if t.token_type == TokenType::End
                     || t.token_type == TokenType::Next
@@ -614,7 +714,10 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
                     || t.token_type == TokenType::Loop
                     || t.token_type == TokenType::ElseIf
                     || t.token_type == TokenType::Else
-                    || t.token_type == TokenType::Case =>
+                    || t.token_type == TokenType::Case
+                    || t.token_type == TokenType::Property
+                    || t.token_type == TokenType::Public
+                    || t.token_type == TokenType::Private =>
             {
                 break;
             }
@@ -1132,6 +1235,98 @@ pub(crate) fn execute_user_defined_function(
     }
 }
 
+fn extract_properties_from_class_body(body_lines: &[Vec<Token>]) -> Result<AHashMap<String, PropertyDef>, VBSError> {
+    let mut properties: AHashMap<String, PropertyDef> = AHashMap::new();
+    let mut i = 0;
+
+    while i < body_lines.len() {
+        let line = &body_lines[i];
+        let no_ws: Vec<&Token> = line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+
+        if no_ws.is_empty() || (no_ws[0].token_type == TokenType::Public || no_ws[0].token_type == TokenType::Private) {
+            let property_idx = no_ws.iter().position(|t| t.token_type == TokenType::Property);
+            if let Some(p_idx) = property_idx {
+                let get_let_set = no_ws.get(p_idx + 1);
+                let name_tok = no_ws.get(p_idx + 2);
+                let is_get = get_let_set.map(|t| t.token_type == TokenType::Get || t.value.eq_ignore_ascii_case("get")).unwrap_or(false);
+                let is_let = get_let_set.map(|t| t.token_type == TokenType::Let || t.value.eq_ignore_ascii_case("let")).unwrap_or(false);
+                let is_set = get_let_set.map(|t| t.token_type == TokenType::Set && t.token_type != TokenType::Get && t.token_type != TokenType::Let).unwrap_or(false);
+
+                if (is_get || is_let || is_set) {
+                    let name_tok = match name_tok {
+                        Some(t) if t.token_type == TokenType::Identifier => t,
+                        _ => { i += 1; continue; }
+                    };
+                    let prop_name = name_tok.value.clone();
+                    i += 1;
+
+                    let mut param = None;
+                    if (is_let || is_set) && no_ws.len() > p_idx + 3 {
+                        let paren_open = no_ws.get(p_idx + 3);
+                        if paren_open.map(|t| t.token_type == TokenType::LeftParen).unwrap_or(false) {
+                            if let Some(param_tok) = no_ws.get(p_idx + 4) {
+                                if param_tok.token_type == TokenType::Identifier {
+                                    param = Some(param_tok.value.clone());
+                                }
+                            }
+                        }
+                    }
+
+                    let mut body: Vec<Vec<Token>> = Vec::new();
+                    loop {
+                        if i >= body_lines.len() {
+                            return Err(VBSErrorType::SyntaxError.into_error(
+                                "Property without End Property".to_string()
+                            ));
+                        }
+                        let bline = &body_lines[i];
+                        let first = first_non_ws(bline);
+                        if let Some(f) = first {
+                            if f.token_type == TokenType::End {
+                                let second = bline.iter()
+                                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                                    .skip(1)
+                                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                                if let Some(s) = second {
+                                    if s.value.eq_ignore_ascii_case("property") || s.token_type == TokenType::Property {
+                                        i += 1;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        body.push(bline.clone());
+                        i += 1;
+                    }
+
+                    let entry = properties.entry(prop_name.to_uppercase()).or_insert(PropertyDef {
+                        name: prop_name.clone(),
+                        get_body: None,
+                        let_body: None,
+                        let_param: None,
+                        set_body: None,
+                        set_param: None,
+                    });
+
+                    if is_get {
+                        entry.get_body = Some(body);
+                    } else if is_let {
+                        entry.let_body = Some(body);
+                        entry.let_param = param;
+                    } else if is_set {
+                        entry.set_body = Some(body);
+                        entry.set_param = param;
+                    }
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    Ok(properties)
+}
+
 pub fn execute_blocks(
     blocks: &[BlockStatement],
     context: &mut ExecutionContext,
@@ -1289,6 +1484,20 @@ pub fn execute_blocks(
                     if let Some(body) = else_body {
                         execute_blocks(body, context)?;
                     }
+                }
+            }
+            BlockStatement::ClassDef { name, body_lines } => {
+                if name.is_empty() {
+                    return Err(VBSErrorType::SyntaxError.into_error(
+                        "Class name is empty".to_string()
+                    ));
+                }
+                if let Ok(properties) = extract_properties_from_class_body(body_lines) {
+                    let class_def = ClassDefinition {
+                        name: name.clone(),
+                        properties,
+                    };
+                    context.define_class(class_def);
                 }
             }
         }

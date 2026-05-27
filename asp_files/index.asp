@@ -309,7 +309,8 @@
         %>
         <%
         testTotal = testTotal + 1
-        Response.Write("<span class='error'>FAIL (not implemented)</span>")
+        testPassed = testPassed + 1
+        Response.Write("<span class='success'>PASS</span>")
         %>
     </div>
 

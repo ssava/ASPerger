@@ -1,0 +1,52 @@
+use super::VBSyntax;
+use super::super::expr::{evaluate, Expr};
+use super::super::value::VBValue;
+use super::super::vbs_error::{VBSError, VBSErrorType};
+use super::super::ExecutionContext;
+
+pub struct PropertySet {
+    object_name: String,
+    property: String,
+    value_expr: Expr,
+}
+
+impl PropertySet {
+    pub fn new(object_name: String, property: String, value_expr: Expr) -> Self {
+        PropertySet { object_name, property, value_expr }
+    }
+}
+
+impl VBSyntax for PropertySet {
+    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
+        let value = evaluate(&self.value_expr, context)?;
+
+        let obj_key = self.object_name.to_uppercase();
+
+        // Take the object out of context, replacing with Empty temporarily
+        let mut obj_val = {
+            let slot: &mut VBValue = match context.get_variable_mut(&self.object_name) {
+                Some(v @ VBValue::Object(_)) => v,
+                _ => {
+                    return Err(VBSErrorType::RuntimeError.into_error(
+                        format!("Object variable '{}' is not set", self.object_name)
+                    ));
+                }
+            };
+            let mut replacement = VBValue::Empty;
+            std::mem::swap(slot, &mut replacement);
+            replacement
+        };
+
+        // Now the borrow on slot is dropped. obj_val owns the VBValue::Object.
+        match &mut obj_val {
+            VBValue::Object(ref mut obj) => {
+                obj.set_property(&self.property, value, context)?;
+            }
+            _ => unreachable!(),
+        }
+
+        // Put the object back
+        context.set_variable(&obj_key, obj_val);
+        Ok(())
+    }
+}

@@ -1,13 +1,32 @@
 use ahash::AHashMap;
 
 use super::block::UserDefinedFunction;
+use super::tokenizer::Token;
+use super::vbs_error::VBSError;
 use super::VBValue;
+
+#[allow(dead_code)]
+pub struct PropertyDef {
+    pub name: String,
+    pub get_body: Option<Vec<Vec<Token>>>,
+    pub let_body: Option<Vec<Vec<Token>>>,
+    pub let_param: Option<String>,
+    pub set_body: Option<Vec<Vec<Token>>>,
+    pub set_param: Option<String>,
+}
+
+#[allow(dead_code)]
+pub struct ClassDefinition {
+    pub name: String,
+    pub properties: AHashMap<String, PropertyDef>,
+}
 
 #[derive(Default)]
 pub struct ExecutionContext {
     variables: AHashMap<String, VBValue>,
     pub response_buffer: String,
     functions: AHashMap<String, UserDefinedFunction>,
+    classes: AHashMap<String, ClassDefinition>,
 }
 
 impl ExecutionContext {
@@ -16,6 +35,7 @@ impl ExecutionContext {
             variables: AHashMap::new(),
             response_buffer: String::new(),
             functions: AHashMap::new(),
+            classes: AHashMap::new(),
         }
     }
 
@@ -45,5 +65,24 @@ impl ExecutionContext {
 
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
         self.functions.get(&name.to_uppercase())
+    }
+
+    pub fn define_class(&mut self, class: ClassDefinition) {
+        self.classes.insert(class.name.to_uppercase(), class);
+    }
+
+    pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
+        self.classes.get(&name.to_uppercase())
+    }
+
+    pub fn with_instance_scope<T>(
+        &mut self,
+        instance_vars: &mut AHashMap<String, VBValue>,
+        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
+    ) -> Result<T, VBSError> {
+        let saved = std::mem::replace(&mut self.variables, std::mem::take(instance_vars));
+        let result = f(self);
+        *instance_vars = std::mem::replace(&mut self.variables, saved);
+        result
     }
 }

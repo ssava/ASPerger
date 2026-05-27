@@ -1,12 +1,13 @@
 use ahash::AHashMap;
+use super::execution_context::ExecutionContext;
 use super::value::VBValue;
 use super::vbs_error::{VBSError, VBSErrorType};
 
 #[allow(dead_code)]
 pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
     fn clone_box(&self) -> Box<dyn VBScriptObject>;
-    fn get_property(&self, name: &str) -> Result<VBValue, VBSError>;
-    fn set_property(&mut self, name: &str, value: VBValue) -> Result<(), VBSError>;
+    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError>;
+    fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError>;
     fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError>;
     fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError>;
     fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError>;
@@ -30,7 +31,7 @@ impl VBScriptObject for Dictionary {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str) -> Result<VBValue, VBSError> {
+    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.items.len() as f64)),
             "KEYS" => Ok(VBValue::Array(std::sync::Arc::new(
@@ -45,7 +46,7 @@ impl VBScriptObject for Dictionary {
         }
     }
 
-    fn set_property(&mut self, name: &str, _value: VBValue) -> Result<(), VBSError> {
+    fn set_property(&mut self, name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             _ => Err(VBSErrorType::RuntimeError.into_error(
                 format!("Cannot set property '{}' on Dictionary", name)
@@ -108,6 +109,122 @@ impl VBScriptObject for Dictionary {
         let key = to_arg_string(index);
         self.items.insert(key, value);
         Ok(())
+    }
+}
+
+// ---- ClassInstance ----
+
+#[derive(Debug)]
+pub struct ClassInstance {
+    pub class_name: String,
+    pub instance_vars: AHashMap<String, VBValue>,
+}
+
+impl ClassInstance {
+    pub fn new(class_name: &str) -> Self {
+        ClassInstance {
+            class_name: class_name.to_string(),
+            instance_vars: AHashMap::new(),
+        }
+    }
+}
+
+impl VBScriptObject for ClassInstance {
+    fn clone_box(&self) -> Box<dyn VBScriptObject> {
+        Box::new(ClassInstance {
+            class_name: self.class_name.clone(),
+            instance_vars: self.instance_vars.clone(),
+        })
+    }
+
+    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+        let class_def = context.get_class(&self.class_name)
+            .ok_or_else(|| VBSErrorType::RuntimeError.into_error(
+                format!("Class '{}' not found", self.class_name)
+            ))?;
+        let prop_name_upper = name.to_uppercase();
+        if let Some(prop_def) = class_def.properties.get(&prop_name_upper) {
+            if let Some(ref body_lines) = prop_def.get_body {
+                let body_blocks = super::block::parse_blocks(body_lines)
+                    .map_err(|_| VBSErrorType::RuntimeError.into_error(
+                        format!("Error parsing Property Get '{}' body", name)
+                    ))?;
+                let mut instance_vars = self.instance_vars.clone();
+                context.set_variable(name, VBValue::Empty);
+                instance_vars.insert(name.to_uppercase(), VBValue::Empty);
+                let result = context.with_instance_scope(&mut instance_vars, |ctx| {
+                    super::block::execute_blocks(&body_blocks, ctx)
+                });
+                match result {
+                    Ok(()) => {
+                        let val = instance_vars.get(&prop_name_upper)
+                            .cloned()
+                            .unwrap_or(VBValue::Empty);
+                        Ok(val)
+                    }
+                    Err(e) => Err(e),
+                }
+            } else {
+                let val = self.instance_vars.get(&prop_name_upper)
+                    .cloned()
+                    .unwrap_or(VBValue::Empty);
+                Ok(val)
+            }
+        } else {
+            let val = self.instance_vars.get(&prop_name_upper)
+                .cloned()
+                .unwrap_or(VBValue::Empty);
+            Ok(val)
+        }
+    }
+
+    fn set_property(&mut self, name: &str, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
+        let class_def = context.get_class(&self.class_name)
+            .ok_or_else(|| VBSErrorType::RuntimeError.into_error(
+                format!("Class '{}' not found", self.class_name)
+            ))?;
+        let prop_name_upper = name.to_uppercase();
+        if let Some(prop_def) = class_def.properties.get(&prop_name_upper) {
+            if let Some(ref body_lines) = prop_def.let_body {
+                let body_blocks = super::block::parse_blocks(body_lines)
+                    .map_err(|_| VBSErrorType::RuntimeError.into_error(
+                        format!("Error parsing Property Let '{}' body", name)
+                    ))?;
+                let mut instance_vars = std::mem::take(&mut self.instance_vars);
+                if let Some(ref param) = prop_def.let_param {
+                    instance_vars.insert(param.to_uppercase(), value.clone());
+                }
+                let result = context.with_instance_scope(&mut instance_vars, |ctx| {
+                    super::block::execute_blocks(&body_blocks, ctx)
+                });
+                self.instance_vars = instance_vars;
+                result
+            } else {
+                self.instance_vars.insert(prop_name_upper, value);
+                Ok(())
+            }
+        } else {
+            self.instance_vars.insert(prop_name_upper, value);
+            Ok(())
+        }
+    }
+
+    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            format!("Method '{}' not found on class '{}'", name, self.class_name)
+        ))
+    }
+
+    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            format!("Class '{}' does not support indexed access", self.class_name)
+        ))
+    }
+
+    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            format!("Class '{}' does not support indexed access", self.class_name)
+        ))
     }
 }
 

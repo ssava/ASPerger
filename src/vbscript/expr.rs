@@ -23,6 +23,7 @@ pub enum Expr {
     FunctionCall { name: String, args: Vec<Expr> },
     PropertyAccess { object: Box<Expr>, property: String },
     MethodCall { object: Box<Expr>, method: String, args: Vec<Expr> },
+    NewObject(String),
 }
 
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
@@ -157,6 +158,17 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
         TokenType::Null => Ok(Expr::Literal(VBValue::Null)),
         TokenType::Empty => Ok(Expr::Literal(VBValue::Empty)),
         TokenType::Nothing => Ok(Expr::Literal(VBValue::Empty)),
+        TokenType::New => {
+            let class_name = advance(tokens, pos).ok_or_else(|| {
+                VBSErrorType::SyntaxError.into_error("Expected class name after New".to_string())
+            })?;
+            if class_name.token_type != TokenType::Identifier {
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    format!("Expected class name after New, found: {}", class_name.value)
+                ));
+            }
+            Ok(Expr::NewObject(class_name.value.clone()))
+        }
         TokenType::Identifier => {
             let name = token.value.clone();
             match peek(tokens, *pos) {
@@ -421,7 +433,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
         Expr::PropertyAccess { object, property } => {
             let obj_val = evaluate(object, context)?;
             match obj_val {
-                VBValue::Object(obj) => obj.get_property(property),
+                VBValue::Object(obj) => obj.get_property(property, context),
                 _ => Err(VBSErrorType::RuntimeError.into_error(
                     format!("Object doesn't support this property or method: '{}'", property)
                 )),
@@ -440,6 +452,15 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     format!("Object doesn't support this property or method: '{}'", method)
                 )),
             }
+        }
+        Expr::NewObject(class_name) => {
+            let class_def = context.get_class(class_name).ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error(
+                    format!("Class '{}' not defined", class_name)
+                )
+            })?;
+            let instance = super::vbobject::ClassInstance::new(&class_def.name);
+            Ok(VBValue::Object(Box::new(instance)))
         }
     }
 }

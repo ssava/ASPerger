@@ -40,6 +40,11 @@ pub enum TokenType {
     Step,
     ReDim,
     Preserve,
+    Property,
+    Get,
+    Let,
+    Public,
+    Private,
 
     // Operators
     Plus,
@@ -349,6 +354,11 @@ value,
         if word.eq_ignore_ascii_case("STEP") { return TokenType::Step; }
         if word.eq_ignore_ascii_case("REDIM") { return TokenType::ReDim; }
         if word.eq_ignore_ascii_case("PRESERVE") { return TokenType::Preserve; }
+        if word.eq_ignore_ascii_case("PROPERTY") { return TokenType::Property; }
+        if word.eq_ignore_ascii_case("GET") { return TokenType::Get; }
+        if word.eq_ignore_ascii_case("LET") { return TokenType::Let; }
+        if word.eq_ignore_ascii_case("PUBLIC") { return TokenType::Public; }
+        if word.eq_ignore_ascii_case("PRIVATE") { return TokenType::Private; }
         TokenType::Identifier
     }
 
