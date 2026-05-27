@@ -1239,11 +1239,11 @@ mod tests {
     fn test_for_each_basic() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(vec![
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(10.0),
             VBValue::Number(20.0),
             VBValue::Number(30.0),
-        ]));
+        ])));
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter.execute("For Each x In items\n    sum = sum + x\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("sum"), Some(&VBValue::Number(60.0)));
@@ -1253,7 +1253,7 @@ mod tests {
     fn test_for_each_empty_array() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(vec![]));
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![])));
         context.set_variable("flag", VBValue::Boolean(false));
         interpreter.execute("For Each x In items\n    flag = True\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("flag"), Some(&VBValue::Boolean(false)));
@@ -1263,11 +1263,11 @@ mod tests {
     fn test_for_each_string_array() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(vec![
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::String("a".to_string()),
             VBValue::String("b".to_string()),
             VBValue::String("c".to_string()),
-        ]));
+        ])));
         context.set_variable("result", VBValue::String("".to_string()));
         interpreter.execute("For Each x In items\n    result = result & x\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::String("abc".to_string())));
@@ -1287,10 +1287,10 @@ mod tests {
     fn test_for_each_nested() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("outer", VBValue::Array(vec![
-            VBValue::Array(vec![VBValue::Number(1.0), VBValue::Number(2.0)]),
-            VBValue::Array(vec![VBValue::Number(3.0), VBValue::Number(4.0)]),
-        ]));
+        context.set_variable("outer", VBValue::Array(std::sync::Arc::new(vec![
+            VBValue::Array(std::sync::Arc::new(vec![VBValue::Number(1.0), VBValue::Number(2.0)])),
+            VBValue::Array(std::sync::Arc::new(vec![VBValue::Number(3.0), VBValue::Number(4.0)])),
+        ])));
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter.execute(
             "For Each row In outer\n    For Each col In row\n        sum = sum + col\n    Next\nNext",
@@ -1303,11 +1303,11 @@ mod tests {
     fn test_for_each_modifies_element() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(vec![
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(1.0),
             VBValue::Number(2.0),
             VBValue::Number(3.0),
-        ]));
+        ])));
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter.execute(
             "For Each x In items\n    sum = sum + x\n    x = 999\nNext",
@@ -1322,11 +1322,11 @@ mod tests {
     fn test_for_each_with_for() {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(vec![
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(2.0),
             VBValue::Number(3.0),
             VBValue::Number(4.0),
-        ]));
+        ])));
         context.set_variable("total", VBValue::Number(0.0));
         interpreter.execute(
             "For Each x In items\n    For i = 1 To x\n        total = total + i\n    Next\nNext",
@@ -1344,9 +1344,9 @@ mod tests {
         context.set_variable("result", VBValue::String("".to_string()));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array(10, 20, 30)", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(vec![
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(10.0), VBValue::Number(20.0), VBValue::Number(30.0),
-        ])));
+        ]))));
     }
 
     #[test]
@@ -1398,7 +1398,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array()", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(vec![])));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(std::sync::Arc::new(vec![]))));
     }
 
     #[test]

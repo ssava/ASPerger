@@ -23,6 +23,7 @@ impl VBSyntax for ArrayAssignment {
 
         match context.get_variable_mut(&self.var_name) {
             Some(VBValue::Array(ref mut items)) => {
+                let items = std::sync::Arc::make_mut(items);
                 if idx >= items.len() {
                     return Err(VBSErrorType::RuntimeError.into_error(
                         format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())

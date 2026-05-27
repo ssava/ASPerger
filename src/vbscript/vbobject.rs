@@ -3,7 +3,7 @@ use super::value::VBValue;
 use super::vbs_error::{VBSError, VBSErrorType};
 
 #[allow(dead_code)]
-pub trait VBScriptObject: std::fmt::Debug + Send {
+pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
     fn clone_box(&self) -> Box<dyn VBScriptObject>;
     fn get_property(&self, name: &str) -> Result<VBValue, VBSError>;
     fn set_property(&mut self, name: &str, value: VBValue) -> Result<(), VBSError>;
@@ -33,12 +33,12 @@ impl VBScriptObject for Dictionary {
     fn get_property(&self, name: &str) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.items.len() as f64)),
-            "KEYS" => Ok(VBValue::Array(
+            "KEYS" => Ok(VBValue::Array(std::sync::Arc::new(
                 self.items.keys().map(|k| VBValue::String(k.clone())).collect()
-            )),
-            "ITEMS" => Ok(VBValue::Array(
+            ))),
+            "ITEMS" => Ok(VBValue::Array(std::sync::Arc::new(
                 self.items.values().cloned().collect()
-            )),
+            ))),
             _ => Err(VBSErrorType::RuntimeError.into_error(
                 format!("Property '{}' not found on Dictionary", name)
             )),

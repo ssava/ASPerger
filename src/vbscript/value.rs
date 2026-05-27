@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use super::vbobject::VBScriptObject;
 use std::{fmt, str::FromStr};
 
@@ -9,7 +10,7 @@ pub enum VBValue {
     Null,
     Empty,
     #[allow(dead_code)]
-    Array(Vec<VBValue>),
+    Array(Arc<Vec<VBValue>>),
     Object(Box<dyn VBScriptObject>),
 }
 
@@ -21,7 +22,7 @@ impl Clone for VBValue {
             VBValue::Boolean(b) => VBValue::Boolean(*b),
             VBValue::Null => VBValue::Null,
             VBValue::Empty => VBValue::Empty,
-            VBValue::Array(v) => VBValue::Array(v.clone()),
+            VBValue::Array(v) => VBValue::Array(Arc::clone(v)),
             VBValue::Object(obj) => VBValue::Object(obj.clone_box()),
         }
     }

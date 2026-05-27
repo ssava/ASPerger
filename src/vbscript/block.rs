@@ -926,9 +926,9 @@ pub fn execute_blocks(
             BlockStatement::ForEach { element, group, body } => {
                 let group_val = evaluate(group, context)?;
                 match group_val {
-                    VBValue::Array(items) => {
-                        for item in items {
-                            context.set_variable(element, item);
+                    VBValue::Array(ref items) => {
+                        for item in items.iter() {
+                            context.set_variable(element, item.clone());
                             execute_blocks(body, context)?;
                         }
                     }

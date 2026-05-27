@@ -44,7 +44,7 @@ fn expect_min_args(args: &[VBValue], min: usize, name: &str) -> Result<(), VBSEr
 }
 
 fn builtin_array(args: &[VBValue]) -> Result<VBValue, VBSError> {
-    Ok(VBValue::Array(args.to_vec()))
+    Ok(VBValue::Array(std::sync::Arc::new(args.to_vec())))
 }
 
 fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {

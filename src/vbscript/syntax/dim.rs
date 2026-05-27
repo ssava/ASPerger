@@ -15,7 +15,7 @@ impl VBSyntax for Dim {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         for (var_name, is_array) in &self.var_names {
             if *is_array {
-                context.set_variable(var_name, VBValue::Array(Vec::new()));
+                context.set_variable(var_name, VBValue::Array(std::sync::Arc::new(Vec::new())));
             } else {
                 context.set_variable(var_name, VBValue::Empty);
             }
