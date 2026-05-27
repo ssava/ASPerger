@@ -44,10 +44,20 @@ pub enum BlockStatement {
         params: Vec<String>,
         body_lines: Vec<Vec<Token>>,
     },
+    SelectCase {
+        expression: Expr,
+        cases: Vec<CaseClause>,
+        else_body: Option<Vec<BlockStatement>>,
+    },
 }
 
 pub struct ElseIfBlock {
     pub condition: Expr,
+    pub body: Vec<BlockStatement>,
+}
+
+pub struct CaseClause {
+    pub values: Vec<Expr>,
     pub body: Vec<BlockStatement>,
 }
 
@@ -472,6 +482,98 @@ fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStat
     }
 }
 
+// ===== Select Case parsing =====
+
+fn parse_select_case_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let case_idx = find_keyword_or_type(line, "case", TokenType::Case)
+        .ok_or_else(|| VBSErrorType::SyntaxError.into_error("Select without Case".to_string()))?;
+
+    let expression = parse_expr_from_slice(line, case_idx + 1)?;
+
+    let mut cases: Vec<CaseClause> = Vec::new();
+    let mut else_body: Option<Vec<BlockStatement>> = None;
+    let mut in_else = false;
+
+    loop {
+        if *pos >= lines.len() {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                "Select without End Select".to_string()
+            ));
+        }
+
+        let next_line = &lines[*pos];
+        let first = first_non_ws(next_line);
+
+        match first {
+            Some(t) if t.token_type == TokenType::Case => {
+                let no_ws: Vec<&Token> = next_line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+
+                if no_ws.len() > 1 && no_ws[1].value.eq_ignore_ascii_case("else") {
+                    *pos += 1;
+                    in_else = true;
+                    else_body = Some(Vec::new());
+                } else {
+                    let case_token_pos = next_line.iter().position(|t| t.token_type == TokenType::Case).unwrap();
+                    let after_case: Vec<Token> = next_line[case_token_pos + 1..].iter()
+                        .filter(|t| t.token_type != TokenType::WhiteSpace)
+                        .cloned()
+                        .collect();
+
+                    let mut values = Vec::new();
+                    if !after_case.is_empty() {
+                        let mut val_start = 0;
+                        for (j, tok) in after_case.iter().enumerate() {
+                            if tok.token_type == TokenType::Comma {
+                                if j > val_start {
+                                    values.push(parse_expression(&after_case[val_start..j])?);
+                                }
+                                val_start = j + 1;
+                            }
+                        }
+                        if val_start < after_case.len() {
+                            values.push(parse_expression(&after_case[val_start..])?);
+                        }
+                    }
+
+                    *pos += 1;
+                    in_else = false;
+                    cases.push(CaseClause { values, body: Vec::new() });
+                }
+            }
+            Some(t) if t.token_type == TokenType::End => {
+                let second = next_line.iter()
+                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                    .skip(1)
+                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                if let Some(s) = second {
+                    if s.value.eq_ignore_ascii_case("select") || s.token_type == TokenType::Select {
+                        *pos += 1;
+                        break;
+                    }
+                }
+                return Err(VBSErrorType::SyntaxError.into_error(
+                    format!("Expected End Select, got: {}", tokens_to_string(next_line))
+                ));
+            }
+            _ => {
+                let sub_blocks = parse_blocks_inner(lines, pos)?;
+                if in_else {
+                    if let Some(ref mut eb) = else_body {
+                        eb.extend(sub_blocks);
+                    }
+                } else if let Some(last) = cases.last_mut() {
+                    last.body.extend(sub_blocks);
+                }
+            }
+        }
+    }
+
+    Ok(BlockStatement::SelectCase { expression, cases, else_body })
+}
+
 // ===== Block parsing =====
 
 pub fn parse_blocks(lines: &[Vec<Token>]) -> Result<Vec<BlockStatement>, VBSError> {
@@ -502,13 +604,17 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
             Some(t) if t.token_type == TokenType::Function || t.token_type == TokenType::Sub => {
                 blocks.push(parse_function_def(lines, pos)?);
             }
+            Some(t) if t.token_type == TokenType::Select => {
+                blocks.push(parse_select_case_block(lines, pos)?);
+            }
             Some(t)
                 if t.token_type == TokenType::End
                     || t.token_type == TokenType::Next
                     || t.token_type == TokenType::WEnd
                     || t.token_type == TokenType::Loop
                     || t.token_type == TokenType::ElseIf
-                    || t.token_type == TokenType::Else =>
+                    || t.token_type == TokenType::Else
+                    || t.token_type == TokenType::Case =>
             {
                 break;
             }
@@ -1163,7 +1269,46 @@ pub fn execute_blocks(
                     }
                 }
             }
+            BlockStatement::SelectCase { expression, cases, else_body } => {
+                let expr_val = evaluate(expression, context)?;
+                let mut matched = false;
+
+                for case in cases {
+                    for val_expr in &case.values {
+                        let case_val = evaluate(val_expr, context)?;
+                        if val_equal(&expr_val, &case_val) {
+                            execute_blocks(&case.body, context)?;
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if matched { break; }
+                }
+
+                if !matched {
+                    if let Some(body) = else_body {
+                        execute_blocks(body, context)?;
+                    }
+                }
+            }
         }
     }
     Ok(())
+}
+
+fn val_equal(a: &VBValue, b: &VBValue) -> bool {
+    match (a, b) {
+        (VBValue::Number(an), VBValue::Number(bn)) => an == bn,
+        (VBValue::String(as_), VBValue::String(bs)) => as_ == bs,
+        (VBValue::Boolean(ab), VBValue::Boolean(bb)) => ab == bb,
+        (VBValue::Empty, VBValue::Empty) => true,
+        (VBValue::Null, VBValue::Null) => true,
+        (VBValue::Number(an), VBValue::String(bs)) => {
+            bs.parse::<f64>().map(|bn| an == &bn).unwrap_or(false)
+        }
+        (VBValue::String(as_), VBValue::Number(bn)) => {
+            as_.parse::<f64>().map(|an| &an == bn).unwrap_or(false)
+        }
+        _ => false,
+    }
 }

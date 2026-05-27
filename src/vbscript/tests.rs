@@ -1559,8 +1559,8 @@ mod tests {
                     let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
                     let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
                     assert_eq!(total, 27, "Expected 27 total tests, got {}", total);
-                    // 23 tests pass — 4 are unimplemented features (17, 18, 19, 20)
-                    assert_eq!(passed, 23, "Expected 23 passing tests, got {}. Check if unimplemented features changed", passed);
+                    // 24 tests pass — 4 are unimplemented features (18, 19, 20)
+                    assert_eq!(passed, 24, "Expected 24 passing tests, got {}. Check if unimplemented features changed", passed);
                     return;
                 }
             }
