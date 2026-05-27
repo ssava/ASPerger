@@ -364,7 +364,7 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
     match expr {
         Expr::Literal(val) => Ok(val.clone()),
         Expr::Variable(name) => {
-            context.get_variable(name).ok_or_else(|| {
+            context.get_variable(name).cloned().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error(format!("Variable '{}' is not defined", name))
             })
         }
@@ -388,7 +388,7 @@ pub fn evaluate(expr: &Expr, context: &ExecutionContext) -> Result<VBValue, VBSE
 
             if let Some(var) = context.get_variable(name) {
                 match var {
-                    VBValue::Object(obj) => {
+                    VBValue::Object(ref obj) => {
                         if evaluated_args.len() == 1 {
                             return obj.indexed_get(&evaluated_args[0]);
                         }

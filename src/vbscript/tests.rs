@@ -699,7 +699,7 @@ mod tests {
         let expr = Expr::Literal(VBValue::Number(42.0));
         let assignment = Assignment::new("x".into(), expr);
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(42.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(42.0)));
     }
 
     #[test]
@@ -712,7 +712,7 @@ mod tests {
         };
         let assignment = Assignment::new("x".into(), expr);
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(3.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(3.0)));
     }
 
     #[test]
@@ -722,7 +722,7 @@ mod tests {
         let expr = Expr::Variable("a".into());
         let assignment = Assignment::new("x".into(), expr);
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(10.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(10.0)));
     }
 
     #[test]
@@ -730,7 +730,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let assignment = Assignment::new("s".into(), Expr::Literal(VBValue::String("hello".into())));
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("s"), Some(VBValue::String("hello".into())));
+        assert_eq!(context.get_variable("s"), Some(&VBValue::String("hello".into())));
     }
 
     #[test]
@@ -738,7 +738,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let assignment = Assignment::new("b".into(), Expr::Literal(VBValue::Boolean(true)));
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("b"), Some(VBValue::Boolean(true)));
+        assert_eq!(context.get_variable("b"), Some(&VBValue::Boolean(true)));
     }
 
     #[test]
@@ -746,7 +746,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let assignment = Assignment::new("n".into(), Expr::Literal(VBValue::Null));
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("n"), Some(VBValue::Null));
+        assert_eq!(context.get_variable("n"), Some(&VBValue::Null));
     }
 
     #[test]
@@ -759,7 +759,7 @@ mod tests {
             right: Box::new(Expr::Literal(VBValue::String("World".into()))),
         });
         assignment.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("msg"), Some(VBValue::String("Hello World".into())));
+        assert_eq!(context.get_variable("msg"), Some(&VBValue::String("Hello World".into())));
     }
 
     // ===== RESPONSE.WRITE =====
@@ -808,7 +808,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let dim = Dim::new(vec![("x".into(), false)]);
         dim.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Empty));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Empty));
     }
 
     #[test]
@@ -816,9 +816,9 @@ mod tests {
         let mut context = ExecutionContext::new();
         let dim = Dim::new(vec![("a".into(), false), ("b".into(), false), ("c".into(), false)]);
         dim.execute(&mut context).unwrap();
-        assert_eq!(context.get_variable("a"), Some(VBValue::Empty));
-        assert_eq!(context.get_variable("b"), Some(VBValue::Empty));
-        assert_eq!(context.get_variable("c"), Some(VBValue::Empty));
+        assert_eq!(context.get_variable("a"), Some(&VBValue::Empty));
+        assert_eq!(context.get_variable("b"), Some(&VBValue::Empty));
+        assert_eq!(context.get_variable("c"), Some(&VBValue::Empty));
     }
 
     // ===== BLOCK STATEMENTS — IF =====
@@ -829,7 +829,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("If x = 1 Then y = 42", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(42.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(42.0)));
     }
 
     #[test]
@@ -847,7 +847,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("If x = 1 Then\n    y = 99\nEnd If", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(99.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(99.0)));
     }
 
     #[test]
@@ -865,7 +865,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(0.0));
         interpreter.execute("If x = 1 Then\n    y = 10\nElse\n    y = 20\nEnd If", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(20.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(20.0)));
     }
 
     #[test]
@@ -875,7 +875,7 @@ mod tests {
         // First ElseIf matches
         context.set_variable("x", VBValue::Number(2.0));
         interpreter.execute("If x = 1 Then\n    y = 10\nElseIf x = 2 Then\n    y = 20\nElseIf x = 3 Then\n    y = 30\nElse\n    y = 99\nEnd If", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(20.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(20.0)));
     }
 
     #[test]
@@ -884,7 +884,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(9.0));
         interpreter.execute("If x = 1 Then\n    y = 10\nElseIf x = 2 Then\n    y = 20\nElse\n    y = 99\nEnd If", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(99.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(99.0)));
     }
 
     #[test]
@@ -896,8 +896,8 @@ mod tests {
             &mut context,
         )
         .unwrap();
-        assert_eq!(context.get_variable("a"), Some(VBValue::Number(10.0)));
-        assert_eq!(context.get_variable("b"), Some(VBValue::Number(20.0)));
+        assert_eq!(context.get_variable("a"), Some(&VBValue::Number(10.0)));
+        assert_eq!(context.get_variable("b"), Some(&VBValue::Number(20.0)));
     }
 
     #[test]
@@ -906,7 +906,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(5.0));
         interpreter.execute("If x > 1 And x < 10 Then y = 1\nEnd If", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(1.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(1.0)));
     }
 
     // ===== BLOCK STATEMENTS — FOR =====
@@ -916,7 +916,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 1 To 5\n    total = total + i\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(15.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(15.0)));
     }
 
     #[test]
@@ -924,7 +924,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 1 To 10 Step 2\n    total = total + i\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(25.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(25.0)));
     }
 
     #[test]
@@ -932,7 +932,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 5 To 1 Step -1\n    total = total + i\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(15.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(15.0)));
     }
 
     #[test]
@@ -941,7 +941,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         // start > end with positive step → zero iterations
         interpreter.execute("Dim total\ntotal = 99\nFor i = 5 To 1\n    total = 0\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(99.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(99.0)));
     }
 
     #[test]
@@ -950,7 +950,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("For i = 1 To 3\nNext", &mut context).unwrap();
         // Just shouldn't crash; counter should be 4 (past end)
-        assert_eq!(context.get_variable("i"), Some(VBValue::Number(4.0)));
+        assert_eq!(context.get_variable("i"), Some(&VBValue::Number(4.0)));
     }
 
     #[test]
@@ -963,7 +963,7 @@ mod tests {
         // So i goes: 1 → (header: 2, body: +1) → 3 → 4 → 5 → 6 → 7 → 8 → 9 → header:10 → body:11 → header:12 stops
         // The loop counter is managed by the For statement,
         // so modifying i in the body doesn't affect iteration count.
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(55.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(55.0)));
     }
 
     // ===== BLOCK STATEMENTS — WHILE =====
@@ -974,7 +974,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("While x <= 3\n    x = x + 1\nWend", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(4.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(4.0)));
     }
 
     #[test]
@@ -983,7 +983,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("While x < 5\n    x = 99\nWend", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(10.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(10.0)));
     }
 
     #[test]
@@ -993,7 +993,7 @@ mod tests {
         context.set_variable("x", VBValue::Number(0.0));
         interpreter.execute("While x > 0\n    x = 99\nWend", &mut context).unwrap();
         // Should not modify x since condition is false
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(0.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(0.0)));
     }
 
     // ===== BLOCK STATEMENTS — DO =====
@@ -1004,7 +1004,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do While x < 3\n    x = x + 1\nLoop", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(3.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(3.0)));
     }
 
     #[test]
@@ -1013,7 +1013,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("Do While x < 5\n    x = 99\nLoop", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(10.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(10.0)));
     }
 
     #[test]
@@ -1022,7 +1022,7 @@ mod tests {
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do\n    x = x + 1\nLoop Until x > 3", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(4.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(4.0)));
     }
 
     #[test]
@@ -1032,7 +1032,7 @@ mod tests {
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do\n    x = x + 1\nLoop While x < 3", &mut context).unwrap();
         // Post-test: executes body, then checks. So: x=2 (check 2<3), x=3 (check 3<3=false)
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(3.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(3.0)));
     }
 
     #[test]
@@ -1042,7 +1042,7 @@ mod tests {
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("Do\n    x = x + 1\nLoop Until x > 5", &mut context).unwrap();
         // Post-test: always runs at least once. x=11 (check 11>5=true)
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(11.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(11.0)));
     }
 
     // ===== NESTED BLOCKS =====
@@ -1052,7 +1052,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim result\nresult = 0\nFor i = 1 To 3\n    If i > 1 Then\n        result = result + i\n    End If\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::Number(5.0)));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Number(5.0)));
     }
 
     #[test]
@@ -1065,7 +1065,7 @@ mod tests {
         )
         .unwrap();
         // a=1,b=1: matches → out=1; a=1,b=2: no; a=2,b=1: no; a=2,b=2: matches → out=2
-        assert_eq!(context.get_variable("out"), Some(VBValue::Number(2.0)));
+        assert_eq!(context.get_variable("out"), Some(&VBValue::Number(2.0)));
     }
 
     // ===== COMMENTS =====
@@ -1075,7 +1075,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("' this is a comment\nx = 1", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(1.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(1.0)));
     }
 
     #[test]
@@ -1083,7 +1083,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Rem this is a comment\ny = 2", &mut context).unwrap();
-        assert_eq!(context.get_variable("y"), Some(VBValue::Number(2.0)));
+        assert_eq!(context.get_variable("y"), Some(&VBValue::Number(2.0)));
     }
 
     #[test]
@@ -1177,7 +1177,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim x", &mut context).unwrap();
-        assert_eq!(context.get_variable("x"), Some(VBValue::Empty));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Empty));
     }
 
     // ===== ASP PARSER =====
@@ -1246,7 +1246,7 @@ mod tests {
         ]));
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter.execute("For Each x In items\n    sum = sum + x\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(60.0)));
+        assert_eq!(context.get_variable("sum"), Some(&VBValue::Number(60.0)));
     }
 
     #[test]
@@ -1256,7 +1256,7 @@ mod tests {
         context.set_variable("items", VBValue::Array(vec![]));
         context.set_variable("flag", VBValue::Boolean(false));
         interpreter.execute("For Each x In items\n    flag = True\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("flag"), Some(VBValue::Boolean(false)));
+        assert_eq!(context.get_variable("flag"), Some(&VBValue::Boolean(false)));
     }
 
     #[test]
@@ -1270,7 +1270,7 @@ mod tests {
         ]));
         context.set_variable("result", VBValue::String("".to_string()));
         interpreter.execute("For Each x In items\n    result = result & x\nNext", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::String("abc".to_string())));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::String("abc".to_string())));
     }
 
     #[test]
@@ -1296,7 +1296,7 @@ mod tests {
             "For Each row In outer\n    For Each col In row\n        sum = sum + col\n    Next\nNext",
             &mut context
         ).unwrap();
-        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(10.0)));
+        assert_eq!(context.get_variable("sum"), Some(&VBValue::Number(10.0)));
     }
 
     #[test]
@@ -1314,8 +1314,8 @@ mod tests {
             &mut context
         ).unwrap();
         // x is overwritten each iteration, so sum is still 1+2+3=6
-        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(6.0)));
-        assert_eq!(context.get_variable("x"), Some(VBValue::Number(999.0)));
+        assert_eq!(context.get_variable("sum"), Some(&VBValue::Number(6.0)));
+        assert_eq!(context.get_variable("x"), Some(&VBValue::Number(999.0)));
     }
 
     #[test]
@@ -1333,7 +1333,7 @@ mod tests {
             &mut context
         ).unwrap();
         // For x=2: 1+2=3. For x=3: 1+2+3=6. For x=4: 1+2+3+4=10. total=3+6+10=19
-        assert_eq!(context.get_variable("total"), Some(VBValue::Number(19.0)));
+        assert_eq!(context.get_variable("total"), Some(&VBValue::Number(19.0)));
     }
 
     // ===== FUNCTION CALLS =====
@@ -1344,7 +1344,7 @@ mod tests {
         context.set_variable("result", VBValue::String("".to_string()));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array(10, 20, 30)", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::Array(vec![
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(vec![
             VBValue::Number(10.0), VBValue::Number(20.0), VBValue::Number(30.0),
         ])));
     }
@@ -1358,7 +1358,7 @@ mod tests {
             "For Each x In Array(1, 2, 3, 4, 5)\n    sum = sum + x\nNext",
             &mut context
         ).unwrap();
-        assert_eq!(context.get_variable("sum"), Some(VBValue::Number(15.0)));
+        assert_eq!(context.get_variable("sum"), Some(&VBValue::Number(15.0)));
     }
 
     #[test]
@@ -1366,7 +1366,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Len(\"hello\")", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::Number(5.0)));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Number(5.0)));
     }
 
     #[test]
@@ -1374,7 +1374,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = UCase(\"hello\")", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::String("HELLO".to_string())));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::String("HELLO".to_string())));
     }
 
     #[test]
@@ -1382,7 +1382,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Mid(\"hello\", 2, 3)", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::String("ell".to_string())));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::String("ell".to_string())));
     }
 
     #[test]
@@ -1398,7 +1398,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array()", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::Array(vec![])));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Array(vec![])));
     }
 
     #[test]
@@ -1407,7 +1407,7 @@ mod tests {
         context.set_variable("x", VBValue::Number(3.0));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Len(\"abc\") + x", &mut context).unwrap();
-        assert_eq!(context.get_variable("result"), Some(VBValue::Number(6.0)));
+        assert_eq!(context.get_variable("result"), Some(&VBValue::Number(6.0)));
     }
 
     // ===== OBJECT / DICTIONARY / METHOD CALLS =====
@@ -1455,7 +1455,7 @@ mod tests {
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
         context.set_variable("val", VBValue::Empty);
         interpreter.execute("val = dict(\"a\")", &mut context).unwrap();
-        assert_eq!(context.get_variable("val"), Some(VBValue::String("Alpha".to_string())));
+        assert_eq!(context.get_variable("val"), Some(&VBValue::String("Alpha".to_string())));
     }
 
     #[test]
@@ -1475,7 +1475,7 @@ mod tests {
         assert!(result.is_some());
         // Keys may be in any order
         let s = match result.unwrap() {
-            VBValue::String(s) => s,
+            VBValue::String(s) => s.clone(),
             _ => String::new(),
         };
         assert_eq!(s.len(), 3);
@@ -1493,7 +1493,7 @@ mod tests {
         interpreter.execute("dict.Add \"b\", \"Beta\"", &mut context).unwrap();
         context.set_variable("cnt", VBValue::Empty);
         interpreter.execute("cnt = dict.Count", &mut context).unwrap();
-        assert_eq!(context.get_variable("cnt"), Some(VBValue::Number(2.0)));
+        assert_eq!(context.get_variable("cnt"), Some(&VBValue::Number(2.0)));
     }
 
     #[test]
@@ -1504,7 +1504,7 @@ mod tests {
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
         context.set_variable("found", VBValue::Empty);
         interpreter.execute("found = dict.Exists(\"a\")", &mut context).unwrap();
-        assert_eq!(context.get_variable("found"), Some(VBValue::Boolean(true)));
+        assert_eq!(context.get_variable("found"), Some(&VBValue::Boolean(true)));
     }
 
     #[test]
@@ -1516,7 +1516,7 @@ mod tests {
         interpreter.execute("dict.RemoveAll", &mut context).unwrap();
         context.set_variable("cnt", VBValue::Empty);
         interpreter.execute("cnt = dict.Count", &mut context).unwrap();
-        assert_eq!(context.get_variable("cnt"), Some(VBValue::Number(0.0)));
+        assert_eq!(context.get_variable("cnt"), Some(&VBValue::Number(0.0)));
     }
 
     #[test]

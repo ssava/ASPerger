@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use ahash::AHashMap;
 use super::value::VBValue;
 use super::vbs_error::{VBSError, VBSErrorType};
 
@@ -16,12 +16,12 @@ pub trait VBScriptObject: std::fmt::Debug + Send {
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
-    items: HashMap<String, VBValue>,
+    items: AHashMap<String, VBValue>,
 }
 
 impl Dictionary {
     pub fn new() -> Self {
-        Dictionary { items: HashMap::new() }
+        Dictionary { items: AHashMap::new() }
     }
 }
 

@@ -1,17 +1,17 @@
-use std::collections::HashMap;
+use ahash::AHashMap;
 
 use super::VBValue;
 
 #[derive(Default)]
 pub struct ExecutionContext {
-    variables: HashMap<String, VBValue>,
+    variables: AHashMap<String, VBValue>,
     pub response_buffer: String,
 }
 
 impl ExecutionContext {
     pub fn new() -> Self {
         ExecutionContext {
-            variables: HashMap::new(),
+            variables: AHashMap::new(),
             response_buffer: String::new(),
         }
     }
@@ -28,7 +28,11 @@ impl ExecutionContext {
         self.variables.insert(name.to_uppercase(), value);
     }
 
-    pub fn get_variable(&self, name: &str) -> Option<VBValue> {
-        self.variables.get(&name.to_uppercase()).cloned()
+    pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
+        self.variables.get(&name.to_uppercase())
+    }
+
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
+        self.variables.get_mut(&name.to_uppercase())
     }
 }

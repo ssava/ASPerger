@@ -23,7 +23,7 @@ impl VBSyntax for ReDim {
 
         if self.preserve {
             match context.get_variable(&self.var_name) {
-                Some(VBValue::Array(old_items)) => {
+                Some(&VBValue::Array(ref old_items)) => {
                     let mut items = vec![VBValue::Empty; new_len];
                     let copy_len = old_items.len().min(new_len);
                     items[..copy_len].clone_from_slice(&old_items[..copy_len]);

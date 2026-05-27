@@ -21,20 +21,14 @@ impl VBSyntax for ArrayAssignment {
         let idx = to_number(&idx_val) as usize;
         let value = evaluate(&self.value_expr, context)?;
 
-        let mut arr_val = context.get_variable(&self.var_name)
-            .ok_or_else(|| VBSErrorType::RuntimeError.into_error(
-                format!("Variable '{}' is not defined", self.var_name)
-            ))?;
-
-        match &mut arr_val {
-            VBValue::Array(ref mut items) => {
+        match context.get_variable_mut(&self.var_name) {
+            Some(VBValue::Array(ref mut items)) => {
                 if idx >= items.len() {
                     return Err(VBSErrorType::RuntimeError.into_error(
                         format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())
                     ));
                 }
                 items[idx] = value;
-                context.set_variable(&self.var_name, arr_val);
                 Ok(())
             }
             _ => Err(VBSErrorType::ValueError.into_error(

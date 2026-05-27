@@ -34,8 +34,7 @@ impl VBScriptInterpreter {
                 TokenType::NewLine => {
                     if !current_line.is_empty() {
                         if !Self::is_line_continuation(&current_line) {
-                            lines.push(current_line.clone());
-                            current_line.clear();
+                            lines.push(std::mem::take(&mut current_line));
                         }
                     }
                 }
@@ -63,8 +62,7 @@ impl VBScriptInterpreter {
                     current_line.push(token.clone());
 
                     if !Self::is_in_string_literal(&current_line) {
-                        lines.push(current_line.clone());
-                        current_line = Vec::new();
+                        lines.push(std::mem::take(&mut current_line));
                     }
                 }
 
@@ -151,12 +149,11 @@ impl VBScriptInterpreter {
     fn trim_whitespace_tokens(tokens: Vec<Token>) -> Vec<Token> {
         let mut result = tokens;
 
-        while result
-            .first()
-            .map_or(false, |t| matches!(t.token_type, TokenType::WhiteSpace))
-        {
-            result.remove(0);
-        }
+        let first_non_ws = result
+            .iter()
+            .position(|t| !matches!(t.token_type, TokenType::WhiteSpace))
+            .unwrap_or(result.len());
+        result.drain(..first_non_ws);
 
         while result
             .last()
