@@ -1252,7 +1252,7 @@ fn extract_properties_from_class_body(body_lines: &[Vec<Token>]) -> Result<AHash
                 let is_let = get_let_set.map(|t| t.token_type == TokenType::Let || t.value.eq_ignore_ascii_case("let")).unwrap_or(false);
                 let is_set = get_let_set.map(|t| t.token_type == TokenType::Set && t.token_type != TokenType::Get && t.token_type != TokenType::Let).unwrap_or(false);
 
-                if (is_get || is_let || is_set) {
+                if is_get || is_let || is_set {
                     let name_tok = match name_tok {
                         Some(t) if t.token_type == TokenType::Identifier => t,
                         _ => { i += 1; continue; }
