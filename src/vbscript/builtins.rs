@@ -1,3 +1,4 @@
+use super::fso::FileSystemObject;
 use super::value::VBValue;
 use super::vbobject::Dictionary;
 use super::vbs_error::{VBSError, VBSErrorType};
@@ -52,6 +53,7 @@ fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let prog_id = to_arg_string(&args[0]);
     match prog_id.to_uppercase().as_str() {
         "SCRIPTING.DICTIONARY" => Ok(VBValue::Object(Box::new(Dictionary::new()))),
+        "SCRIPTING.FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(FileSystemObject::new()))),
         _ => Err(VBSErrorType::NotImplementedError.into_error(
             format!("CreateObject('{}') is not implemented", prog_id)
         )),

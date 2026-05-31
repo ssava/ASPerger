@@ -466,6 +466,25 @@
         %>
     </div>
 
+    <div class="test-section">
+        <h3 class="test-title">28. Test FileSystemObject</h3>
+        <%
+        Dim fso, ext, base, fname, built
+        Set fso = CreateObject("Scripting.FileSystemObject")
+        ext = fso.GetExtensionName("test.asp")
+        base = fso.GetBaseName("test.asp")
+        fname = fso.GetFileName("/a/b/test.asp")
+        built = fso.BuildPath("/a/b", "test.txt")
+        testTotal = testTotal + 1
+        If ext = "asp" And base = "test" And fname = "test.asp" And built = "/a/b/test.txt" Then
+            testPassed = testPassed + 1
+            Response.Write("<span class='success'>PASS</span>")
+        Else
+            Response.Write("<span class='error'>FAIL (ext=" & ext & " base=" & base & " fname=" & fname & " built=" & built & ")</span>")
+        End If
+        %>
+    </div>
+
     <div class="summary">
         <%
         Dim allPassed

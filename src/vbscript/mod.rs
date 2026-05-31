@@ -8,6 +8,8 @@ pub mod tokenizer;
 pub mod block;
 pub mod builtins;
 pub mod vbobject;
+pub mod fso;
+pub mod textstream;
 
 #[cfg(test)]
 mod tests;
