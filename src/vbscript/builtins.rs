@@ -1,5 +1,6 @@
 use super::fso::FileSystemObject;
 use super::value::VBValue;
+use super::value_utils;
 use super::vbobject::Dictionary;
 use super::vbs_error::{VBSError, VBSErrorType};
 
@@ -63,7 +64,7 @@ fn builtin_array(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CreateObject")?;
-    let prog_id = to_arg_string(&args[0]);
+    let prog_id = value_utils::to_arg_string(&args[0]);
     match prog_id.to_uppercase().as_str() {
         "SCRIPTING.DICTIONARY" => Ok(VBValue::Object(Box::new(Dictionary::new()))),
         "SCRIPTING.FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(FileSystemObject::new()))),
@@ -108,10 +109,10 @@ fn builtin_lcase(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_mid(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 2, "Mid")?;
-    let s = to_arg_string(&args[0]);
-    let start = to_arg_f64(&args[1]) as usize;
+    let s = value_utils::to_arg_string(&args[0]);
+    let start = value_utils::to_arg_f64(&args[1]) as usize;
     let length = if args.len() >= 3 {
-        Some(to_arg_f64(&args[2]) as usize)
+        Some(value_utils::to_arg_f64(&args[2]) as usize)
     } else {
         None
     };
@@ -131,40 +132,40 @@ fn builtin_mid(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_left(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 2, "Left")?;
-    let s = to_arg_string(&args[0]);
-    let count = to_arg_f64(&args[1]) as usize;
+    let s = value_utils::to_arg_string(&args[0]);
+    let count = value_utils::to_arg_f64(&args[1]) as usize;
     let count = count.min(s.len());
     Ok(VBValue::String(s[..count].to_string()))
 }
 
 fn builtin_right(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 2, "Right")?;
-    let s = to_arg_string(&args[0]);
-    let count = to_arg_f64(&args[1]) as usize;
+    let s = value_utils::to_arg_string(&args[0]);
+    let count = value_utils::to_arg_f64(&args[1]) as usize;
     let count = count.min(s.len());
     Ok(VBValue::String(s[s.len() - count..].to_string()))
 }
 
 fn builtin_trim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Trim")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     Ok(VBValue::String(s.trim().to_string()))
 }
 
 fn builtin_cint(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CInt")?;
-    let n = to_arg_f64(&args[0]);
+    let n = value_utils::to_arg_f64(&args[0]);
     Ok(VBValue::Number(n.round()))
 }
 
 fn builtin_cstr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CStr")?;
-    Ok(VBValue::String(to_arg_string(&args[0])))
+    Ok(VBValue::String(value_utils::to_arg_string(&args[0])))
 }
 
 fn builtin_abs(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Abs")?;
-    let n = to_arg_f64(&args[0]);
+    let n = value_utils::to_arg_f64(&args[0]);
     Ok(VBValue::Number(n.abs()))
 }
 
@@ -181,9 +182,9 @@ fn builtin_isempty(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_instr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     // InStr([start, ]string1, string2)
     let (start, s1, s2) = if args.len() == 3 {
-        (to_arg_f64(&args[0]) as usize, to_arg_string(&args[1]), to_arg_string(&args[2]))
+        (value_utils::to_arg_f64(&args[0]) as usize, value_utils::to_arg_string(&args[1]), value_utils::to_arg_string(&args[2]))
     } else if args.len() == 2 {
-        (1usize, to_arg_string(&args[0]), to_arg_string(&args[1]))
+        (1usize, value_utils::to_arg_string(&args[0]), value_utils::to_arg_string(&args[1]))
     } else {
         return Err(VBSErrorType::ValueError.into_error(
             format!("InStr requires 2 or 3 arguments, got {}", args.len())
@@ -202,14 +203,14 @@ fn builtin_instr(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "Split")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     let delimiter = if args.len() >= 2 {
-        to_arg_string(&args[1])
+        value_utils::to_arg_string(&args[1])
     } else {
         " ".to_string()
     };
     let count = if args.len() >= 3 {
-        to_arg_f64(&args[2]) as i64
+        value_utils::to_arg_f64(&args[2]) as i64
     } else {
         -1
     };
@@ -244,7 +245,7 @@ fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "Join")?;
     let delimiter = if args.len() >= 2 {
-        to_arg_string(&args[1])
+        value_utils::to_arg_string(&args[1])
     } else {
         " ".to_string()
     };
@@ -254,22 +255,22 @@ fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
             "Join requires an array as first argument".to_string()
         )),
     };
-    let strings: Vec<String> = arr.iter().map(|v| to_arg_string(v)).collect();
+    let strings: Vec<String> = arr.iter().map(|v| value_utils::to_arg_string(v)).collect();
     Ok(VBValue::String(strings.join(&delimiter)))
 }
 
 fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 3, "Replace")?;
-    let s = to_arg_string(&args[0]);
-    let find = to_arg_string(&args[1]);
-    let replace = to_arg_string(&args[2]);
+    let s = value_utils::to_arg_string(&args[0]);
+    let find = value_utils::to_arg_string(&args[1]);
+    let replace = value_utils::to_arg_string(&args[2]);
     let start = if args.len() >= 4 {
-        to_arg_f64(&args[3]) as usize
+        value_utils::to_arg_f64(&args[3]) as usize
     } else {
         1
     };
     let count = if args.len() >= 5 {
-        to_arg_f64(&args[4]) as i64
+        value_utils::to_arg_f64(&args[4]) as i64
     } else {
         -1
     };
@@ -310,7 +311,7 @@ fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_asc(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Asc")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     if s.is_empty() {
         return Err(VBSErrorType::ValueError.into_error(
             "Asc requires a non-empty string".to_string()
@@ -322,7 +323,7 @@ fn builtin_asc(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Chr")?;
-    let code = to_arg_f64(&args[0]) as u32;
+    let code = value_utils::to_arg_f64(&args[0]) as u32;
     match char::from_u32(code) {
         Some(c) => Ok(VBValue::String(c.to_string())),
         None => Err(VBSErrorType::ValueError.into_error(
@@ -333,25 +334,25 @@ fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_ltrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "LTrim")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     Ok(VBValue::String(s.trim_start().to_string()))
 }
 
 fn builtin_rtrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "RTrim")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     Ok(VBValue::String(s.trim_end().to_string()))
 }
 
 fn builtin_space(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Space")?;
-    let count = to_arg_f64(&args[0]) as usize;
+    let count = value_utils::to_arg_f64(&args[0]) as usize;
     Ok(VBValue::String(" ".repeat(count)))
 }
 
 fn builtin_string(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 2, "String")?;
-    let count = to_arg_f64(&args[0]) as usize;
+    let count = value_utils::to_arg_f64(&args[0]) as usize;
     let ch = match &args[1] {
         VBValue::Number(n) => {
             let code = *n as u32;
@@ -365,17 +366,17 @@ fn builtin_string(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_strreverse(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "StrReverse")?;
-    let s = to_arg_string(&args[0]);
+    let s = value_utils::to_arg_string(&args[0]);
     Ok(VBValue::String(s.chars().rev().collect()))
 }
 
 fn builtin_instrrev(args: &[VBValue]) -> Result<VBValue, VBSError> {
     // InStrRev(string1, string2[, start[, compare]])
     expect_min_args(args, 2, "InStrRev")?;
-    let s1 = to_arg_string(&args[0]);
-    let s2 = to_arg_string(&args[1]);
+    let s1 = value_utils::to_arg_string(&args[0]);
+    let s2 = value_utils::to_arg_string(&args[1]);
     let start = if args.len() >= 3 {
-        to_arg_f64(&args[2]) as usize
+        value_utils::to_arg_f64(&args[2]) as usize
     } else {
         s1.len()
     };
@@ -408,25 +409,4 @@ fn builtin_isarray(args: &[VBValue]) -> Result<VBValue, VBSError> {
     Ok(VBValue::Boolean(matches!(args[0], VBValue::Array(_))))
 }
 
-fn to_arg_string(val: &VBValue) -> String {
-    match val {
-        VBValue::String(s) => s.clone(),
-        VBValue::Null => "Null".to_string(),
-        VBValue::Empty => "".to_string(),
-        VBValue::Number(n) => n.to_string(),
-        VBValue::Boolean(true) => "True".to_string(),
-        VBValue::Boolean(false) => "False".to_string(),
-        VBValue::Array(_) => "Array".to_string(),
-        VBValue::Object(_) => "Object".to_string(),
-    }
-}
 
-fn to_arg_f64(val: &VBValue) -> f64 {
-    match val {
-        VBValue::Number(n) => *n,
-        VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        VBValue::Boolean(true) => -1.0,
-        VBValue::Boolean(false) => 0.0,
-        VBValue::Null | VBValue::Empty | VBValue::Array(_) | VBValue::Object(_) => 0.0,
-    }
-}

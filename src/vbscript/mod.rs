@@ -4,6 +4,7 @@ pub mod interpreter;
 pub mod syntax;
 pub mod expr;
 pub mod vbs_error;
+pub mod value_utils;
 pub mod tokenizer;
 pub mod block;
 pub mod builtins;

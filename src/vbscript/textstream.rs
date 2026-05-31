@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;
+use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use crate::vbscript::vbobject::VBScriptObject;
 
@@ -93,6 +94,8 @@ impl TextStream {
 }
 
 impl VBScriptObject for TextStream {
+    fn type_name(&self) -> &'static str { "TextStream" }
+
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
@@ -111,12 +114,6 @@ impl VBScriptObject for TextStream {
         }
     }
 
-    fn set_property(&mut self, name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(
-            format!("Cannot set property '{}' on TextStream", name),
-        ))
-    }
-
     fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
         let mut inner = self.inner.lock().unwrap();
         Self::check_closed(&inner)?;
@@ -124,7 +121,7 @@ impl VBScriptObject for TextStream {
         match name.to_uppercase().as_str() {
             "READ" => {
                 Self::check_reader(&inner)?;
-                let n = to_arg_f64(&args[0]) as usize;
+                let n = value_utils::to_arg_f64(&args[0]) as usize;
                 let mut buf = vec![0u8; n];
                 if let Some(reader) = &mut inner.reader {
                     let bytes_read = reader.read(&mut buf).unwrap_or(0);
@@ -186,7 +183,7 @@ impl VBScriptObject for TextStream {
             }
             "WRITE" => {
                 Self::check_writer(&inner)?;
-                let text = to_arg_string(&args[0]);
+                let text = value_utils::to_arg_string(&args[0]);
                 if let Some(writer) = &mut inner.writer {
                     let _ = write!(writer, "{}", text);
                     if let Some(last_nl) = text.rfind('\n') {
@@ -206,7 +203,7 @@ impl VBScriptObject for TextStream {
                 let text = if args.is_empty() {
                     String::new()
                 } else {
-                    to_arg_string(&args[0])
+                    value_utils::to_arg_string(&args[0])
                 };
                 if let Some(writer) = &mut inner.writer {
                     let _ = writeln!(writer, "{}", text);
@@ -220,7 +217,7 @@ impl VBScriptObject for TextStream {
             }
             "WRITEBLANKLINES" => {
                 Self::check_writer(&inner)?;
-                let n = to_arg_f64(&args[0]) as usize;
+                let n = value_utils::to_arg_f64(&args[0]) as usize;
                 if let Some(writer) = &mut inner.writer {
                     for _ in 0..n {
                         let _ = writeln!(writer);
@@ -235,7 +232,7 @@ impl VBScriptObject for TextStream {
             }
             "SKIP" => {
                 Self::check_reader(&inner)?;
-                let n = to_arg_f64(&args[0]) as u64;
+                let n = value_utils::to_arg_f64(&args[0]) as u64;
                 if let Some(reader) = &mut inner.reader {
                     let skipped =
                         std::io::copy(&mut reader.take(n), &mut std::io::sink()).unwrap_or(0);
@@ -279,36 +276,6 @@ impl VBScriptObject for TextStream {
         }
     }
 
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("TextStream does not support indexed access".to_string()))
-    }
-
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("TextStream does not support indexed access".to_string()))
-    }
 }
 
-fn to_arg_string(val: &VBValue) -> String {
-    match val {
-        VBValue::String(s) => s.clone(),
-        VBValue::Null => "Null".to_string(),
-        VBValue::Empty => "".to_string(),
-        VBValue::Number(n) => n.to_string(),
-        VBValue::Boolean(true) => "True".to_string(),
-        VBValue::Boolean(false) => "False".to_string(),
-        VBValue::Array(_) => "Array".to_string(),
-        VBValue::Object(_) => "Object".to_string(),
-    }
-}
 
-fn to_arg_f64(val: &VBValue) -> f64 {
-    match val {
-        VBValue::Number(n) => *n,
-        VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        VBValue::Boolean(true) => -1.0,
-        VBValue::Boolean(false) => 0.0,
-        VBValue::Null | VBValue::Empty | VBValue::Array(_) | VBValue::Object(_) => 0.0,
-    }
-}

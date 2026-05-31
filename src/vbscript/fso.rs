@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use super::execution_context::ExecutionContext;
 use super::textstream::TextStream;
 use super::value::VBValue;
+use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use crate::vbscript::vbobject::VBScriptObject;
 
@@ -29,6 +30,8 @@ fn resolve_path(path: &str) -> PathBuf {
 }
 
 impl VBScriptObject for FileSystemObject {
+    fn type_name(&self) -> &'static str { "FileSystemObject" }
+
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
@@ -62,26 +65,20 @@ impl VBScriptObject for FileSystemObject {
         }
     }
 
-    fn set_property(&mut self, name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(
-            format!("Cannot set property '{}' on FileSystemObject", name),
-        ))
-    }
-
     fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "FILEEXISTS" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 Ok(VBValue::Boolean(p.is_file()))
             }
             "FOLDEREXISTS" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 Ok(VBValue::Boolean(p.is_dir()))
             }
             "GETFILE" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 if !p.is_file() {
                     return Err(VBSErrorType::RuntimeError.into_error(
@@ -92,7 +89,7 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Object(Box::new(file)))
             }
             "GETFOLDER" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 if !p.is_dir() {
                     return Err(VBSErrorType::RuntimeError.into_error(
@@ -103,9 +100,9 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Object(Box::new(folder)))
             }
             "CREATETEXTFILE" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let overwrite = if args.len() > 1 {
-                    to_boolean(&args[1])
+                    value_utils::to_boolean(&args[1])
                 } else {
                     false
                 };
@@ -127,14 +124,14 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Object(Box::new(TextStream::new_write(file))))
             }
             "OPENTEXTFILE" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let iomode = if args.len() > 1 {
-                    to_arg_f64(&args[1]) as i32
+                    value_utils::to_arg_f64(&args[1]) as i32
                 } else {
                     1
                 };
                 let create = if args.len() > 2 {
-                    to_boolean(&args[2])
+                    value_utils::to_boolean(&args[2])
                 } else {
                     false
                 };
@@ -200,9 +197,9 @@ impl VBScriptObject for FileSystemObject {
                 }
             }
             "DELETEFILE" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let force = if args.len() > 1 {
-                    to_boolean(&args[1])
+                    value_utils::to_boolean(&args[1])
                 } else {
                     false
                 };
@@ -221,9 +218,9 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "DELETEFOLDER" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let force = if args.len() > 1 {
-                    to_boolean(&args[1])
+                    value_utils::to_boolean(&args[1])
                 } else {
                     false
                 };
@@ -253,10 +250,10 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "COPYFILE" => {
-                let source = to_arg_string(&args[0]);
-                let dest = to_arg_string(&args[1]);
+                let source = value_utils::to_arg_string(&args[0]);
+                let dest = value_utils::to_arg_string(&args[1]);
                 let overwrite = if args.len() > 2 {
-                    to_boolean(&args[2])
+                    value_utils::to_boolean(&args[2])
                 } else {
                     true
                 };
@@ -280,10 +277,10 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "COPYFOLDER" => {
-                let source = to_arg_string(&args[0]);
-                let dest = to_arg_string(&args[1]);
+                let source = value_utils::to_arg_string(&args[0]);
+                let dest = value_utils::to_arg_string(&args[1]);
                 let overwrite = if args.len() > 2 {
-                    to_boolean(&args[2])
+                    value_utils::to_boolean(&args[2])
                 } else {
                     true
                 };
@@ -304,8 +301,8 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "MOVEFILE" => {
-                let source = to_arg_string(&args[0]);
-                let dest = to_arg_string(&args[1]);
+                let source = value_utils::to_arg_string(&args[0]);
+                let dest = value_utils::to_arg_string(&args[1]);
                 let src = resolve_path(&source);
                 let dst = resolve_path(&dest);
                 if let Some(parent) = dst.parent() {
@@ -320,8 +317,8 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "MOVEFOLDER" => {
-                let source = to_arg_string(&args[0]);
-                let dest = to_arg_string(&args[1]);
+                let source = value_utils::to_arg_string(&args[0]);
+                let dest = value_utils::to_arg_string(&args[1]);
                 let src = resolve_path(&source);
                 let dst = resolve_path(&dest);
                 if let Some(parent) = dst.parent() {
@@ -336,7 +333,7 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "CREATEFOLDER" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 fs::create_dir_all(&p).map_err(|e| {
                     VBSErrorType::RuntimeError
@@ -345,7 +342,7 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::Empty)
             }
             "GETPARENTFOLDERNAME" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = Path::new(&path);
                 let parent = p.parent().and_then(|p| {
                     let s = p.to_str()?;
@@ -357,7 +354,7 @@ impl VBScriptObject for FileSystemObject {
                 }
             }
             "GETFILENAME" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = Path::new(&path);
                 let name = p.file_name().and_then(|n| n.to_str());
                 match name {
@@ -366,7 +363,7 @@ impl VBScriptObject for FileSystemObject {
                 }
             }
             "GETEXTENSIONNAME" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = Path::new(&path);
                 let ext = p.extension().and_then(|e| e.to_str());
                 match ext {
@@ -375,7 +372,7 @@ impl VBScriptObject for FileSystemObject {
                 }
             }
             "GETBASENAME" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = Path::new(&path);
                 let name = p.file_stem().and_then(|n| n.to_str());
                 match name {
@@ -384,14 +381,14 @@ impl VBScriptObject for FileSystemObject {
                 }
             }
             "GETABSOLUTEPATHNAME" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 let s = p.to_str().unwrap_or(&path);
                 Ok(VBValue::String(s.to_string()))
             }
             "BUILDPATH" => {
-                let parent = to_arg_string(&args[0]);
-                let child = to_arg_string(&args[1]);
+                let parent = value_utils::to_arg_string(&args[0]);
+                let child = value_utils::to_arg_string(&args[1]);
                 let mut parent = parent.trim_end_matches('/').trim_end_matches('\\');
                 if parent.is_empty() {
                     parent = ".";
@@ -403,7 +400,7 @@ impl VBScriptObject for FileSystemObject {
                 Ok(VBValue::String(result.to_string()))
             }
             "GETSPECIALFOLDER" => {
-                let folder_type = to_arg_f64(&args[0]) as i32;
+                let folder_type = value_utils::to_arg_f64(&args[0]) as i32;
                 match folder_type {
                     0 => Ok(VBValue::String(
                         std::env::var("WINDIR").unwrap_or_else(|_| "/usr".to_string()),
@@ -429,15 +426,6 @@ impl VBScriptObject for FileSystemObject {
         }
     }
 
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("FileSystemObject does not support indexed access".to_string()))
-    }
-
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("FileSystemObject does not support indexed access".to_string()))
-    }
 }
 
 // ---- FileObject ----
@@ -573,6 +561,8 @@ fn infer_type(path: &Path) -> String {
 }
 
 impl VBScriptObject for FileObject {
+    fn type_name(&self) -> &'static str { "File" }
+
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(FileObject {
             path: self.path.clone(),
@@ -624,7 +614,7 @@ impl VBScriptObject for FileObject {
     fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => {
-                let new_name = to_arg_string(&value);
+                let new_name = value_utils::to_arg_string(&value);
                 let new_path = self.path.with_file_name(&new_name);
                 fs::rename(&self.path, &new_path).map_err(|e| {
                     VBSErrorType::RuntimeError
@@ -644,7 +634,7 @@ impl VBScriptObject for FileObject {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {
-                    to_boolean(&args[0])
+                    value_utils::to_boolean(&args[0])
                 } else {
                     false
                 };
@@ -663,7 +653,7 @@ impl VBScriptObject for FileObject {
             }
             "OPENASTEXTSTREAM" => {
                 let iomode = if args.len() > 0 {
-                    to_arg_f64(&args[0]) as i32
+                    value_utils::to_arg_f64(&args[0]) as i32
                 } else {
                     1
                 };
@@ -693,15 +683,6 @@ impl VBScriptObject for FileObject {
         }
     }
 
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("File object does not support indexed access".to_string()))
-    }
-
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("File object does not support indexed access".to_string()))
-    }
 }
 
 // ---- FolderObject ----
@@ -750,6 +731,8 @@ impl FolderObject {
 }
 
 impl VBScriptObject for FolderObject {
+    fn type_name(&self) -> &'static str { "Folder" }
+
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(FolderObject {
             path: self.path.clone(),
@@ -812,7 +795,7 @@ impl VBScriptObject for FolderObject {
     fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => {
-                let new_name = to_arg_string(&value);
+                let new_name = value_utils::to_arg_string(&value);
                 let new_path = self.path.with_file_name(&new_name);
                 fs::rename(&self.path, &new_path).map_err(|e| {
                     VBSErrorType::RuntimeError
@@ -832,7 +815,7 @@ impl VBScriptObject for FolderObject {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {
-                    to_boolean(&args[0])
+                    value_utils::to_boolean(&args[0])
                 } else {
                     false
                 };
@@ -850,9 +833,9 @@ impl VBScriptObject for FolderObject {
                 Ok(VBValue::Empty)
             }
             "CREATETEXTFILE" => {
-                let path = to_arg_string(&args[0]);
+                let path = value_utils::to_arg_string(&args[0]);
                 let overwrite = if args.len() > 1 {
-                    to_boolean(&args[1])
+                    value_utils::to_boolean(&args[1])
                 } else {
                     false
                 };
@@ -875,15 +858,6 @@ impl VBScriptObject for FolderObject {
         }
     }
 
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("Folder object does not support indexed access".to_string()))
-    }
-
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError
-            .into_error("Folder object does not support indexed access".to_string()))
-    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -903,35 +877,4 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn to_arg_string(val: &VBValue) -> String {
-    match val {
-        VBValue::String(s) => s.clone(),
-        VBValue::Null => "Null".to_string(),
-        VBValue::Empty => "".to_string(),
-        VBValue::Number(n) => n.to_string(),
-        VBValue::Boolean(true) => "True".to_string(),
-        VBValue::Boolean(false) => "False".to_string(),
-        VBValue::Array(_) => "Array".to_string(),
-        VBValue::Object(_) => "Object".to_string(),
-    }
-}
 
-fn to_arg_f64(val: &VBValue) -> f64 {
-    match val {
-        VBValue::Number(n) => *n,
-        VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        VBValue::Boolean(true) => -1.0,
-        VBValue::Boolean(false) => 0.0,
-        VBValue::Null | VBValue::Empty | VBValue::Array(_) | VBValue::Object(_) => 0.0,
-    }
-}
-
-fn to_boolean(val: &VBValue) -> bool {
-    match val {
-        VBValue::Boolean(b) => *b,
-        VBValue::Number(n) => *n != 0.0,
-        VBValue::String(s) => !s.is_empty() && s.to_uppercase() != "FALSE" && s != "0",
-        VBValue::Null | VBValue::Empty => false,
-        VBValue::Array(_) | VBValue::Object(_) => true,
-    }
-}

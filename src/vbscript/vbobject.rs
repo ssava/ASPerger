@@ -1,16 +1,30 @@
 use ahash::AHashMap;
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;
+use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 
 #[allow(dead_code)]
 pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
     fn clone_box(&self) -> Box<dyn VBScriptObject>;
+    fn type_name(&self) -> &'static str { "VBScriptObject" }
     fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError>;
-    fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError>;
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError>;
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError>;
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError>;
+    fn set_property(&mut self, _name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Object does not support setting properties".to_string()
+        ))
+    }
+    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError>;
+    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Object does not support indexed access".to_string()
+        ))
+    }
+    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
+        Err(VBSErrorType::RuntimeError.into_error(
+            "Object does not support indexed access".to_string()
+        ))
+    }
 }
 
 // ---- Dictionary ----
@@ -46,14 +60,6 @@ impl VBScriptObject for Dictionary {
         }
     }
 
-    fn set_property(&mut self, name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
-        match name.to_uppercase().as_str() {
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Cannot set property '{}' on Dictionary", name)
-            )),
-        }
-    }
-
     fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "ADD" => {
@@ -62,7 +68,7 @@ impl VBScriptObject for Dictionary {
                         "Dictionary.Add requires 2 arguments (key, value)".to_string()
                     ));
                 }
-                let key = to_arg_string(&args[0]);
+                let key = value_utils::to_arg_string(&args[0]);
                 let value = args[1].clone();
                 self.items.insert(key, value);
                 Ok(VBValue::Empty)
@@ -73,7 +79,7 @@ impl VBScriptObject for Dictionary {
                         "Dictionary.Remove requires 1 argument (key)".to_string()
                     ));
                 }
-                let key = to_arg_string(&args[0]);
+                let key = value_utils::to_arg_string(&args[0]);
                 self.items.remove(&key);
                 Ok(VBValue::Empty)
             }
@@ -83,7 +89,7 @@ impl VBScriptObject for Dictionary {
                         "Dictionary.Exists requires 1 argument (key)".to_string()
                     ));
                 }
-                let key = to_arg_string(&args[0]);
+                let key = value_utils::to_arg_string(&args[0]);
                 Ok(VBValue::Boolean(self.items.contains_key(&key)))
             }
             "REMOVEALL" => {
@@ -97,7 +103,7 @@ impl VBScriptObject for Dictionary {
     }
 
     fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
-        let key = to_arg_string(index);
+        let key = value_utils::to_arg_string(index);
         self.items.get(&key).cloned().ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(
                 format!("Key '{}' not found in Dictionary", key)
@@ -106,7 +112,7 @@ impl VBScriptObject for Dictionary {
     }
 
     fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
-        let key = to_arg_string(index);
+        let key = value_utils::to_arg_string(index);
         self.items.insert(key, value);
         Ok(())
     }
@@ -254,12 +260,6 @@ impl VBScriptObject for ErrObject {
         }
     }
 
-    fn set_property(&mut self, _name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(
-            "Cannot set properties on Err object".to_string()
-        ))
-    }
-
     fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CLEAR" => Ok(VBValue::Empty),
@@ -268,29 +268,6 @@ impl VBScriptObject for ErrObject {
             )),
         }
     }
-
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(
-            "Err object does not support indexed access".to_string()
-        ))
-    }
-
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(
-            "Err object does not support indexed access".to_string()
-        ))
-    }
 }
 
-fn to_arg_string(val: &VBValue) -> String {
-    match val {
-        VBValue::String(s) => s.clone(),
-        VBValue::Null => "Null".to_string(),
-        VBValue::Empty => "".to_string(),
-        VBValue::Number(n) => n.to_string(),
-        VBValue::Boolean(true) => "True".to_string(),
-        VBValue::Boolean(false) => "False".to_string(),
-        VBValue::Array(_) => "Array".to_string(),
-        VBValue::Object(_) => "Object".to_string(),
-    }
-}
+
