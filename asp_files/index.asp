@@ -485,6 +485,26 @@
         %>
     </div>
 
+    <div class="test-section">
+        <h3 class="test-title">29. Test Built-in Functions: Split, Join, Replace, Asc, Chr, IsNumeric</h3>
+        <%
+        Dim arr, joined, replaced, ascVal, chrVal, numeric
+        arr = Split("a,b,c", ",")
+        joined = Join(arr, "-")
+        replaced = Replace("hello world", "world", "there")
+        ascVal = Asc("A")
+        chrVal = Chr(65)
+        numeric = IsNumeric("123")
+        testTotal = testTotal + 1
+        If joined = "a-b-c" And replaced = "hello there" And ascVal = 65 And chrVal = "A" And numeric = True Then
+            testPassed = testPassed + 1
+            Response.Write("<span class='success'>PASS</span>")
+        Else
+            Response.Write("<span class='error'>FAIL</span>")
+        End If
+        %>
+    </div>
+
     <div class="summary">
         <%
         Dim allPassed

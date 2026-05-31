@@ -1410,6 +1410,261 @@ mod tests {
         assert_eq!(context.get_variable("result"), Some(&VBValue::Number(6.0)));
     }
 
+    // ===== BUILT-IN FUNCTIONS: BATCH 1 (SPLIT, JOIN, REPLACE, etc.) =====
+
+    #[test]
+    fn test_builtin_split_default_delimiter() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Split(\"a b c\")", &mut ctx).unwrap();
+        let arr = ctx.get_variable("result");
+        assert!(matches!(arr, Some(VBValue::Array(_))));
+        if let Some(VBValue::Array(a)) = arr {
+            assert_eq!(a.len(), 3);
+            assert_eq!(a[0], VBValue::String("a".to_string()));
+            assert_eq!(a[1], VBValue::String("b".to_string()));
+            assert_eq!(a[2], VBValue::String("c".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_builtin_split_custom_delimiter() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Split(\"x,y,z\", \",\")", &mut ctx).unwrap();
+        if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
+            assert_eq!(a.len(), 3);
+            assert_eq!(a[0], VBValue::String("x".to_string()));
+            assert_eq!(a[1], VBValue::String("y".to_string()));
+            assert_eq!(a[2], VBValue::String("z".to_string()));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_builtin_split_with_count() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Split(\"a,b,c,d\", \",\", 2)", &mut ctx).unwrap();
+        if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
+            assert_eq!(a.len(), 2);
+            assert_eq!(a[0], VBValue::String("a".to_string()));
+            assert_eq!(a[1], VBValue::String("b,c,d".to_string()));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_builtin_join() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Join(Array(\"a\", \"b\", \"c\"), \",\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("a,b,c".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_join_default_delimiter() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Join(Array(\"x\", \"y\"))", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("x y".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_replace() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Replace(\"hello world world\", \"world\", \"there\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("hello there there".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_replace_with_count() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Replace(\"a,b,c,d\", \",\", \"|\", 1, 2)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("a|b|c,d".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_replace_with_start() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Replace(\"xxxyyyxxx\", \"x\", \"z\", 4)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("yyyzzz".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_asc() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Asc(\"A\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(65.0))
+        );
+    }
+
+    #[test]
+    fn test_builtin_chr() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Chr(65)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("A".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_ltrim() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = LTrim(\"  hello  \")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("hello  ".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_rtrim() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = RTrim(\"  hello  \")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("  hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_space() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Space(5)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("     ".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_string_number() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = String(3, 65)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("AAA".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_string_char() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = String(5, \"*\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("*****".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_strreverse() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrReverse(\"hello\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::String("olleh".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_builtin_instrrev() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = InStrRev(\"abcabc\", \"ab\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(4.0))
+        );
+    }
+
+    #[test]
+    fn test_builtin_isnumeric_string() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = IsNumeric(\"123\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Boolean(true))
+        );
+    }
+
+    #[test]
+    fn test_builtin_isnumeric_non_numeric() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = IsNumeric(\"abc\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Boolean(false))
+        );
+    }
+
+    #[test]
+    fn test_builtin_isnumeric_number() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = IsNumeric(42)", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Boolean(true))
+        );
+    }
+
+    #[test]
+    fn test_builtin_isarray_true() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = IsArray(Array(1, 2, 3))", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Boolean(true))
+        );
+    }
+
+    #[test]
+    fn test_builtin_isarray_false() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = IsArray(\"not an array\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Boolean(false))
+        );
+    }
+
     // ===== OBJECT / DICTIONARY / METHOD CALLS =====
 
     #[test]
@@ -1558,9 +1813,9 @@ mod tests {
                 if let Some(slash) = counts.find('/') {
                     let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
                     let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
-                    assert_eq!(total, 28, "Expected 28 total tests, got {}", total);
-                    // 27 tests pass — 1 test (18) unimplemented
-                    assert_eq!(passed, 27, "Expected 27 passing tests, got {}. Check if unimplemented features changed", passed);
+                    assert_eq!(total, 29, "Expected 29 total tests, got {}", total);
+                    // 28 tests pass — 1 test (18) unimplemented
+                    assert_eq!(passed, 28, "Expected 28 passing tests, got {}. Check if unimplemented features changed", passed);
                     return;
                 }
             }

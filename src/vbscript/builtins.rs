@@ -20,6 +20,19 @@ pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError>
         n if n.eq_ignore_ascii_case("ISNULL") => builtin_isnull(&args),
         n if n.eq_ignore_ascii_case("ISEMPTY") => builtin_isempty(&args),
         n if n.eq_ignore_ascii_case("INSTR") => builtin_instr(&args),
+        n if n.eq_ignore_ascii_case("SPLIT") => builtin_split(&args),
+        n if n.eq_ignore_ascii_case("JOIN") => builtin_join(&args),
+        n if n.eq_ignore_ascii_case("REPLACE") => builtin_replace(&args),
+        n if n.eq_ignore_ascii_case("ASC") => builtin_asc(&args),
+        n if n.eq_ignore_ascii_case("CHR") => builtin_chr(&args),
+        n if n.eq_ignore_ascii_case("LTRIM") => builtin_ltrim(&args),
+        n if n.eq_ignore_ascii_case("RTRIM") => builtin_rtrim(&args),
+        n if n.eq_ignore_ascii_case("SPACE") => builtin_space(&args),
+        n if n.eq_ignore_ascii_case("STRING") => builtin_string(&args),
+        n if n.eq_ignore_ascii_case("STRREVERSE") => builtin_strreverse(&args),
+        n if n.eq_ignore_ascii_case("INSTRREV") => builtin_instrrev(&args),
+        n if n.eq_ignore_ascii_case("ISNUMERIC") => builtin_isnumeric(&args),
+        n if n.eq_ignore_ascii_case("ISARRAY") => builtin_isarray(&args),
         _ => Err(VBSErrorType::NotImplementedError.into_error(
             format!("Function '{}' is not implemented", name)
         )),
@@ -185,6 +198,214 @@ fn builtin_instr(args: &[VBValue]) -> Result<VBValue, VBSError> {
         Some(pos) => Ok(VBValue::Number((search_from + pos + 1) as f64)),
         None => Ok(VBValue::Number(0.0)),
     }
+}
+
+fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_min_args(args, 1, "Split")?;
+    let s = to_arg_string(&args[0]);
+    let delimiter = if args.len() >= 2 {
+        to_arg_string(&args[1])
+    } else {
+        " ".to_string()
+    };
+    let count = if args.len() >= 3 {
+        to_arg_f64(&args[2]) as i64
+    } else {
+        -1
+    };
+
+    let parts: Vec<VBValue> = if delimiter.is_empty() {
+        vec![VBValue::String(s)]
+    } else {
+        let split_result: Vec<&str> = if count < 0 {
+            s.split(&delimiter).collect()
+        } else {
+            let mut result = Vec::new();
+            let mut remaining = s.as_str();
+            for _ in 0..(count - 1).max(0) {
+                match remaining.find(&delimiter) {
+                    Some(pos) => {
+                        result.push(&remaining[..pos]);
+                        remaining = &remaining[pos + delimiter.len()..];
+                    }
+                    None => break,
+                }
+            }
+            if count > 0 {
+                result.push(remaining);
+            }
+            result
+        };
+        split_result.into_iter().map(|p| VBValue::String(p.to_string())).collect()
+    };
+    Ok(VBValue::Array(std::sync::Arc::new(parts)))
+}
+
+fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_min_args(args, 1, "Join")?;
+    let delimiter = if args.len() >= 2 {
+        to_arg_string(&args[1])
+    } else {
+        " ".to_string()
+    };
+    let arr = match &args[0] {
+        VBValue::Array(a) => a,
+        _ => return Err(VBSErrorType::ValueError.into_error(
+            "Join requires an array as first argument".to_string()
+        )),
+    };
+    let strings: Vec<String> = arr.iter().map(|v| to_arg_string(v)).collect();
+    Ok(VBValue::String(strings.join(&delimiter)))
+}
+
+fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_min_args(args, 3, "Replace")?;
+    let s = to_arg_string(&args[0]);
+    let find = to_arg_string(&args[1]);
+    let replace = to_arg_string(&args[2]);
+    let start = if args.len() >= 4 {
+        to_arg_f64(&args[3]) as usize
+    } else {
+        1
+    };
+    let count = if args.len() >= 5 {
+        to_arg_f64(&args[4]) as i64
+    } else {
+        -1
+    };
+
+    if find.is_empty() {
+        return Ok(VBValue::String(s));
+    }
+    if start < 1 || start > s.len() {
+        return Ok(VBValue::String("".to_string()));
+    }
+    let search_from = start - 1;
+    let search_in = &s[search_from..];
+
+    let mut result = String::new();
+    let mut remaining = search_in;
+    let mut replacements = 0i64;
+
+    loop {
+        if count >= 0 && replacements >= count {
+            result.push_str(remaining);
+            break;
+        }
+        match remaining.find(&find) {
+            Some(pos) => {
+                result.push_str(&remaining[..pos]);
+                result.push_str(&replace);
+                remaining = &remaining[pos + find.len()..];
+                replacements += 1;
+            }
+            None => {
+                result.push_str(remaining);
+                break;
+            }
+        }
+    }
+    Ok(VBValue::String(result))
+}
+
+fn builtin_asc(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Asc")?;
+    let s = to_arg_string(&args[0]);
+    if s.is_empty() {
+        return Err(VBSErrorType::ValueError.into_error(
+            "Asc requires a non-empty string".to_string()
+        ));
+    }
+    let code = s.chars().next().unwrap() as u32;
+    Ok(VBValue::Number(code as f64))
+}
+
+fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Chr")?;
+    let code = to_arg_f64(&args[0]) as u32;
+    match char::from_u32(code) {
+        Some(c) => Ok(VBValue::String(c.to_string())),
+        None => Err(VBSErrorType::ValueError.into_error(
+            format!("Invalid character code: {}", code)
+        )),
+    }
+}
+
+fn builtin_ltrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "LTrim")?;
+    let s = to_arg_string(&args[0]);
+    Ok(VBValue::String(s.trim_start().to_string()))
+}
+
+fn builtin_rtrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "RTrim")?;
+    let s = to_arg_string(&args[0]);
+    Ok(VBValue::String(s.trim_end().to_string()))
+}
+
+fn builtin_space(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Space")?;
+    let count = to_arg_f64(&args[0]) as usize;
+    Ok(VBValue::String(" ".repeat(count)))
+}
+
+fn builtin_string(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 2, "String")?;
+    let count = to_arg_f64(&args[0]) as usize;
+    let ch = match &args[1] {
+        VBValue::Number(n) => {
+            let code = *n as u32;
+            char::from_u32(code).unwrap_or(' ')
+        }
+        VBValue::String(s) => s.chars().next().unwrap_or(' '),
+        _ => ' ',
+    };
+    Ok(VBValue::String(ch.to_string().repeat(count)))
+}
+
+fn builtin_strreverse(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "StrReverse")?;
+    let s = to_arg_string(&args[0]);
+    Ok(VBValue::String(s.chars().rev().collect()))
+}
+
+fn builtin_instrrev(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    // InStrRev(string1, string2[, start[, compare]])
+    expect_min_args(args, 2, "InStrRev")?;
+    let s1 = to_arg_string(&args[0]);
+    let s2 = to_arg_string(&args[1]);
+    let start = if args.len() >= 3 {
+        to_arg_f64(&args[2]) as usize
+    } else {
+        s1.len()
+    };
+
+    if s2.is_empty() {
+        return Ok(VBValue::Number(start as f64));
+    }
+    let end = start.min(s1.len());
+    let search_in = &s1[..end];
+    match search_in.rfind(&s2) {
+        Some(pos) => Ok(VBValue::Number((pos + 1) as f64)),
+        None => Ok(VBValue::Number(0.0)),
+    }
+}
+
+fn builtin_isnumeric(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "IsNumeric")?;
+    let result = match &args[0] {
+        VBValue::Number(_) => true,
+        VBValue::String(s) => s.parse::<f64>().is_ok() && !s.is_empty(),
+        VBValue::Boolean(_) => false,
+        VBValue::Null | VBValue::Empty => false,
+        VBValue::Array(_) | VBValue::Object(_) => false,
+    };
+    Ok(VBValue::Boolean(result))
+}
+
+fn builtin_isarray(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "IsArray")?;
+    Ok(VBValue::Boolean(matches!(args[0], VBValue::Array(_))))
 }
 
 fn to_arg_string(val: &VBValue) -> String {
