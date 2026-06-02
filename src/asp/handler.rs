@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::asp::parser::AspBlock;
-use crate::vbscript::{ExecutionContext, VBScriptInterpreter};
+use crate::vbscript::{ExecutionContext, Interpreter};
 
 use super::asp_error::ASPError;
 
@@ -53,13 +53,13 @@ impl Handler for HtmlHandler {
     }
 }
 pub struct CodeHandler {
-    interpreter: Arc<VBScriptInterpreter>,
+    interpreter: Arc<dyn Interpreter>,
     next: Option<Arc<dyn Handler + Send + Sync>>,
 }
 
 impl CodeHandler {
-    /// Creates a new `CodeHandler` with the given `VBScriptInterpreter`.
-    pub fn new(interpreter: Arc<VBScriptInterpreter>) -> Self {
+    /// Creates a new `CodeHandler` with the given `Interpreter`.
+    pub fn new(interpreter: Arc<dyn Interpreter>) -> Self {
         CodeHandler {
             interpreter,
             next: None,

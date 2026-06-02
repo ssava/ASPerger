@@ -14,13 +14,13 @@ pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
             "Object does not support setting properties".to_string()
         ))
     }
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError>;
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError>;
+    fn indexed_get(&self, _index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             "Object does not support indexed access".to_string()
         ))
     }
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             "Object does not support indexed access".to_string()
         ))
@@ -60,7 +60,7 @@ impl VBScriptObject for Dictionary {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "ADD" => {
                 if args.len() < 2 {
@@ -102,7 +102,7 @@ impl VBScriptObject for Dictionary {
         }
     }
 
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         self.items.get(&key).cloned().ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(
@@ -111,7 +111,7 @@ impl VBScriptObject for Dictionary {
         })
     }
 
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, index: &VBValue, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
         self.items.insert(key, value);
         Ok(())
@@ -215,19 +215,19 @@ impl VBScriptObject for ClassInstance {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             format!("Method '{}' not found on class '{}'", name, self.class_name)
         ))
     }
 
-    fn indexed_get(&self, _index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, _index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             format!("Class '{}' does not support indexed access", self.class_name)
         ))
     }
 
-    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, _index: &VBValue, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             format!("Class '{}' does not support indexed access", self.class_name)
         ))
@@ -252,15 +252,15 @@ impl VBScriptObject for ErrObject {
 
     fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "NUMBER" => Ok(VBValue::Number(context.err_number)),
-            "DESCRIPTION" => Ok(VBValue::String(context.err_description.clone())),
+            "NUMBER" => Ok(VBValue::Number(context.scope.err_number)),
+            "DESCRIPTION" => Ok(VBValue::String(context.scope.err_description.clone())),
             _ => Err(VBSErrorType::RuntimeError.into_error(
                 format!("Property '{}' not found on Err object", name)
             )),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CLEAR" => Ok(VBValue::Empty),
             "RAISE" => {

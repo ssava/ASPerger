@@ -6,11 +6,7 @@ mod tests {
     use crate::vbscript::syntax::{Assignment, Dim, ResponseWrite, VBSyntax};
     use crate::vbscript::{ExecutionContext, TokenType, Tokenizer, VBScriptInterpreter, VBValue};
     use chrono::{Datelike, Timelike};
-    use std::sync::{LazyLock, Mutex};
-
-    /// Serializes tests that access the global APPLICATION_STORE to prevent
-    /// parallel race conditions (one test's clear_app_store() wiping another's entries).
-    static APP_STORE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    use std::sync::Arc;
 
     // ===== TOKENIZER =====
 
@@ -288,6 +284,7 @@ mod tests {
     #[test]
     fn test_evaluate_literal() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::Literal(VBValue::Number(42.0));
         assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(42.0));
     }
@@ -295,6 +292,7 @@ mod tests {
     #[test]
     fn test_evaluate_variable() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("x", VBValue::Number(10.0));
         let expr = Expr::Variable("x".into());
         assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Number(10.0));
@@ -303,6 +301,7 @@ mod tests {
     #[test]
     fn test_evaluate_undefined_variable_error() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::Variable("undefined".into());
         assert!(evaluate(&expr, &mut context).is_err());
     }
@@ -310,6 +309,7 @@ mod tests {
     #[test]
     fn test_evaluate_add() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Add,
@@ -321,6 +321,7 @@ mod tests {
     #[test]
     fn test_evaluate_sub() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Sub,
@@ -332,6 +333,7 @@ mod tests {
     #[test]
     fn test_evaluate_mul() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(3.0))),
             op: BinOp::Mul,
@@ -343,6 +345,7 @@ mod tests {
     #[test]
     fn test_evaluate_div() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Div,
@@ -354,6 +357,7 @@ mod tests {
     #[test]
     fn test_evaluate_division_by_zero() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Div,
@@ -365,6 +369,7 @@ mod tests {
     #[test]
     fn test_evaluate_power() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(2.0))),
             op: BinOp::Pow,
@@ -376,6 +381,7 @@ mod tests {
     #[test]
     fn test_evaluate_int_divide() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::IntDiv,
@@ -387,6 +393,7 @@ mod tests {
     #[test]
     fn test_evaluate_modulo() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(10.0))),
             op: BinOp::Mod,
@@ -398,6 +405,7 @@ mod tests {
     #[test]
     fn test_evaluate_unary_neg() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::UnaryOp {
             op: UnaryOp::Neg,
             expr: Box::new(Expr::Literal(VBValue::Number(5.0))),
@@ -408,6 +416,7 @@ mod tests {
     #[test]
     fn test_evaluate_neg_of_negative() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::UnaryOp {
             op: UnaryOp::Neg,
             expr: Box::new(Expr::Literal(VBValue::Number(-3.0))),
@@ -420,6 +429,7 @@ mod tests {
     #[test]
     fn test_evaluate_concat() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("Hello ".into()))),
             op: BinOp::Concat,
@@ -434,6 +444,7 @@ mod tests {
     #[test]
     fn test_evaluate_concat_number_coercion() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // "a" & 42 → "a42"
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("a".into()))),
@@ -451,6 +462,7 @@ mod tests {
     #[test]
     fn test_evaluate_and() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::And,
@@ -462,6 +474,7 @@ mod tests {
     #[test]
     fn test_evaluate_or() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
             op: BinOp::Or,
@@ -473,6 +486,7 @@ mod tests {
     #[test]
     fn test_evaluate_not() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::UnaryOp {
             op: UnaryOp::Not,
             expr: Box::new(Expr::Literal(VBValue::Boolean(true))),
@@ -483,6 +497,7 @@ mod tests {
     #[test]
     fn test_evaluate_xor() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // true XOR true = false
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
@@ -503,6 +518,7 @@ mod tests {
     #[test]
     fn test_evaluate_eqv() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // true Eqv true = true
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
@@ -522,6 +538,7 @@ mod tests {
     #[test]
     fn test_evaluate_imp() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // true Imp false = false
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
@@ -543,6 +560,7 @@ mod tests {
     #[test]
     fn test_evaluate_comparison_eq() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(5.0))),
             op: BinOp::Eq,
@@ -554,6 +572,7 @@ mod tests {
     #[test]
     fn test_evaluate_comparison_ne() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(5.0))),
             op: BinOp::Ne,
@@ -572,6 +591,7 @@ mod tests {
     #[test]
     fn test_evaluate_comparison_lt_gt() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let lt = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Lt,
@@ -590,6 +610,7 @@ mod tests {
     #[test]
     fn test_evaluate_comparison_le_ge() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let le = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(2.0))),
             op: BinOp::Le,
@@ -608,6 +629,7 @@ mod tests {
     #[test]
     fn test_evaluate_is_operator() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // Is compares values — two nulls are equivalent
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Null)),
@@ -622,6 +644,7 @@ mod tests {
     #[test]
     fn test_evaluate_add_string_coercion() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // Number + String → string concat in VBScript-semantics
         // Our implementation: if both are numeric, add; else concat
         let expr = Expr::BinaryOp {
@@ -637,6 +660,7 @@ mod tests {
     #[test]
     fn test_evaluate_empty_as_number() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // Empty acts as 0 in numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Empty)),
@@ -649,6 +673,7 @@ mod tests {
     #[test]
     fn test_evaluate_empty_as_string() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // Empty acts as "" in string context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("x".into()))),
@@ -661,6 +686,7 @@ mod tests {
     #[test]
     fn test_evaluate_empty() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::Literal(VBValue::Empty);
         assert_eq!(evaluate(&expr, &mut context).unwrap(), VBValue::Empty);
     }
@@ -668,6 +694,7 @@ mod tests {
     #[test]
     fn test_evaluate_null_as_number() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // Null acts as 0 in numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Null)),
@@ -680,6 +707,7 @@ mod tests {
     #[test]
     fn test_evaluate_boolean_as_number() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         // True = -1 in VBScript numeric context
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Boolean(true))),
@@ -702,6 +730,7 @@ mod tests {
     #[test]
     fn test_assignment_literal_number() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::Literal(VBValue::Number(42.0));
         let assignment = Assignment::new("x".into(), expr);
         assignment.execute(&mut context).unwrap();
@@ -711,6 +740,7 @@ mod tests {
     #[test]
     fn test_assignment_expression() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let expr = Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::Number(1.0))),
             op: BinOp::Add,
@@ -724,6 +754,7 @@ mod tests {
     #[test]
     fn test_assignment_variable_copy() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("a", VBValue::Number(10.0));
         let expr = Expr::Variable("a".into());
         let assignment = Assignment::new("x".into(), expr);
@@ -734,6 +765,7 @@ mod tests {
     #[test]
     fn test_assignment_string() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let assignment = Assignment::new("s".into(), Expr::Literal(VBValue::String("hello".into())));
         assignment.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("s"), Some(&VBValue::String("hello".into())));
@@ -742,6 +774,7 @@ mod tests {
     #[test]
     fn test_assignment_boolean() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let assignment = Assignment::new("b".into(), Expr::Literal(VBValue::Boolean(true)));
         assignment.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("b"), Some(&VBValue::Boolean(true)));
@@ -750,6 +783,7 @@ mod tests {
     #[test]
     fn test_assignment_null() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let assignment = Assignment::new("n".into(), Expr::Literal(VBValue::Null));
         assignment.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("n"), Some(&VBValue::Null));
@@ -758,6 +792,7 @@ mod tests {
     #[test]
     fn test_assignment_concat_expression() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("pre", VBValue::String("Hello ".into()));
         let assignment = Assignment::new("msg".into(), Expr::BinaryOp {
             left: Box::new(Expr::Variable("pre".into())),
@@ -773,38 +808,42 @@ mod tests {
     #[test]
     fn test_response_write_literal() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let rw = ResponseWrite::new(Expr::Literal(VBValue::String("hello".into())));
         rw.execute(&mut context).unwrap();
-        assert_eq!(context.response_buffer, "hello");
+        assert_eq!(context.response.buffer, "hello");
     }
 
     #[test]
     fn test_response_write_variable() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("name", VBValue::String("World".into()));
         let rw = ResponseWrite::new(Expr::Variable("name".into()));
         rw.execute(&mut context).unwrap();
-        assert_eq!(context.response_buffer, "World");
+        assert_eq!(context.response.buffer, "World");
     }
 
     #[test]
     fn test_response_write_number() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let rw = ResponseWrite::new(Expr::Literal(VBValue::Number(42.0)));
         rw.execute(&mut context).unwrap();
-        assert_eq!(context.response_buffer, "42");
+        assert_eq!(context.response.buffer, "42");
     }
 
     #[test]
     fn test_response_write_expression() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let rw = ResponseWrite::new(Expr::BinaryOp {
             left: Box::new(Expr::Literal(VBValue::String("a".into()))),
             op: BinOp::Concat,
             right: Box::new(Expr::Literal(VBValue::String("b".into()))),
         });
         rw.execute(&mut context).unwrap();
-        assert_eq!(context.response_buffer, "ab");
+        assert_eq!(context.response.buffer, "ab");
     }
 
     // ===== DIM =====
@@ -812,6 +851,7 @@ mod tests {
     #[test]
     fn test_dim_initializes_to_empty() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let dim = Dim::new(vec![("x".into(), false)]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("x"), Some(&VBValue::Empty));
@@ -820,6 +860,7 @@ mod tests {
     #[test]
     fn test_dim_multiple_variables() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let dim = Dim::new(vec![("a".into(), false), ("b".into(), false), ("c".into(), false)]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("a"), Some(&VBValue::Empty));
@@ -832,6 +873,7 @@ mod tests {
     #[test]
     fn test_if_inline_true() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("If x = 1 Then y = 42", &mut context).unwrap();
@@ -841,6 +883,7 @@ mod tests {
     #[test]
     fn test_if_inline_false() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(2.0));
         interpreter.execute("If x = 1 Then y = 42", &mut context).unwrap();
@@ -850,6 +893,7 @@ mod tests {
     #[test]
     fn test_if_block_true() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("If x = 1 Then\n    y = 99\nEnd If", &mut context).unwrap();
@@ -859,6 +903,7 @@ mod tests {
     #[test]
     fn test_if_block_false() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(0.0));
         interpreter.execute("If x = 1 Then\n    y = 99\nEnd If", &mut context).unwrap();
@@ -868,6 +913,7 @@ mod tests {
     #[test]
     fn test_if_else() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(0.0));
         interpreter.execute("If x = 1 Then\n    y = 10\nElse\n    y = 20\nEnd If", &mut context).unwrap();
@@ -877,6 +923,7 @@ mod tests {
     #[test]
     fn test_if_elseif_chain() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         // First ElseIf matches
         context.set_variable("x", VBValue::Number(2.0));
@@ -887,6 +934,7 @@ mod tests {
     #[test]
     fn test_if_elseif_falls_to_else() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(9.0));
         interpreter.execute("If x = 1 Then\n    y = 10\nElseIf x = 2 Then\n    y = 20\nElse\n    y = 99\nEnd If", &mut context).unwrap();
@@ -896,6 +944,7 @@ mod tests {
     #[test]
     fn test_if_multiple_blocks_in_sequence() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute(
             "If 1 = 1 Then\n    a = 10\nEnd If\nIf 2 = 2 Then\n    b = 20\nEnd If",
@@ -909,6 +958,7 @@ mod tests {
     #[test]
     fn test_if_condition_with_and() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(5.0));
         interpreter.execute("If x > 1 And x < 10 Then y = 1\nEnd If", &mut context).unwrap();
@@ -920,6 +970,7 @@ mod tests {
     #[test]
     fn test_for_loop() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 1 To 5\n    total = total + i\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("total"), Some(&VBValue::Number(15.0)));
@@ -928,6 +979,7 @@ mod tests {
     #[test]
     fn test_for_with_step() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 1 To 10 Step 2\n    total = total + i\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("total"), Some(&VBValue::Number(25.0)));
@@ -936,6 +988,7 @@ mod tests {
     #[test]
     fn test_for_negative_step() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim total\ntotal = 0\nFor i = 5 To 1 Step -1\n    total = total + i\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("total"), Some(&VBValue::Number(15.0)));
@@ -944,6 +997,7 @@ mod tests {
     #[test]
     fn test_for_zero_iterations() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         // start > end with positive step → zero iterations
         interpreter.execute("Dim total\ntotal = 99\nFor i = 5 To 1\n    total = 0\nNext", &mut context).unwrap();
@@ -953,6 +1007,7 @@ mod tests {
     #[test]
     fn test_for_empty_body() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("For i = 1 To 3\nNext", &mut context).unwrap();
         // Just shouldn't crash; counter should be 4 (past end)
@@ -962,6 +1017,7 @@ mod tests {
     #[test]
     fn test_for_modifies_counter_in_body() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         // Modifying the loop counter inside the body
         interpreter.execute("Dim total\ntotal = 0\nFor i = 1 To 10\n    total = total + i\n    i = i + 1\nNext", &mut context).unwrap();
@@ -977,6 +1033,7 @@ mod tests {
     #[test]
     fn test_while_loop() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("While x <= 3\n    x = x + 1\nWend", &mut context).unwrap();
@@ -986,6 +1043,7 @@ mod tests {
     #[test]
     fn test_while_never_enters() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("While x < 5\n    x = 99\nWend", &mut context).unwrap();
@@ -995,6 +1053,7 @@ mod tests {
     #[test]
     fn test_while_empty_body_does_not_loop() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(0.0));
         interpreter.execute("While x > 0\n    x = 99\nWend", &mut context).unwrap();
@@ -1007,6 +1066,7 @@ mod tests {
     #[test]
     fn test_do_while() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do While x < 3\n    x = x + 1\nLoop", &mut context).unwrap();
@@ -1016,6 +1076,7 @@ mod tests {
     #[test]
     fn test_do_while_never_enters() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("Do While x < 5\n    x = 99\nLoop", &mut context).unwrap();
@@ -1025,6 +1086,7 @@ mod tests {
     #[test]
     fn test_do_loop_until() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do\n    x = x + 1\nLoop Until x > 3", &mut context).unwrap();
@@ -1034,6 +1096,7 @@ mod tests {
     #[test]
     fn test_do_loop_while_post_test() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(1.0));
         interpreter.execute("Do\n    x = x + 1\nLoop While x < 3", &mut context).unwrap();
@@ -1044,6 +1107,7 @@ mod tests {
     #[test]
     fn test_do_loop_until_post_test_runs_once() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("x", VBValue::Number(10.0));
         interpreter.execute("Do\n    x = x + 1\nLoop Until x > 5", &mut context).unwrap();
@@ -1056,6 +1120,7 @@ mod tests {
     #[test]
     fn test_nested_blocks() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim result\nresult = 0\nFor i = 1 To 3\n    If i > 1 Then\n        result = result + i\n    End If\nNext", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::Number(5.0)));
@@ -1064,6 +1129,7 @@ mod tests {
     #[test]
     fn test_deeply_nested_blocks() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute(
             "Dim out\nout = 0\nFor a = 1 To 2\n    For b = 1 To 2\n        If b = a Then\n            out = out + 1\n        End If\n    Next\nNext",
@@ -1079,6 +1145,7 @@ mod tests {
     #[test]
     fn test_comment_apostrophe_line() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("' this is a comment\nx = 1", &mut context).unwrap();
         assert_eq!(context.get_variable("x"), Some(&VBValue::Number(1.0)));
@@ -1087,6 +1154,7 @@ mod tests {
     #[test]
     fn test_comment_rem_keyword() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Rem this is a comment\ny = 2", &mut context).unwrap();
         assert_eq!(context.get_variable("y"), Some(&VBValue::Number(2.0)));
@@ -1095,6 +1163,7 @@ mod tests {
     #[test]
     fn test_code_with_only_comments() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("' comment 1\n' comment 2\nRem comment 3", &mut context).unwrap();
         // Just shouldn't crash
@@ -1105,6 +1174,7 @@ mod tests {
     #[test]
     fn test_undefined_variable_in_expression() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("x = undefinedVar + 1", &mut context);
         assert!(result.is_err());
@@ -1113,6 +1183,7 @@ mod tests {
     #[test]
     fn test_division_by_zero_in_if_condition() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("If 1 / 0 = 1 Then x = 1\nEnd If", &mut context);
         assert!(result.is_err());
@@ -1121,6 +1192,7 @@ mod tests {
     #[test]
     fn test_syntax_error_if_without_then() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("If x = 1\nEnd If", &mut context);
         assert!(result.is_err());
@@ -1129,6 +1201,7 @@ mod tests {
     #[test]
     fn test_syntax_error_for_without_next() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("For i = 1 To 5\nx = 1", &mut context);
         assert!(result.is_err());
@@ -1137,6 +1210,7 @@ mod tests {
     #[test]
     fn test_syntax_error_while_without_wend() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("While x < 5\nx = x + 1", &mut context);
         assert!(result.is_err());
@@ -1145,6 +1219,7 @@ mod tests {
     #[test]
     fn test_syntax_error_do_without_loop() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("Do While x < 5\nx = x + 1", &mut context);
         assert!(result.is_err());
@@ -1155,6 +1230,7 @@ mod tests {
     #[test]
     fn test_empty_code() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("", &mut context).unwrap();
         // No crash
@@ -1163,6 +1239,7 @@ mod tests {
     #[test]
     fn test_whitespace_code() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("   \n  \t  \n  ", &mut context).unwrap();
         // No crash
@@ -1173,14 +1250,16 @@ mod tests {
     #[test]
     fn test_response_write_preserved() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Response.Write \"hello\"", &mut context).unwrap();
-        assert_eq!(context.response_buffer, "hello");
+        assert_eq!(context.response.buffer, "hello");
     }
 
     #[test]
     fn test_dim_preserved() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Dim x", &mut context).unwrap();
         assert_eq!(context.get_variable("x"), Some(&VBValue::Empty));
@@ -1244,6 +1323,7 @@ mod tests {
     #[test]
     fn test_for_each_basic() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(10.0),
@@ -1258,6 +1338,7 @@ mod tests {
     #[test]
     fn test_for_each_empty_array() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![])));
         context.set_variable("flag", VBValue::Boolean(false));
@@ -1268,6 +1349,7 @@ mod tests {
     #[test]
     fn test_for_each_string_array() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::String("a".to_string()),
@@ -1282,6 +1364,7 @@ mod tests {
     #[test]
     fn test_for_each_non_array_error() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("For Each x In 42\nNext", &mut context);
         assert!(result.is_err());
@@ -1292,6 +1375,7 @@ mod tests {
     #[test]
     fn test_for_each_nested() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("outer", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Array(std::sync::Arc::new(vec![VBValue::Number(1.0), VBValue::Number(2.0)])),
@@ -1308,6 +1392,7 @@ mod tests {
     #[test]
     fn test_for_each_modifies_element() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(1.0),
@@ -1327,6 +1412,7 @@ mod tests {
     #[test]
     fn test_for_each_with_for() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(2.0),
@@ -1347,6 +1433,7 @@ mod tests {
     #[test]
     fn test_function_call_array() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("result", VBValue::String("".to_string()));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array(10, 20, 30)", &mut context).unwrap();
@@ -1358,6 +1445,7 @@ mod tests {
     #[test]
     fn test_function_call_array_in_for_each() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("sum", VBValue::Number(0.0));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute(
@@ -1370,6 +1458,7 @@ mod tests {
     #[test]
     fn test_function_call_len() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Len(\"hello\")", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::Number(5.0)));
@@ -1378,6 +1467,7 @@ mod tests {
     #[test]
     fn test_function_call_ucase() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = UCase(\"hello\")", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::String("HELLO".to_string())));
@@ -1386,6 +1476,7 @@ mod tests {
     #[test]
     fn test_function_call_mid() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Mid(\"hello\", 2, 3)", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::String("ell".to_string())));
@@ -1394,6 +1485,7 @@ mod tests {
     #[test]
     fn test_function_call_unknown() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         let result = interpreter.execute("result = UnknownFunc(42)", &mut context);
         assert!(result.is_err());
@@ -1402,6 +1494,7 @@ mod tests {
     #[test]
     fn test_function_call_empty_args() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Array()", &mut context).unwrap();
         assert_eq!(context.get_variable("result"), Some(&VBValue::Array(std::sync::Arc::new(vec![]))));
@@ -1410,6 +1503,7 @@ mod tests {
     #[test]
     fn test_function_call_in_expression() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         context.set_variable("x", VBValue::Number(3.0));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("result = Len(\"abc\") + x", &mut context).unwrap();
@@ -1421,6 +1515,7 @@ mod tests {
     #[test]
     fn test_builtin_split_default_delimiter() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Split(\"a b c\")", &mut ctx).unwrap();
         let arr = ctx.get_variable("result");
@@ -1436,6 +1531,7 @@ mod tests {
     #[test]
     fn test_builtin_split_custom_delimiter() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Split(\"x,y,z\", \",\")", &mut ctx).unwrap();
         if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
@@ -1451,6 +1547,7 @@ mod tests {
     #[test]
     fn test_builtin_split_with_count() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Split(\"a,b,c,d\", \",\", 2)", &mut ctx).unwrap();
         if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
@@ -1465,6 +1562,7 @@ mod tests {
     #[test]
     fn test_builtin_join() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Join(Array(\"a\", \"b\", \"c\"), \",\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1476,6 +1574,7 @@ mod tests {
     #[test]
     fn test_builtin_join_default_delimiter() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Join(Array(\"x\", \"y\"))", &mut ctx).unwrap();
         assert_eq!(
@@ -1487,6 +1586,7 @@ mod tests {
     #[test]
     fn test_builtin_replace() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Replace(\"hello world world\", \"world\", \"there\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1498,6 +1598,7 @@ mod tests {
     #[test]
     fn test_builtin_replace_with_count() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Replace(\"a,b,c,d\", \",\", \"|\", 1, 2)", &mut ctx).unwrap();
         assert_eq!(
@@ -1509,6 +1610,7 @@ mod tests {
     #[test]
     fn test_builtin_replace_with_start() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Replace(\"xxxyyyxxx\", \"x\", \"z\", 4)", &mut ctx).unwrap();
         assert_eq!(
@@ -1520,6 +1622,7 @@ mod tests {
     #[test]
     fn test_builtin_asc() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Asc(\"A\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1531,6 +1634,7 @@ mod tests {
     #[test]
     fn test_builtin_chr() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Chr(65)", &mut ctx).unwrap();
         assert_eq!(
@@ -1542,6 +1646,7 @@ mod tests {
     #[test]
     fn test_builtin_ltrim() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = LTrim(\"  hello  \")", &mut ctx).unwrap();
         assert_eq!(
@@ -1553,6 +1658,7 @@ mod tests {
     #[test]
     fn test_builtin_rtrim() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = RTrim(\"  hello  \")", &mut ctx).unwrap();
         assert_eq!(
@@ -1564,6 +1670,7 @@ mod tests {
     #[test]
     fn test_builtin_space() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Space(5)", &mut ctx).unwrap();
         assert_eq!(
@@ -1575,6 +1682,7 @@ mod tests {
     #[test]
     fn test_builtin_string_number() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = String(3, 65)", &mut ctx).unwrap();
         assert_eq!(
@@ -1586,6 +1694,7 @@ mod tests {
     #[test]
     fn test_builtin_string_char() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = String(5, \"*\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1597,6 +1706,7 @@ mod tests {
     #[test]
     fn test_builtin_strreverse() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrReverse(\"hello\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1608,6 +1718,7 @@ mod tests {
     #[test]
     fn test_builtin_instrrev() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = InStrRev(\"abcabc\", \"ab\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1619,6 +1730,7 @@ mod tests {
     #[test]
     fn test_builtin_isnumeric_string() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = IsNumeric(\"123\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1630,6 +1742,7 @@ mod tests {
     #[test]
     fn test_builtin_isnumeric_non_numeric() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = IsNumeric(\"abc\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1641,6 +1754,7 @@ mod tests {
     #[test]
     fn test_builtin_isnumeric_number() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = IsNumeric(42)", &mut ctx).unwrap();
         assert_eq!(
@@ -1652,6 +1766,7 @@ mod tests {
     #[test]
     fn test_builtin_isarray_true() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = IsArray(Array(1, 2, 3))", &mut ctx).unwrap();
         assert_eq!(
@@ -1663,6 +1778,7 @@ mod tests {
     #[test]
     fn test_builtin_isarray_false() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = IsArray(\"not an array\")", &mut ctx).unwrap();
         assert_eq!(
@@ -1676,6 +1792,7 @@ mod tests {
     #[test]
     fn test_createobject_dictionary() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         let val = context.get_variable("dict");
@@ -1686,6 +1803,7 @@ mod tests {
     #[test]
     fn test_dictionary_method_call() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1695,6 +1813,7 @@ mod tests {
     #[test]
     fn test_dictionary_property_keys() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1711,6 +1830,7 @@ mod tests {
     #[test]
     fn test_dictionary_indexed_access() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1722,6 +1842,7 @@ mod tests {
     #[test]
     fn test_for_each_with_dictionary_keys() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1748,6 +1869,7 @@ mod tests {
     #[test]
     fn test_dictionary_count() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1760,6 +1882,7 @@ mod tests {
     #[test]
     fn test_dictionary_exists() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1771,6 +1894,7 @@ mod tests {
     #[test]
     fn test_method_call_no_args() {
         let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut context).unwrap();
         interpreter.execute("dict.Add \"a\", \"Alpha\"", &mut context).unwrap();
@@ -1782,13 +1906,15 @@ mod tests {
 
     #[test]
     fn test_asp_index_page() {
-        let _guard = APP_STORE_LOCK.lock().unwrap();
         let content = fs::read_to_string("asp_files/index.asp")
             .expect("Failed to read asp_files/index.asp");
         let parser = AspParser::new(content);
         let blocks = parser.parse();
         let interpreter = crate::vbscript::VBScriptInterpreter;
+        let store = crate::vbscript::store::Store::new();
         let mut context = crate::vbscript::ExecutionContext::new();
+        context.store = Some(Arc::clone(&store));
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let mut output = String::new();
 
         for block in &blocks {
@@ -1799,7 +1925,7 @@ mod tests {
                 crate::asp::parser::AspBlock::Code(code) => {
                     match interpreter.execute(code, &mut context) {
                         Ok(()) => {
-                            output.push_str(&context.response_buffer);
+                            output.push_str(&context.response.buffer);
                         }
                         Err(e) => {
                             output.push_str(&format!("<!-- Error: {} -->", e));
@@ -1851,6 +1977,7 @@ mod tests {
     #[test]
     fn test_fso_createobject() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp
             .execute(
@@ -1874,6 +2001,7 @@ mod tests {
         assert!(std::path::Path::new(&path).exists());
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp
             .execute(
@@ -1899,6 +2027,7 @@ mod tests {
         std::fs::create_dir_all(&path).unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp
             .execute(
@@ -1938,6 +2067,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         // Create, write, close
@@ -1982,6 +2112,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         // Write multiple lines
@@ -2038,6 +2169,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         std::fs::write(&path, "ABCDEFGHIJ").unwrap();
@@ -2071,6 +2203,7 @@ mod tests {
         std::fs::write(&path, "Hello").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2105,6 +2238,7 @@ mod tests {
     #[test]
     fn test_fso_path_functions() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2151,6 +2285,7 @@ mod tests {
         std::fs::write(&src, "Copy test content").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2182,6 +2317,7 @@ mod tests {
         std::fs::write(&src, "Move test content").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2210,6 +2346,7 @@ mod tests {
         std::fs::write(&path, "Delete me").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2232,6 +2369,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         // Create folder
@@ -2286,6 +2424,7 @@ mod tests {
         std::fs::write(&path, "FileObject test").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2325,6 +2464,7 @@ mod tests {
         std::fs::write(format!("{}/test.txt", &path), "hello").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2379,6 +2519,7 @@ mod tests {
     #[test]
     fn test_fso_getabsolutepathname() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2410,6 +2551,7 @@ mod tests {
         std::fs::write(format!("{}/a.txt", &src), "file a").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2436,6 +2578,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2471,6 +2614,7 @@ mod tests {
         std::fs::write(&path, "delete via method").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2491,6 +2635,7 @@ mod tests {
     #[test]
     fn test_fso_getspecialfolder() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         // TemporaryFolder (2)
@@ -2515,6 +2660,7 @@ mod tests {
     #[test]
     fn test_fso_createobject_invalid_progid() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         let result = interp.execute(
@@ -2530,6 +2676,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2555,6 +2702,7 @@ mod tests {
         cleanup_path(&path);
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         let result = interp.execute(
@@ -2575,6 +2723,7 @@ mod tests {
         std::fs::write(&path, "Initial\n").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         // Append mode (8)
@@ -2605,6 +2754,7 @@ mod tests {
         std::fs::create_dir_all(&folder).unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2635,6 +2785,7 @@ mod tests {
         std::fs::write(&path, "OpenAsTextStream content").unwrap();
 
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
 
         interp
@@ -2664,6 +2815,7 @@ mod tests {
     #[test]
     fn test_builtin_now() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Now()", &mut ctx).unwrap();
         let val = ctx.get_variable("result");
@@ -2676,6 +2828,7 @@ mod tests {
     #[test]
     fn test_builtin_date() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Date()", &mut ctx).unwrap();
         assert!(matches!(ctx.get_variable("result"), Some(VBValue::String(_))));
@@ -2688,6 +2841,7 @@ mod tests {
     #[test]
     fn test_builtin_time() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Time()", &mut ctx).unwrap();
         assert!(matches!(ctx.get_variable("result"), Some(VBValue::String(_))));
@@ -2700,6 +2854,7 @@ mod tests {
     #[test]
     fn test_builtin_year_month_day() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d = DateSerial(2024, 6, 15)\ny = Year(d)\nm = Month(d)\ndy = Day(d)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("y"), Some(&VBValue::Number(2024.0)));
@@ -2710,6 +2865,7 @@ mod tests {
     #[test]
     fn test_builtin_hour_minute_second() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("t = TimeSerial(14, 30, 45)\nh = Hour(t)\nmi = Minute(t)\ns = Second(t)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("h"), Some(&VBValue::Number(14.0)));
@@ -2720,6 +2876,7 @@ mod tests {
     #[test]
     fn test_builtin_weekday() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         // 2024-01-07 is a Sunday
         interp.execute("d = DateSerial(2024, 1, 7)\nw = Weekday(d)", &mut ctx).unwrap();
@@ -2730,6 +2887,7 @@ mod tests {
     #[test]
     fn test_builtin_weekday_with_firstday() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         // 2024-01-08 is a Monday
         interp.execute("d = DateSerial(2024, 1, 8)\nw = Weekday(d, 2)", &mut ctx).unwrap();
@@ -2740,6 +2898,7 @@ mod tests {
     #[test]
     fn test_builtin_weekdayname() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = WeekdayName(1)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Sunday".to_string())));
@@ -2748,6 +2907,7 @@ mod tests {
     #[test]
     fn test_builtin_weekdayname_abbreviate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = WeekdayName(2, True)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Mon".to_string())));
@@ -2756,6 +2916,7 @@ mod tests {
     #[test]
     fn test_builtin_monthname() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = MonthName(1)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("January".to_string())));
@@ -2764,6 +2925,7 @@ mod tests {
     #[test]
     fn test_builtin_monthname_abbreviate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = MonthName(2, True)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Feb".to_string())));
@@ -2772,6 +2934,7 @@ mod tests {
     #[test]
     fn test_builtin_dateadd_days() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d = DateSerial(2024, 1, 1)\nresult = DateAdd(\"d\", 10, d)", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2787,6 +2950,7 @@ mod tests {
     #[test]
     fn test_builtin_dateadd_months() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d = DateSerial(2024, 1, 31)\nresult = DateAdd(\"m\", 1, d)", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2802,6 +2966,7 @@ mod tests {
     #[test]
     fn test_builtin_datediff_days() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d1 = DateSerial(2024, 1, 1)\nd2 = DateSerial(2024, 1, 11)\nresult = DateDiff(\"d\", d1, d2)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(10.0)));
@@ -2810,6 +2975,7 @@ mod tests {
     #[test]
     fn test_builtin_datediff_years() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d1 = DateSerial(2020, 1, 1)\nd2 = DateSerial(2024, 1, 1)\nresult = DateDiff(\"yyyy\", d1, d2)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(4.0)));
@@ -2818,6 +2984,7 @@ mod tests {
     #[test]
     fn test_builtin_dateserial() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = DateSerial(2024, 7, 4)", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2833,6 +3000,7 @@ mod tests {
     #[test]
     fn test_builtin_datevalue() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = DateValue(\"2024-07-04\")", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2848,6 +3016,7 @@ mod tests {
     #[test]
     fn test_builtin_timeserial() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = TimeSerial(10, 30, 0)", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2862,6 +3031,7 @@ mod tests {
     #[test]
     fn test_builtin_timevalue() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = TimeValue(\"14:30:00\")", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -2876,6 +3046,7 @@ mod tests {
     #[test]
     fn test_builtin_timer() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Timer()", &mut ctx).unwrap();
         let val = ctx.get_variable("result");
@@ -2888,6 +3059,7 @@ mod tests {
     #[test]
     fn test_builtin_formatdatetime() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("d = DateSerial(2024, 7, 4)\nresult = FormatDateTime(d, 2)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("07/04/2024".to_string())));
@@ -2896,6 +3068,7 @@ mod tests {
     #[test]
     fn test_builtin_int_vs_fix_negative() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("i = Int(-3.1)\nf = Fix(-3.1)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("i"), Some(&VBValue::Number(-4.0)));
@@ -2905,6 +3078,7 @@ mod tests {
     #[test]
     fn test_builtin_round() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Round(3.14159, 2)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(3.14)));
@@ -2913,6 +3087,7 @@ mod tests {
     #[test]
     fn test_builtin_sgn() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = Sgn(5)\nr2 = Sgn(0)\nr3 = Sgn(-3)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(1.0)));
@@ -2923,6 +3098,7 @@ mod tests {
     #[test]
     fn test_builtin_sqr() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Sqr(9)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(3.0)));
@@ -2931,6 +3107,7 @@ mod tests {
     #[test]
     fn test_builtin_sqr_negative_error() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         let result = interp.execute("result = Sqr(-1)", &mut ctx);
         assert!(result.is_err());
@@ -2939,6 +3116,7 @@ mod tests {
     #[test]
     fn test_builtin_ubound_array() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("a = Array(10, 20, 30)\nresult = UBound(a)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(2.0)));
@@ -2947,6 +3125,7 @@ mod tests {
     #[test]
     fn test_builtin_lbound_array() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("a = Array(1, 2, 3)\nresult = LBound(a)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
@@ -2955,6 +3134,7 @@ mod tests {
     #[test]
     fn test_builtin_cbool() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = CBool(1)\nr2 = CBool(0)\nr3 = CBool(\"True\")\nr4 = CBool(\"False\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
@@ -2966,6 +3146,7 @@ mod tests {
     #[test]
     fn test_builtin_cbyte() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = CByte(42)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(42.0)));
@@ -2974,6 +3155,7 @@ mod tests {
     #[test]
     fn test_builtin_cbyte_overflow() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         let result = interp.execute("result = CByte(300)", &mut ctx);
         assert!(result.is_err());
@@ -2982,6 +3164,7 @@ mod tests {
     #[test]
     fn test_builtin_cdate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = CDate(\"2024-07-04\")", &mut ctx).unwrap();
         assert!(matches!(ctx.get_variable("result"), Some(VBValue::Number(_))));
@@ -2990,6 +3173,7 @@ mod tests {
     #[test]
     fn test_builtin_cdbl() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = CDbl(42)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(42.0)));
@@ -2998,6 +3182,7 @@ mod tests {
     #[test]
     fn test_builtin_clng() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = CLng(3.14)\nr2 = CLng(-3.9)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(3.0)));
@@ -3007,6 +3192,7 @@ mod tests {
     #[test]
     fn test_builtin_hex() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = Hex(255)\nr2 = Hex(0)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::String("FF".to_string())));
@@ -3016,6 +3202,7 @@ mod tests {
     #[test]
     fn test_builtin_oct() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Oct(8)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("10".to_string())));
@@ -3024,6 +3211,7 @@ mod tests {
     #[test]
     fn test_builtin_isdate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = IsDate(\"2024-01-15\")\nr2 = IsDate(\"not a date\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
@@ -3033,6 +3221,7 @@ mod tests {
     #[test]
     fn test_builtin_isobject() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")\nr1 = IsObject(dict)\nr2 = IsObject(\"string\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
@@ -3042,6 +3231,7 @@ mod tests {
     #[test]
     fn test_builtin_typename() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute(
             "r1 = TypeName(\"hello\")\nr2 = TypeName(42)\nr3 = TypeName(123456)\nr4 = TypeName(3.14)\nr5 = TypeName(True)\nr6 = TypeName(Null)\nr7 = TypeName(Empty)\nr8 = TypeName(Array(1,2))",
@@ -3060,6 +3250,7 @@ mod tests {
     #[test]
     fn test_builtin_vartype() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = VarType(\"hello\")\nr2 = VarType(42)\nr3 = VarType(True)\nr4 = VarType(Null)\nr5 = VarType(Empty)\nr6 = VarType(Array(1,2))", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(8.0)));   // vbString
@@ -3073,6 +3264,7 @@ mod tests {
     #[test]
     fn test_builtin_rnd_range() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = Rnd()", &mut ctx).unwrap();
         if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
@@ -3085,6 +3277,7 @@ mod tests {
     #[test]
     fn test_builtin_filter_include() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("a = Array(\"apple\", \"banana\", \"apricot\", \"cherry\")\nresult = Filter(a, \"ap\")", &mut ctx).unwrap();
         if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
@@ -3099,6 +3292,7 @@ mod tests {
     #[test]
     fn test_builtin_filter_exclude() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("a = Array(\"apple\", \"banana\", \"apricot\")\nresult = Filter(a, \"ap\", False)", &mut ctx).unwrap();
         if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
@@ -3112,6 +3306,7 @@ mod tests {
     #[test]
     fn test_builtin_isarray_new() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("r1 = IsArray(Array(1,2))\nr2 = IsArray(\"not\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
@@ -3123,6 +3318,7 @@ mod tests {
     #[test]
     fn test_exit_for() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim i, sum\nsum = 0\nFor i = 1 To 10\n    If i = 5 Then Exit For\n    sum = sum + 1\nNext", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("sum"), Some(&VBValue::Number(4.0)));
@@ -3132,6 +3328,7 @@ mod tests {
     #[test]
     fn test_exit_for_from_foreach() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
             VBValue::Number(1.0), VBValue::Number(2.0), VBValue::Number(3.0),
@@ -3144,6 +3341,7 @@ mod tests {
     #[test]
     fn test_exit_do_while() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_variable("x", VBValue::Number(1.0));
         interp.execute("Do While x < 10\n    If x = 5 Then Exit Do\n    x = x + 1\nLoop", &mut ctx).unwrap();
@@ -3153,6 +3351,7 @@ mod tests {
     #[test]
     fn test_exit_do_loop_until() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_variable("x", VBValue::Number(1.0));
         interp.execute("Do\n    If x = 3 Then Exit Do\n    x = x + 1\nLoop While x < 10", &mut ctx).unwrap();
@@ -3162,6 +3361,7 @@ mod tests {
     #[test]
     fn test_exit_for_nested_only_exits_inner() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute(
             "Dim i, j, sum\nsum = 0\nFor i = 1 To 3\n    For j = 1 To 3\n        If j = 2 Then Exit For\n        sum = sum + 1\n    Next\nNext",
@@ -3179,6 +3379,7 @@ mod tests {
     #[test]
     fn test_exit_function_early_return() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute(
             "Function TestFunc(x)\n    If x > 5 Then\n        TestFunc = 999\n        Exit Function\n    End If\n    TestFunc = 111\nEnd Function\nresult = TestFunc(10)",
@@ -3190,6 +3391,7 @@ mod tests {
     #[test]
     fn test_exit_function_normal_path() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute(
             "Function TestFunc(x)\n    If x > 5 Then\n        TestFunc = 999\n        Exit Function\n    End If\n    TestFunc = 111\nEnd Function\nresult = TestFunc(3)",
@@ -3201,6 +3403,7 @@ mod tests {
     #[test]
     fn test_exit_sub() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_variable("called", VBValue::Boolean(false));
         interp.execute(
@@ -3216,6 +3419,7 @@ mod tests {
     #[test]
     fn test_with_basic() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
         interp.execute(
@@ -3228,6 +3432,7 @@ mod tests {
     #[test]
     fn test_with_property_access() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
         interp.execute("dict.Add \"a\", \"1\"", &mut ctx).unwrap();
@@ -3241,6 +3446,7 @@ mod tests {
     #[test]
     fn test_with_method_call() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
         interp.execute("dict.Add \"a\", \"1\"", &mut ctx).unwrap();
@@ -3255,6 +3461,7 @@ mod tests {
     #[test]
     fn test_with_property_get() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
         interp.execute("dict.Add \"a\", \"Alpha\"", &mut ctx).unwrap();
@@ -3271,30 +3478,33 @@ mod tests {
     #[test]
     fn test_err_raise_sets_err_state() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         // Err.Raise should produce an error that is caught in ResumeNext mode
         ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
         interp.execute("On Error Resume Next\nErr.Raise 42, \"custom error\"", &mut ctx).unwrap();
-        assert_eq!(ctx.err_number, 42.0);
-        assert_eq!(ctx.err_description, "custom error");
+        assert_eq!(ctx.scope.err_number, 42.0);
+        assert_eq!(ctx.scope.err_description, "custom error");
     }
 
     #[test]
     fn test_err_raise_without_args_sets_err() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
         interp.execute("On Error Resume Next\nErr.Raise", &mut ctx).unwrap();
-        assert!(ctx.err_number != 0.0);
+        assert!(ctx.scope.err_number != 0.0);
     }
 
     #[test]
     fn test_err_raise_min_number_only() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
         interp.execute("On Error Resume Next\nErr.Raise 5", &mut ctx).unwrap();
-        assert_eq!(ctx.err_number, 5.0);
+        assert_eq!(ctx.scope.err_number, 5.0);
     }
 
     // ===== REGEXP OBJECT =====
@@ -3302,6 +3512,7 @@ mod tests {
     #[test]
     fn test_createobject_regexp() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")", &mut ctx).unwrap();
         let val = ctx.get_variable("re");
@@ -3312,6 +3523,7 @@ mod tests {
     #[test]
     fn test_regexp_test_true() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nresult = re.Test(\"hello world\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
@@ -3320,6 +3532,7 @@ mod tests {
     #[test]
     fn test_regexp_test_false() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nresult = re.Test(\"goodbye world\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
@@ -3328,6 +3541,7 @@ mod tests {
     #[test]
     fn test_regexp_replace() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nre.Global = True\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hello there there".to_string())));
@@ -3336,6 +3550,7 @@ mod tests {
     #[test]
     fn test_regexp_replace_single() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hello there world".to_string())));
@@ -3344,6 +3559,7 @@ mod tests {
     #[test]
     fn test_regexp_execute() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"\\d+\"\nre.Global = True\nresult = re.Execute(\"abc 123 def 456\")", &mut ctx).unwrap();
         if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
@@ -3358,6 +3574,7 @@ mod tests {
     #[test]
     fn test_regexp_ignorecase() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nre.IgnoreCase = True\nresult = re.Test(\"HELLO world\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
@@ -3366,6 +3583,7 @@ mod tests {
     #[test]
     fn test_regexp_properties() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"test\"\nre.IgnoreCase = True\nre.Global = True\np = re.Pattern\ni = re.IgnoreCase\ng = re.Global", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("p"), Some(&VBValue::String("test".to_string())));
@@ -3378,6 +3596,7 @@ mod tests {
     #[test]
     fn test_createobject_adodb_connection() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
         let val = ctx.get_variable("conn");
@@ -3388,6 +3607,7 @@ mod tests {
     #[test]
     fn test_adodb_connection_open_close() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
         interp.execute("conn.Open \"dsn=mydb\"", &mut ctx).unwrap();
@@ -3401,6 +3621,7 @@ mod tests {
     #[test]
     fn test_adodb_connection_execute_returns_recordset() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
         interp.execute("Set rs = conn.Execute(\"SELECT * FROM test\")", &mut ctx).unwrap();
@@ -3412,6 +3633,7 @@ mod tests {
     #[test]
     fn test_adodb_recordset_eof() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
         interp.execute("Set rs = conn.Execute(\"SELECT * FROM test\")", &mut ctx).unwrap();
@@ -3422,6 +3644,7 @@ mod tests {
     #[test]
     fn test_adodb_connection_connectionstring() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
         interp.execute("conn.ConnectionString = \"Provider=SQLOLEDB;Data Source=server\"", &mut ctx).unwrap();
@@ -3434,6 +3657,7 @@ mod tests {
     #[test]
     fn test_builtin_strcomp_equal() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrComp(\"hello\", \"hello\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
@@ -3442,6 +3666,7 @@ mod tests {
     #[test]
     fn test_builtin_strcomp_less() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrComp(\"abc\", \"xyz\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(-1.0)));
@@ -3450,6 +3675,7 @@ mod tests {
     #[test]
     fn test_builtin_strcomp_greater() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrComp(\"xyz\", \"abc\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(1.0)));
@@ -3458,6 +3684,7 @@ mod tests {
     #[test]
     fn test_builtin_strcomp_textmode() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrComp(\"HELLO\", \"hello\", 1)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
@@ -3466,6 +3693,7 @@ mod tests {
     #[test]
     fn test_builtin_strcomp_binarymode() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = StrComp(\"HELLO\", \"hello\", 0)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(-1.0)));
@@ -3476,6 +3704,7 @@ mod tests {
     #[test]
     fn test_builtin_formatnumber_basic() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = FormatNumber(1234.567, 2)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("1,234.57".to_string())));
@@ -3484,6 +3713,7 @@ mod tests {
     #[test]
     fn test_builtin_formatnumber_no_decimal() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = FormatNumber(1234, 0)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("1,234".to_string())));
@@ -3494,6 +3724,7 @@ mod tests {
     #[test]
     fn test_builtin_formatcurrency_basic() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = FormatCurrency(1234.5)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("$1,234.50".to_string())));
@@ -3504,6 +3735,7 @@ mod tests {
     #[test]
     fn test_builtin_formatpercent_basic() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = FormatPercent(0.1234, 1)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("12.3%".to_string())));
@@ -3514,6 +3746,7 @@ mod tests {
     #[test]
     fn test_builtin_lset_pad() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = LSet(\"hi\", 5)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hi   ".to_string())));
@@ -3522,6 +3755,7 @@ mod tests {
     #[test]
     fn test_builtin_lset_truncate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = LSet(\"hello\", 3)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hel".to_string())));
@@ -3530,6 +3764,7 @@ mod tests {
     #[test]
     fn test_builtin_rset_pad() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = RSet(\"hi\", 5)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("   hi".to_string())));
@@ -3538,6 +3773,7 @@ mod tests {
     #[test]
     fn test_builtin_rset_truncate() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("result = RSet(\"hello\", 3)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hel".to_string())));
@@ -3548,8 +3784,9 @@ mod tests {
     #[test]
     fn test_asp_request_querystring() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_params.insert("name".to_string(), "John".to_string());
-        ctx.request_params.insert("age".to_string(), "30".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.params.insert("name".to_string(), "John".to_string());
+        ctx.request.params.insert("age".to_string(), "30".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim n\nn = Request.QueryString(\"name\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("n"), Some(&VBValue::String("John".to_string())));
@@ -3558,6 +3795,7 @@ mod tests {
     #[test]
     fn test_asp_request_querystring_missing() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim n\nn = Request.QueryString(\"missing\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("n"), Some(&VBValue::String("".to_string())));
@@ -3566,8 +3804,9 @@ mod tests {
     #[test]
     fn test_asp_request_querystring_count() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_params.insert("a".to_string(), "1".to_string());
-        ctx.request_params.insert("b".to_string(), "2".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.params.insert("a".to_string(), "1".to_string());
+        ctx.request.params.insert("b".to_string(), "2".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim c\nc = Request.QueryString.Count", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(2.0)));
@@ -3576,7 +3815,8 @@ mod tests {
     #[test]
     fn test_asp_request_form() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_form.insert("username".to_string(), "admin".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.form.insert("username".to_string(), "admin".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim u\nu = Request.Form(\"username\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("u"), Some(&VBValue::String("admin".to_string())));
@@ -3585,7 +3825,8 @@ mod tests {
     #[test]
     fn test_asp_request_form_count() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_form.insert("x".to_string(), "1".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.form.insert("x".to_string(), "1".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim c\nc = Request.Form.Count", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(1.0)));
@@ -3594,7 +3835,8 @@ mod tests {
     #[test]
     fn test_asp_request_servervariables() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_headers.insert("user-agent".to_string(), "ASPerger/1.0".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.headers.insert("user-agent".to_string(), "ASPerger/1.0".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim u\nu = Request.ServerVariables(\"USER-AGENT\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("u"), Some(&VBValue::String("ASPerger/1.0".to_string())));
@@ -3603,7 +3845,8 @@ mod tests {
     #[test]
     fn test_asp_request_servervariables_count() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_headers.insert("host".to_string(), "localhost".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.headers.insert("host".to_string(), "localhost".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim c\nc = Request.ServerVariables.Count", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(1.0)));
@@ -3612,7 +3855,8 @@ mod tests {
     #[test]
     fn test_asp_request_cookies() {
         let mut ctx = ExecutionContext::new();
-        ctx.request_cookies.insert("theme".to_string(), "dark".to_string());
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.request.cookies.insert("theme".to_string(), "dark".to_string());
         let interp = VBScriptInterpreter;
         interp.execute("Dim t\nt = Request.Cookies(\"theme\")", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("t"), Some(&VBValue::String("dark".to_string())));
@@ -3621,6 +3865,7 @@ mod tests {
     #[test]
     fn test_asp_response_status_property() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("x = Response.Status", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("x"), Some(&VBValue::String("200 OK".to_string())));
@@ -3629,6 +3874,7 @@ mod tests {
     #[test]
     fn test_asp_response_contenttype_property() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("x = Response.ContentType", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("x"), Some(&VBValue::String("text/html".to_string())));
@@ -3637,6 +3883,7 @@ mod tests {
     #[test]
     fn test_asp_response_buffer_property() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("x = Response.Buffer", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("x"), Some(&VBValue::Boolean(true)));
@@ -3645,25 +3892,28 @@ mod tests {
     #[test]
     fn test_asp_response_write_syntax_shortcut() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Response.Write \"hello from ASP\"", &mut ctx).unwrap();
-        assert_eq!(ctx.response_buffer, "hello from ASP");
+        assert_eq!(ctx.response.buffer, "hello from ASP");
     }
 
     #[test]
     fn test_asp_response_write_with_variable() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         ctx.set_variable("name", VBValue::String("World".to_string()));
         let interp = VBScriptInterpreter;
         interp.execute("Response.Write name", &mut ctx).unwrap();
-        assert_eq!(ctx.response_buffer, "World");
+        assert_eq!(ctx.response.buffer, "World");
     }
 
     #[test]
     fn test_asp_response_ended() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         // Manually simulate Response.End - this would be called through the object
-        ctx.response_ended = true;
+        ctx.response.ended = true;
         let interp = VBScriptInterpreter;
         interp.execute("x = 42", &mut ctx).unwrap();
         // x should not be set because response_ended prevents execution
@@ -3672,16 +3922,18 @@ mod tests {
 
     #[test]
     fn test_asp_session_set_and_get() {
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
-        ctx.session_id = "test-session-001".to_string();
+        ctx.store = Some(Arc::clone(&store));
+        ctx.session.id = "test-session-001".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         // Session("key") = value syntax goes through indexed_set
         // The test uses the property syntax
         interp.execute("Session(\"username\") = \"Alice\"", &mut ctx).unwrap();
-        // Clear and re-inject session object to check stored value
+        // Check stored value via local store
         let session_val = {
-            let store = crate::vbscript::asp_objects::get_session_store();
-            let data = store.lock().unwrap();
+            let data = store.lock_sessions();
             data.get("TEST-SESSION-001")
                 .and_then(|d| d.get("USERNAME"))
                 .cloned()
@@ -3692,7 +3944,8 @@ mod tests {
     #[test]
     fn test_asp_session_sessionid() {
         let mut ctx = ExecutionContext::new();
-        ctx.session_id = "MY-SESSION".to_string();
+        ctx.session.id = "MY-SESSION".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim s\ns = Session.SessionID", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("s"), Some(&VBValue::String("MY-SESSION".to_string())));
@@ -3701,6 +3954,7 @@ mod tests {
     #[test]
     fn test_asp_session_timeout() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim t\nt = Session.Timeout", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(20.0)));
@@ -3708,8 +3962,11 @@ mod tests {
 
     #[test]
     fn test_asp_session_contents_count() {
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
-        ctx.session_id = "test-contents".to_string();
+        ctx.store = Some(Arc::clone(&store));
+        ctx.session.id = "test-contents".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Session(\"k1\") = \"v1\"\nSession(\"k2\") = \"v2\"", &mut ctx).unwrap();
         interp.execute("Dim c\nc = Session.Contents.Count", &mut ctx).unwrap();
@@ -3718,19 +3975,22 @@ mod tests {
 
     #[test]
     fn test_asp_session_abandon() {
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
-        ctx.session_id = "abandon-test".to_string();
+        ctx.store = Some(Arc::clone(&store));
+        ctx.session.id = "abandon-test".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Session(\"data\") = \"keep me\"", &mut ctx).unwrap();
         interp.execute("Session.Abandon", &mut ctx).unwrap();
-        let store = crate::vbscript::asp_objects::get_session_store();
-        let data = store.lock().unwrap();
+        let data = store.lock_sessions();
         assert!(!data.contains_key("ABANDON-TEST"));
     }
 
     #[test]
     fn test_asp_server_htmlencode() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim r\nr = Server.HTMLEncode(\"<b>bold</b> & 'quotes'\")", &mut ctx).unwrap();
         assert_eq!(
@@ -3742,6 +4002,7 @@ mod tests {
     #[test]
     fn test_asp_server_urlencode() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim r\nr = Server.URLEncode(\"hello world\")", &mut ctx).unwrap();
         assert_eq!(
@@ -3753,6 +4014,7 @@ mod tests {
     #[test]
     fn test_asp_server_urlencode_special_chars() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim r\nr = Server.URLEncode(\"a/b?c\")", &mut ctx).unwrap();
         assert_eq!(
@@ -3764,6 +4026,7 @@ mod tests {
     #[test]
     fn test_asp_server_urlpathencode() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim r\nr = Server.URLPathEncode(\"a/b c\")", &mut ctx).unwrap();
         assert_eq!(
@@ -3775,6 +4038,7 @@ mod tests {
     #[test]
     fn test_asp_server_scripttimeout() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim t\nt = Server.ScriptTimeout", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(90.0)));
@@ -3783,6 +4047,7 @@ mod tests {
     #[test]
     fn test_asp_server_scriptpath() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim p\np = Server.ScriptPath", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("p"), Some(&VBValue::String("".to_string())));
@@ -3791,6 +4056,7 @@ mod tests {
     #[test]
     fn test_asp_server_createobject_dictionary() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set dict = Server.CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
         let val = ctx.get_variable("dict");
@@ -3801,6 +4067,7 @@ mod tests {
     #[test]
     fn test_asp_server_mappath() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim p\np = Server.MapPath(\"/test.txt\")", &mut ctx).unwrap();
         let val = ctx.get_variable("p");
@@ -3812,9 +4079,10 @@ mod tests {
 
     #[test]
     fn test_asp_application_set_and_get() {
-        let _guard = APP_STORE_LOCK.lock().unwrap();
-        crate::vbscript::asp_objects::clear_app_store();
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
+        ctx.store = Some(Arc::clone(&store));
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Application.Lock\nApplication(\"counter\") = 42\nApplication.Unlock", &mut ctx).unwrap();
         interp.execute("Dim c\nc = Application(\"counter\")", &mut ctx).unwrap();
@@ -3823,27 +4091,27 @@ mod tests {
 
     #[test]
     fn test_asp_application_contents_count() {
-        let _guard = APP_STORE_LOCK.lock().unwrap();
-        crate::vbscript::asp_objects::clear_app_store();
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
+        ctx.store = Some(Arc::clone(&store));
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Application(\"ac_cnt_k1\") = 1\nApplication(\"ac_cnt_k2\") = 2", &mut ctx).unwrap();
         interp.execute("Dim c\nc = Application.Contents.Count", &mut ctx).unwrap();
-        let c = ctx.get_variable("c").and_then(|v| if let VBValue::Number(n) = v { Some(*n as i32) } else { None }).unwrap_or(0);
-        assert!(c >= 2, "Expected at least 2, got {}", c);
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(2.0)));
     }
 
     #[test]
     fn test_asp_application_lock_unlock() {
-        let _guard = APP_STORE_LOCK.lock().unwrap();
-        crate::vbscript::asp_objects::clear_app_store();
+        let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
+        ctx.store = Some(Arc::clone(&store));
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Application.Lock\nApplication(\"key\") = \"val\"\nApplication.Unlock", &mut ctx).unwrap();
         let val = {
-            let store = crate::vbscript::asp_objects::get_app_store();
-            let s = store.lock().unwrap();
-            s.get("KEY").cloned()
+            let data = store.lock_apps();
+            data.get("KEY").cloned()
         };
         assert_eq!(val, Some(VBValue::String("val".to_string())));
     }
@@ -3851,6 +4119,7 @@ mod tests {
     #[test]
     fn test_asp_request_totalbytes() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim t\nt = Request.TotalBytes", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(0.0)));
@@ -3859,6 +4128,7 @@ mod tests {
     #[test]
     fn test_asp_response_expires() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim e\ne = Response.Expires", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("e"), Some(&VBValue::Number(0.0)));
@@ -3867,6 +4137,7 @@ mod tests {
     #[test]
     fn test_asp_response_cookies_set() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         // The cookies collection needs to be accessed via Response.Cookies
         let _ = interp.execute("Response.Cookies(\"test\") = \"value\"", &mut ctx);
@@ -3876,6 +4147,7 @@ mod tests {
     #[test]
     fn test_asp_objects_injected_globally() {
         let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Dim rType, sType, svType, aType\nrType = TypeName(Request)\nsType = TypeName(Response)\nsvType = TypeName(Server)\naType = TypeName(Application)", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("rType"), Some(&VBValue::String("Object".to_string())));
@@ -3886,7 +4158,6 @@ mod tests {
 
     // ===== HTTP INTEGRATION TESTS =====
 
-    use std::sync::Arc;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -3931,6 +4202,7 @@ mod tests {
 
         let folder = asp_dir.to_string();
         let handler = Arc::clone(&server.handler_chain);
+        let store = Arc::clone(&server.store);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
         let _handle = tokio::spawn(async move {
@@ -3939,11 +4211,12 @@ mod tests {
                     result = listener.accept() => {
                         let (stream, _) = result.unwrap();
                         let handler = Arc::clone(&handler);
+                        let store = Arc::clone(&store);
                         let folder = folder.clone();
                         tokio::spawn(async move {
                             let mut stream = stream;
                             let _ = crate::asp::server::AspServer::handle_connection(
-                                &handler, &mut stream, &folder,
+                                &handler, &mut stream, &folder, &store,
                             ).await;
                         });
                     }

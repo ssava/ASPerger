@@ -114,7 +114,7 @@ impl VBScriptObject for TextStream {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let mut inner = self.inner.lock().unwrap();
         Self::check_closed(&inner)?;
 

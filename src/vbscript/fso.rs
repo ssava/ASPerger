@@ -65,7 +65,7 @@ impl VBScriptObject for FileSystemObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "FILEEXISTS" => {
                 let path = value_utils::to_arg_string(&args[0]);
@@ -630,7 +630,7 @@ impl VBScriptObject for FileObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {
@@ -811,7 +811,7 @@ impl VBScriptObject for FolderObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {

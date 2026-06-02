@@ -51,7 +51,7 @@ impl VBScriptObject for Connection {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "OPEN" => {
                 if !args.is_empty() {
@@ -131,7 +131,7 @@ impl VBScriptObject for Recordset {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "MOVENEXT" => {
                 if self.eof {

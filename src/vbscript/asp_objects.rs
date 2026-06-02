@@ -1,40 +1,10 @@
 use ahash::AHashMap;
-use std::sync::Mutex;
 
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
-
-// ===== Global Stores =====
-
-static SESSION_STORE: std::sync::OnceLock<Mutex<AHashMap<String, AHashMap<String, VBValue>>>> =
-    std::sync::OnceLock::new();
-
-pub fn get_session_store() -> &'static Mutex<AHashMap<String, AHashMap<String, VBValue>>> {
-    SESSION_STORE.get_or_init(|| Mutex::new(AHashMap::new()))
-}
-
-static APPLICATION_STORE: std::sync::OnceLock<Mutex<AHashMap<String, VBValue>>> =
-    std::sync::OnceLock::new();
-
-pub fn get_app_store() -> &'static Mutex<AHashMap<String, VBValue>> {
-    APPLICATION_STORE.get_or_init(|| Mutex::new(AHashMap::new()))
-}
-
-#[allow(dead_code)]
-pub fn clear_app_store() {
-    if let Some(store) = APPLICATION_STORE.get() {
-        store.lock().unwrap().clear();
-    }
-}
-
-static APP_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-
-fn get_app_lock() -> &'static std::sync::Mutex<()> {
-    APP_LOCK.get_or_init(|| std::sync::Mutex::new(()))
-}
 
 // ===== RequestObject =====
 
@@ -52,18 +22,18 @@ impl VBScriptObject for RequestObject {
     fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "QUERYSTRING" => Ok(VBValue::Object(Box::new(RequestQueryString(
-                context.request_params.clone(),
+                context.request.params.clone(),
             )))),
             "FORM" => Ok(VBValue::Object(Box::new(RequestForm(
-                context.request_form.clone(),
+                context.request.form.clone(),
             )))),
             "SERVERVARIABLES" => Ok(VBValue::Object(Box::new(RequestServerVariables(
-                context.request_headers.clone(),
+                context.request.headers.clone(),
             )))),
             "COOKIES" => Ok(VBValue::Object(Box::new(RequestCookies(
-                context.request_cookies.clone(),
+                context.request.cookies.clone(),
             )))),
-            "TOTALBYTES" => Ok(VBValue::Number(context.request_total_bytes as f64)),
+            "TOTALBYTES" => Ok(VBValue::Number(context.request.total_bytes as f64)),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
                 "Property '{}' not found on Request",
                 name
@@ -71,7 +41,7 @@ impl VBScriptObject for RequestObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "BINARYREAD" => Ok(VBValue::Empty),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
@@ -103,12 +73,12 @@ impl VBScriptObject for RequestQueryString {
             ))),
         }
     }
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -132,12 +102,12 @@ impl VBScriptObject for RequestForm {
             ))),
         }
     }
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -161,12 +131,12 @@ impl VBScriptObject for RequestServerVariables {
             }
         }
     }
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key.to_lowercase()).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -190,12 +160,12 @@ impl VBScriptObject for RequestCookies {
             }
         }
     }
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -217,7 +187,7 @@ impl VBScriptObject for ResponseObject {
         match name.to_uppercase().as_str() {
             "BUFFER" => Ok(VBValue::Boolean(true)),
             "CONTENTTYPE" => Ok(VBValue::String("text/html".to_string())),
-            "STATUS" => Ok(VBValue::String(context.response_status.clone())),
+            "STATUS" => Ok(VBValue::String(context.response.status.clone())),
             "EXPIRES" => Ok(VBValue::Number(0.0)),
             "COOKIES" => Ok(VBValue::Object(Box::new(ResponseCookies::new()))),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
@@ -236,12 +206,12 @@ impl VBScriptObject for ResponseObject {
         match name.to_uppercase().as_str() {
             "CONTENTTYPE" => {
                 context
-                    .response_extra_headers
+                    .response.extra_headers
                     .push(("Content-Type".to_string(), value_utils::to_arg_string(&value)));
                 Ok(())
             }
             "STATUS" => {
-                context.response_status = value_utils::to_arg_string(&value);
+                context.response.status = value_utils::to_arg_string(&value);
                 Ok(())
             }
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
@@ -251,7 +221,7 @@ impl VBScriptObject for ResponseObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "WRITE" => {
                 if !args.is_empty() {
@@ -302,13 +272,13 @@ impl VBScriptObject for ResponseCookies {
         let val = self.cookies.get(name).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, index: &VBValue, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         let name = value_utils::to_arg_string(index);
         let val = value_utils::to_arg_string(&value);
         self.cookies.insert(name, val);
         Ok(())
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -334,16 +304,18 @@ impl VBScriptObject for SessionObject {
             return Ok(VBValue::Empty);
         }
         match name.to_uppercase().as_str() {
-            "SESSIONID" => Ok(VBValue::String(context.session_id.clone())),
+            "SESSIONID" => Ok(VBValue::String(context.session.id.clone())),
             "TIMEOUT" => Ok(VBValue::Number(20.0)),
             "CONTENTS" => Ok(VBValue::Object(Box::new(SessionContents::new(
-                context.session_id.clone(),
+                context.session.id.clone(),
             )))),
             _ => {
-                let store = get_session_store().lock().unwrap();
-                if let Some(data) = store.get(&context.session_id.to_uppercase()) {
-                    if let Some(val) = data.get(&name.to_uppercase()) {
-                        return Ok(val.clone());
+                if let Some(ref store) = context.store {
+                    let sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get(&context.session.id.to_uppercase()) {
+                        if let Some(val) = data.get(&name.to_uppercase()) {
+                            return Ok(val.clone());
+                        }
                     }
                 }
                 Ok(VBValue::Empty)
@@ -363,24 +335,28 @@ impl VBScriptObject for SessionObject {
         match name.to_uppercase().as_str() {
             "TIMEOUT" => Ok(()),
             _ => {
-                let mut store = get_session_store().lock().unwrap();
-                store
-                    .entry(context.session_id.to_uppercase())
-                    .or_default()
-                    .insert(name.to_uppercase(), value);
+                if let Some(ref store) = context.store {
+                    let mut sessions = store.lock_sessions();
+                    sessions
+                        .entry(context.session.id.to_uppercase())
+                        .or_default()
+                        .insert(name.to_uppercase(), value);
+                }
                 Ok(())
             }
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         if !self.session_enabled {
             return Ok(VBValue::Empty);
         }
         match name.to_uppercase().as_str() {
             "ABANDON" => {
-                let mut store = get_session_store().lock().unwrap();
-                store.remove(&self.session_id.to_uppercase());
+                if let Some(ref store) = context.store {
+                    let mut sessions = store.lock_sessions();
+                    sessions.remove(&self.session_id.to_uppercase());
+                }
                 Ok(VBValue::Empty)
             }
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
@@ -390,32 +366,35 @@ impl VBScriptObject for SessionObject {
         }
     }
 
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         if !self.session_enabled {
             return Ok(VBValue::Empty);
         }
         let key = value_utils::to_arg_string(index);
-        let store = get_session_store().lock().unwrap();
-        if let Some(data) = store.get(&self.session_id.to_uppercase()) {
-            Ok(data
-                .get(&key.to_uppercase())
-                .cloned()
-                .unwrap_or(VBValue::Empty))
-        } else {
-            Ok(VBValue::Empty)
+        if let Some(ref store) = context.store {
+            let sessions = store.lock_sessions();
+            if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                return Ok(data
+                    .get(&key.to_uppercase())
+                    .cloned()
+                    .unwrap_or(VBValue::Empty));
+            }
         }
+        Ok(VBValue::Empty)
     }
 
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
         if !self.session_enabled {
             return Ok(());
         }
         let key = value_utils::to_arg_string(index);
-        let mut store = get_session_store().lock().unwrap();
-        store
-            .entry(self.session_id.to_uppercase())
-            .or_default()
-            .insert(key.to_uppercase(), value);
+        if let Some(ref store) = context.store {
+            let mut sessions = store.lock_sessions();
+            sessions
+                .entry(self.session_id.to_uppercase())
+                .or_default()
+                .insert(key.to_uppercase(), value);
+        }
         Ok(())
     }
 }
@@ -438,30 +417,32 @@ impl VBScriptObject for SessionContents {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => {
-                let store = get_session_store().lock().unwrap();
-                if let Some(data) = store.get(&self.session_id.to_uppercase()) {
-                    Ok(VBValue::Number(data.len() as f64))
-                } else {
-                    Ok(VBValue::Number(0.0))
+                if let Some(ref store) = context.store {
+                    let sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                        return Ok(VBValue::Number(data.len() as f64));
+                    }
                 }
+                Ok(VBValue::Number(0.0))
             }
             _ => {
-                let store = get_session_store().lock().unwrap();
-                if let Some(data) = store.get(&self.session_id.to_uppercase()) {
-                    Ok(data
-                        .get(&name.to_uppercase())
-                        .cloned()
-                        .unwrap_or(VBValue::Empty))
-                } else {
-                    Ok(VBValue::Empty)
+                if let Some(ref store) = context.store {
+                    let sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                        return Ok(data
+                            .get(&name.to_uppercase())
+                            .cloned()
+                            .unwrap_or(VBValue::Empty));
+                    }
                 }
+                Ok(VBValue::Empty)
             }
         }
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -490,7 +471,7 @@ impl VBScriptObject for ServerObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CREATEOBJECT" => {
                 if args.is_empty() {
@@ -597,10 +578,12 @@ impl VBScriptObject for ApplicationObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, _args: &[VBValue], context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "LOCK" => {
-                let _guard = get_app_lock().lock().unwrap();
+                if let Some(ref store) = context.store {
+                    let _guard = store.lock_app();
+                }
                 Ok(VBValue::Empty)
             }
             "UNLOCK" => Ok(VBValue::Empty),
@@ -611,19 +594,24 @@ impl VBScriptObject for ApplicationObject {
         }
     }
 
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
-        let store = get_app_store().lock().unwrap();
-        Ok(store
-            .get(&key.to_uppercase())
-            .cloned()
-            .unwrap_or(VBValue::Empty))
+        if let Some(ref store) = context.store {
+            let apps = store.lock_apps();
+            return Ok(apps
+                .get(&key.to_uppercase())
+                .cloned()
+                .unwrap_or(VBValue::Empty));
+        }
+        Ok(VBValue::Empty)
     }
 
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
-        let mut store = get_app_store().lock().unwrap();
-        store.insert(key.to_uppercase(), value);
+        if let Some(ref store) = context.store {
+            let mut apps = store.lock_apps();
+            apps.insert(key.to_uppercase(), value);
+        }
         Ok(())
     }
 }
@@ -638,36 +626,47 @@ impl VBScriptObject for ApplicationContents {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => {
-                let store = get_app_store().lock().unwrap();
-                Ok(VBValue::Number(store.len() as f64))
+                if let Some(ref store) = context.store {
+                    let apps = store.lock_apps();
+                    return Ok(VBValue::Number(apps.len() as f64));
+                }
+                Ok(VBValue::Number(0.0))
             }
             _ => {
-                let store = get_app_store().lock().unwrap();
-                Ok(store
-                    .get(&name.to_uppercase())
-                    .cloned()
-                    .unwrap_or(VBValue::Empty))
+                if let Some(ref store) = context.store {
+                    let apps = store.lock_apps();
+                    return Ok(apps
+                        .get(&name.to_uppercase())
+                        .cloned()
+                        .unwrap_or(VBValue::Empty));
+                }
+                Ok(VBValue::Empty)
             }
         }
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
-    fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
-        let store = get_app_store().lock().unwrap();
-        Ok(store
-            .get(&key.to_uppercase())
-            .cloned()
-            .unwrap_or(VBValue::Empty))
+        if let Some(ref store) = context.store {
+            let apps = store.lock_apps();
+            return Ok(apps
+                .get(&key.to_uppercase())
+                .cloned()
+                .unwrap_or(VBValue::Empty));
+        }
+        Ok(VBValue::Empty)
     }
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
-        let mut store = get_app_store().lock().unwrap();
-        store.insert(key.to_uppercase(), value);
+        if let Some(ref store) = context.store {
+            let mut apps = store.lock_apps();
+            apps.insert(key.to_uppercase(), value);
+        }
         Ok(())
     }
 }

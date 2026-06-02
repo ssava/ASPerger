@@ -70,7 +70,7 @@ impl VBScriptObject for RegExpObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "TEST" => {
                 if args.is_empty() {

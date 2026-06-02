@@ -1549,7 +1549,7 @@ pub fn execute_blocks(
 ) -> Result<(), VBSError> {
     for block in blocks {
         // Check if Response.End or Response.Redirect was called
-        if context.response_ended {
+        if context.response.ended {
             break;
         }
 
@@ -1760,9 +1760,9 @@ pub fn execute_blocks(
             }
             BlockStatement::With { object, body } => {
                 let obj_val = evaluate(object, context)?;
-                let prev_with = context.with_object.replace(obj_val);
+                let prev_with = context.scope.with_object.replace(obj_val);
                 let result = execute_blocks(body, context);
-                context.with_object = prev_with;
+                context.scope.with_object = prev_with;
                 if let Err(e) = result {
                     return Err(e);
                 }

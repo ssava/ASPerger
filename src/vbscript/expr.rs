@@ -436,7 +436,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
         Expr::Literal(val) => Ok(val.clone()),
         Expr::Variable(name) => {
             if name == "__with_obj__" {
-                return context.with_object.clone().ok_or_else(|| {
+                return context.scope.with_object.clone().ok_or_else(|| {
                     VBSErrorType::RuntimeError.into_error("With object not set".to_string())
                 });
             }
@@ -445,7 +445,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             })
         }
         Expr::WithObject => {
-            context.with_object.clone().ok_or_else(|| {
+            context.scope.with_object.clone().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error("With object not set".to_string())
             })
         }
@@ -467,25 +467,32 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                 .collect();
             let evaluated_args = evaluated_args?;
 
-            if let Some(var) = context.get_variable(name) {
-                match var {
-                    VBValue::Object(ref obj) => {
-                        if evaluated_args.len() == 1 {
-                            return obj.indexed_get(&evaluated_args[0]);
-                        }
+            // Check if it's an object with a single arg (indexed get)
+            if evaluated_args.len() == 1 && matches!(context.get_variable(name), Some(VBValue::Object(_))) {
+                let mut obj_val = {
+                    let slot = context.get_variable_mut(name).unwrap();
+                    let mut replacement = VBValue::Empty;
+                    std::mem::swap(slot, &mut replacement);
+                    replacement
+                };
+                match &mut obj_val {
+                    VBValue::Object(ref mut obj) => {
+                        let result = obj.indexed_get(&evaluated_args[0], context);
+                        context.set_variable(name, obj_val);
+                        return result;
                     }
-                    VBValue::Array(ref items) => {
-                        if evaluated_args.len() == 1 {
-                            let idx = to_number(&evaluated_args[0]) as usize;
-                            if idx < items.len() {
-                                return Ok(items[idx].clone());
-                            }
-                            return Err(VBSErrorType::RuntimeError.into_error(
-                                format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())
-                            ));
-                        }
+                    _ => unreachable!(),
+                }
+            }
+            if evaluated_args.len() == 1 {
+                if let Some(VBValue::Array(ref items)) = context.get_variable(name) {
+                    let idx = to_number(&evaluated_args[0]) as usize;
+                    if idx < items.len() {
+                        return Ok(items[idx].clone());
                     }
-                    _ => {}
+                    return Err(VBSErrorType::RuntimeError.into_error(
+                        format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())
+                    ));
                 }
             }
             if let Some(func) = context.get_function(name).cloned() {
@@ -518,7 +525,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     if let Ok(prop_val) = obj.get_property(method, context) {
                         if let VBValue::Object(sub_obj) = &prop_val {
                             let evaluated_arg = evaluate(&args[0], context)?;
-                            if let Ok(result) = sub_obj.indexed_get(&evaluated_arg) {
+                            if let Ok(result) = sub_obj.indexed_get(&evaluated_arg, context) {
                                 return Ok(result);
                             }
                         }
@@ -533,7 +540,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                         .map(|arg| evaluate(arg, context))
                         .collect();
                     let evaluated_args = evaluated_args?;
-                    obj.call_method(method, &evaluated_args)
+                    obj.call_method(method, &evaluated_args, context)
                 }
                 _ => Err(VBSErrorType::RuntimeError.into_error(
                     format!("Object doesn't support this property or method: '{}'", method)

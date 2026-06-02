@@ -6,7 +6,17 @@ use crate::vbscript::vbobject::ErrObject;
 use crate::vbscript::{Token, TokenType, Tokenizer, VBValue};
 use crate::vbscript::ExecutionContext;
 
+pub trait Interpreter: Send + Sync {
+    fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError>;
+}
+
 pub struct VBScriptInterpreter;
+
+impl Interpreter for VBScriptInterpreter {
+    fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
+        VBScriptInterpreter::execute(self, code, context)
+    }
+}
 
 impl VBScriptInterpreter {
     pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
@@ -21,35 +31,6 @@ impl VBScriptInterpreter {
 
         if context.get_variable("ERR").is_none() {
             context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
-        }
-
-        // Inject ASP intrinsic objects (only if they don't already exist)
-        if context.get_variable("REQUEST").is_none() {
-            context.set_variable("Request", VBValue::Object(Box::new(
-                crate::vbscript::asp_objects::RequestObject,
-            )));
-        }
-        if context.get_variable("RESPONSE").is_none() {
-            context.set_variable("Response", VBValue::Object(Box::new(
-                crate::vbscript::asp_objects::ResponseObject,
-            )));
-        }
-        if context.get_variable("SESSION").is_none() {
-            let session = crate::vbscript::asp_objects::SessionObject {
-                session_id: context.session_id.clone(),
-                session_enabled: context.session_enabled,
-            };
-            context.set_variable("Session", VBValue::Object(Box::new(session)));
-        }
-        if context.get_variable("SERVER").is_none() {
-            context.set_variable("Server", VBValue::Object(Box::new(
-                crate::vbscript::asp_objects::ServerObject,
-            )));
-        }
-        if context.get_variable("APPLICATION").is_none() {
-            context.set_variable("Application", VBValue::Object(Box::new(
-                crate::vbscript::asp_objects::ApplicationObject,
-            )));
         }
 
         let blocks = block::parse_blocks(&lines)?;

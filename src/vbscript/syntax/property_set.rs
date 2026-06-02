@@ -22,7 +22,7 @@ impl VBSyntax for PropertySet {
 
         if self.object_name == "__with_obj__" {
             // With-block property set: swap with_object out, modify, put back
-            let mut obj_val = context.with_object.take().ok_or_else(|| {
+            let mut obj_val = context.scope.with_object.take().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error("With object not set".to_string())
             })?;
             let result = match &mut obj_val {
@@ -35,7 +35,7 @@ impl VBSyntax for PropertySet {
                     ));
                 }
             };
-            context.with_object = Some(obj_val);
+            context.scope.with_object = Some(obj_val);
             return result;
         }
 

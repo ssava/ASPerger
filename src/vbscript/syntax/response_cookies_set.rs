@@ -19,8 +19,8 @@ impl VBSyntax for ResponseCookiesSet {
         let value = evaluate(&self.value, context)?;
         let name = crate::vbscript::value_utils::to_arg_string(&key);
         let val = crate::vbscript::value_utils::to_arg_string(&value);
-        context.response_cookies.insert(name.clone(), val.clone());
-        context.response_extra_headers.push((
+        context.response.cookies.insert(name.clone(), val.clone());
+        context.response.extra_headers.push((
             "Set-Cookie".to_string(),
             format!("{}={}; path=/", name, val),
         ));
