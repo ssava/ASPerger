@@ -37,6 +37,7 @@ impl VBScriptInterpreter {
         if context.get_variable("SESSION").is_none() {
             let session = crate::vbscript::asp_objects::SessionObject {
                 session_id: context.session_id.clone(),
+                session_enabled: context.session_enabled,
             };
             context.set_variable("Session", VBValue::Object(Box::new(session)));
         }

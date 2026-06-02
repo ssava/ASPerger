@@ -38,10 +38,6 @@ impl Handler for HtmlHandler {
                 context.write(html);
                 return Ok(());
             }
-            AspBlock::Directive(_, _) => {
-                // Directives are informational; no runtime impact
-                return Ok(());
-            }
             _ => {}
         }
         if let Some(next) = &self.next {

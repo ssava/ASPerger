@@ -318,6 +318,7 @@ impl VBScriptObject for ResponseCookies {
 #[derive(Debug, Clone)]
 pub struct SessionObject {
     pub session_id: String,
+    pub session_enabled: bool,
 }
 
 impl VBScriptObject for SessionObject {
@@ -329,6 +330,9 @@ impl VBScriptObject for SessionObject {
     }
 
     fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+        if !self.session_enabled {
+            return Ok(VBValue::Empty);
+        }
         match name.to_uppercase().as_str() {
             "SESSIONID" => Ok(VBValue::String(context.session_id.clone())),
             "TIMEOUT" => Ok(VBValue::Number(20.0)),
@@ -353,6 +357,9 @@ impl VBScriptObject for SessionObject {
         value: VBValue,
         context: &mut ExecutionContext,
     ) -> Result<(), VBSError> {
+        if !self.session_enabled {
+            return Ok(());
+        }
         match name.to_uppercase().as_str() {
             "TIMEOUT" => Ok(()),
             _ => {
@@ -367,6 +374,9 @@ impl VBScriptObject for SessionObject {
     }
 
     fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+        if !self.session_enabled {
+            return Ok(VBValue::Empty);
+        }
         match name.to_uppercase().as_str() {
             "ABANDON" => {
                 let mut store = get_session_store().lock().unwrap();
@@ -381,6 +391,9 @@ impl VBScriptObject for SessionObject {
     }
 
     fn indexed_get(&self, index: &VBValue) -> Result<VBValue, VBSError> {
+        if !self.session_enabled {
+            return Ok(VBValue::Empty);
+        }
         let key = value_utils::to_arg_string(index);
         let store = get_session_store().lock().unwrap();
         if let Some(data) = store.get(&self.session_id.to_uppercase()) {
@@ -394,6 +407,9 @@ impl VBScriptObject for SessionObject {
     }
 
     fn indexed_set(&mut self, index: &VBValue, value: VBValue) -> Result<(), VBSError> {
+        if !self.session_enabled {
+            return Ok(());
+        }
         let key = value_utils::to_arg_string(index);
         let mut store = get_session_store().lock().unwrap();
         store

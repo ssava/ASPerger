@@ -340,10 +340,45 @@ impl AspServer {
 
         // Handle ASP files
         if file_path.ends_with(".asp") {
-            let parser = AspParser::new(content);
+            let file_dir = Path::new(&file_path).parent().unwrap_or(Path::new(folder));
+            let root_dir = Path::new(folder);
+
+            // Step 1: Resolve #include directives (expand at source level)
+            let expanded = match crate::asp::include_resolver::IncludeResolver::expand(
+                &content,
+                file_dir,
+                root_dir,
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    return Self::send_response(
+                        stream,
+                        500,
+                        "text/html",
+                        &ASPError::new(500, e).render_html(),
+                    )
+                    .await;
+                }
+            };
+
+            // Step 2: Parse ASP blocks
+            let parser = AspParser::new(expanded);
             let blocks = parser.parse();
 
+            // Step 3: Preprocess directives
+            let preprocessor = crate::asp::preprocessor::Preprocessor::new();
+            let (directive_config, filtered_blocks) = preprocessor.process(&blocks);
+
             let mut context = ExecutionContext::new();
+
+            // Step 4: Apply directive config
+            context.session_enabled = directive_config.enable_session_state;
+            if let Some(cp) = directive_config.code_page {
+                context.code_page = cp;
+            }
+            if let Some(l) = directive_config.lcid {
+                context.lcid = l;
+            }
 
             // Populate request data
             context.request_method = method.clone();
@@ -369,25 +404,26 @@ impl AspServer {
                 }
             }
 
-            // Session handling
-            let existing_session = context
-                .request_cookies
-                .get("ASPSESSIONID")
-                .cloned()
-                .unwrap_or_default();
-            let session_was_new = existing_session.is_empty();
-            if session_was_new {
-                context.session_id = Self::generate_session_id();
-            } else {
-                context.session_id = existing_session;
-            }
+            // Session handling (only when enabled)
+            if context.session_enabled {
+                let existing_session = context
+                    .request_cookies
+                    .get("ASPSESSIONID")
+                    .cloned()
+                    .unwrap_or_default();
+                let session_was_new = existing_session.is_empty();
+                if session_was_new {
+                    context.session_id = Self::generate_session_id();
+                } else {
+                    context.session_id = existing_session;
+                }
 
-            // Build session cookie for response (only for new sessions)
-            if session_was_new && !context.session_id.is_empty() {
-                context.response_extra_headers.push((
-                    "Set-Cookie".to_string(),
-                    format!("ASPSESSIONID={}; path=/", context.session_id),
-                ));
+                if session_was_new && !context.session_id.is_empty() {
+                    context.response_extra_headers.push((
+                        "Set-Cookie".to_string(),
+                        format!("ASPSESSIONID={}; path=/", context.session_id),
+                    ));
+                }
             }
 
             // Set up Server.Execute/Transfer callback
@@ -402,26 +438,37 @@ impl AspServer {
                 let content = std::fs::read_to_string(&target).map_err(|e| {
                     format!("Could not read '{}': {}", target, e)
                 })?;
-                let parser = AspParser::new(content);
-                let blocks = parser.parse();
-                for block in blocks {
+                let target_dir = Path::new(&target).parent().unwrap_or(Path::new(&folder_clone));
+                let root = Path::new(&folder_clone);
+                let expanded = crate::asp::include_resolver::IncludeResolver::expand(
+                    &content,
+                    target_dir,
+                    root,
+                )
+                .map_err(|e| format!("Include error in '{}': {}", target, e))?;
+                let p = crate::asp::parser::AspParser::new(expanded);
+                let inner_blocks = p.parse();
+                let pp = crate::asp::preprocessor::Preprocessor::new();
+                let (_inner_config, inner_filtered) = pp.process(&inner_blocks);
+                for block in inner_filtered {
                     if ctx.response_ended {
                         break;
                     }
-                    handler_clone.handle(&block, ctx).map_err(|e| {
+                    handler_clone.handle(block, ctx).map_err(|e| {
                         format!("Execution error in '{}': {}", target, e)
                     })?;
                 }
                 Ok(())
             }));
 
+            // Step 5: Execute filtered blocks
             let mut response_content = String::new();
 
-            for block in blocks {
+            for block in filtered_blocks {
                 if context.response_ended {
                     break;
                 }
-                match handler_chain.handle(&block, &mut context) {
+                match handler_chain.handle(block, &mut context) {
                     Ok(()) => {
                         response_content.push_str(&context.response_buffer);
                     }

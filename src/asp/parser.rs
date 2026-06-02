@@ -24,7 +24,9 @@ fn get_asp_expression_regex() -> &'static Regex {
 
 fn get_asp_directive_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"<%@\s*(\w+)\s*=\s*(\w+)\s*%>").unwrap())
+    RE.get_or_init(|| {
+        Regex::new(r#"<%@\s*(\w+)\s*=\s*(?:"([^"]*)"|(\w+))\s*%>"#).unwrap()
+    })
 }
 
 impl AspParser {
@@ -48,8 +50,16 @@ impl AspParser {
         // Second pass: strip directives and add them as Directive blocks
         let content = dir_re.replace_all(&content, |caps: &regex::Captures| {
             let name = caps.get(1).map_or("", |m| m.as_str());
-            let value = caps.get(2).map_or("", |m| m.as_str());
-            blocks.push(AspBlock::Directive(name.to_string(), value.to_string()));
+            let value = caps
+                .get(2)
+                .map_or("", |m| m.as_str())
+                .to_owned();
+            let value = if value.is_empty() {
+                caps.get(3).map_or("", |m| m.as_str()).to_string()
+            } else {
+                value
+            };
+            blocks.push(AspBlock::Directive(name.to_string(), value));
             ""
         }).to_string();
 

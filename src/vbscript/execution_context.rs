@@ -66,6 +66,11 @@ pub struct ExecutionContext {
 
     // Session
     pub session_id: String,
+    pub session_enabled: bool,
+
+    // Encoding / locale
+    pub code_page: u32,
+    pub lcid: u32,
 
     // Debugger
     pub debugger: Option<super::debugger::Debugger>,
@@ -101,6 +106,9 @@ impl ExecutionContext {
             response_flushed: String::new(),
             response_cookies: AHashMap::new(),
             session_id: String::new(),
+            session_enabled: true,
+            code_page: 65001,
+            lcid: 1033,
             debugger: None,
             execute_file_callback: None,
         }

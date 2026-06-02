@@ -130,42 +130,37 @@ impl Debugger {
                 thread_id: 1,
             }).unwrap_or(());
 
-            loop {
-                match self.command_rx.recv() {
-                    Ok(DebugCommand::Continue) => {
-                        let mut s = self.state.lock().unwrap();
-                        s.step_mode = StepMode::Continue;
-                        s.paused = false;
-                        break;
-                    }
-                    Ok(DebugCommand::Next) => {
-                        let mut s = self.state.lock().unwrap();
-                        s.step_mode = StepMode::StepOver;
-                        s.step_frame_depth = frame_depth;
-                        s.current_file = file.to_string();
-                        s.current_line = line;
-                        s.paused = false;
-                        break;
-                    }
-                    Ok(DebugCommand::StepIn) => {
-                        let mut s = self.state.lock().unwrap();
-                        s.step_mode = StepMode::StepIn;
-                        s.step_frame_depth = frame_depth;
-                        s.paused = false;
-                        break;
-                    }
-                    Ok(DebugCommand::StepOut) => {
-                        let mut s = self.state.lock().unwrap();
-                        s.step_mode = StepMode::StepOut;
-                        s.step_frame_depth = frame_depth;
-                        s.paused = false;
-                        break;
-                    }
-                    Ok(DebugCommand::Disconnect) => {
-                        return Err(VBSErrorType::RuntimeError.into_error("Debugger disconnected".to_string()));
-                    }
-                    Err(_) => break,
+            // Wait for a debugger command (blocks until received)
+            match self.command_rx.recv() {
+                Ok(DebugCommand::Continue) => {
+                    let mut s = self.state.lock().unwrap();
+                    s.step_mode = StepMode::Continue;
+                    s.paused = false;
                 }
+                Ok(DebugCommand::Next) => {
+                    let mut s = self.state.lock().unwrap();
+                    s.step_mode = StepMode::StepOver;
+                    s.step_frame_depth = frame_depth;
+                    s.current_file = file.to_string();
+                    s.current_line = line;
+                    s.paused = false;
+                }
+                Ok(DebugCommand::StepIn) => {
+                    let mut s = self.state.lock().unwrap();
+                    s.step_mode = StepMode::StepIn;
+                    s.step_frame_depth = frame_depth;
+                    s.paused = false;
+                }
+                Ok(DebugCommand::StepOut) => {
+                    let mut s = self.state.lock().unwrap();
+                    s.step_mode = StepMode::StepOut;
+                    s.step_frame_depth = frame_depth;
+                    s.paused = false;
+                }
+                Ok(DebugCommand::Disconnect) => {
+                    return Err(VBSErrorType::RuntimeError.into_error("Debugger disconnected".to_string()));
+                }
+                Err(_) => {}
             }
         } else if line != 0 {
             let mut s = self.state.lock().unwrap();
