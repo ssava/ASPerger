@@ -10,8 +10,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 pub struct AspServer {
-    handler_chain: Arc<dyn Handler + Send + Sync>, // Handler chain
-    config: Config,                                // Configurazione del server
+    pub handler_chain: Arc<dyn Handler + Send + Sync>,
+    config: Config,
 }
 
 impl AspServer {
@@ -179,6 +179,33 @@ impl AspServer {
         Ok(())
     }
 
+    fn parse_multipart_form_data(body: &[u8], boundary: &str) -> AHashMap<String, String> {
+        let mut form = AHashMap::new();
+        let body_str = String::from_utf8_lossy(body);
+
+        // Split by boundary (both start and subsequent)
+        let full_boundary = format!("--{}", boundary);
+        for part in body_str.split(&full_boundary) {
+            let part = part.trim();
+            // Skip preamble (before first boundary), closing boundary, and empty
+            if part.is_empty() || part.starts_with("--") || !part.contains("\r\n\r\n") {
+                continue;
+            }
+            // Split headers from content
+            if let Some((headers, content)) = part.split_once("\r\n\r\n") {
+                let content = content.trim_end_matches("\r\n").trim_end();
+                if let Some(name_start) = headers.find("name=\"") {
+                    let name_start = name_start + 6;
+                    if let Some(name_end) = headers[name_start..].find('"') {
+                        let name = &headers[name_start..name_start + name_end];
+                        form.insert(name.to_string(), content.to_string());
+                    }
+                }
+            }
+        }
+        form
+    }
+
     fn parse_form_body(body: &[u8]) -> AHashMap<String, String> {
         let body_str = String::from_utf8_lossy(body);
         let mut form = AHashMap::new();
@@ -203,7 +230,7 @@ impl AspServer {
         format!("ASPERGER{:x}{}", nanos, Self::rand_hex())
     }
 
-    async fn handle_connection(
+    pub async fn handle_connection(
         handler_chain: &Arc<dyn Handler + Send + Sync>,
         stream: &mut tokio::net::TcpStream,
         folder: &str,
@@ -280,16 +307,21 @@ impl AspServer {
         let path_obj = Path::new(&file_path);
 
         // Ensure the path is within the allowed folder
-        let canonical_path = path_obj.canonicalize().map_err(|_| {
-            ASPError::new(404, "File not found".to_string())
-        })?;
+        let canonical_path = match path_obj.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                let err = ASPError::new(404, "File not found");
+                return Self::send_response(stream, 404, "text/html", &err.render_html()).await;
+            }
+        };
 
         let canonical_folder = Path::new(folder).canonicalize().map_err(|_| {
             ASPError::new(500, "Server configuration error".to_string())
         })?;
 
         if !canonical_path.starts_with(canonical_folder) {
-            return Self::send_response(stream, 403, "text/plain", "Forbidden").await;
+            let err = ASPError::new(403, "Forbidden: access denied");
+            return Self::send_response(stream, 403, "text/html", &err.render_html()).await;
         }
 
         // Read and process the file
@@ -320,13 +352,21 @@ impl AspServer {
             context.request_params = params;
             context.request_headers = headers.clone();
             context.request_cookies = cookies;
+            context.request_total_bytes = body.len();
 
             // Parse form data for POST
             let content_type = headers.get("content-type").cloned().unwrap_or_default();
-            if method.eq_ignore_ascii_case("POST")
-                && content_type.contains("application/x-www-form-urlencoded")
-            {
-                context.request_form = Self::parse_form_body(&body);
+            if method.eq_ignore_ascii_case("POST") {
+                if content_type.contains("application/x-www-form-urlencoded") {
+                    context.request_form = Self::parse_form_body(&body);
+                } else if content_type.contains("multipart/form-data") {
+                    if let Some(boundary) = content_type
+                        .split(';')
+                        .find_map(|p| p.trim().strip_prefix("boundary="))
+                    {
+                        context.request_form = Self::parse_multipart_form_data(&body, boundary);
+                    }
+                }
             }
 
             // Session handling
@@ -349,6 +389,31 @@ impl AspServer {
                     format!("ASPSESSIONID={}; path=/", context.session_id),
                 ));
             }
+
+            // Set up Server.Execute/Transfer callback
+            let folder_clone = folder.to_string();
+            let handler_clone = Arc::clone(handler_chain);
+            context.execute_file_callback = Some(Arc::new(move |path, ctx| {
+                let target = if path.starts_with('/') || path.starts_with('\\') {
+                    format!("{}{}", folder_clone, path)
+                } else {
+                    format!("{}/{}", folder_clone, path)
+                };
+                let content = std::fs::read_to_string(&target).map_err(|e| {
+                    format!("Could not read '{}': {}", target, e)
+                })?;
+                let parser = AspParser::new(content);
+                let blocks = parser.parse();
+                for block in blocks {
+                    if ctx.response_ended {
+                        break;
+                    }
+                    handler_clone.handle(&block, ctx).map_err(|e| {
+                        format!("Execution error in '{}': {}", target, e)
+                    })?;
+                }
+                Ok(())
+            }));
 
             let mut response_content = String::new();
 

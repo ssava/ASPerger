@@ -1807,6 +1807,9 @@ mod tests {
                     }
                     context.flush_response_buffer();
                 }
+                crate::asp::parser::AspBlock::Directive(_, _) => {
+                    // Directives are informational; no runtime impact
+                }
             }
         }
 
@@ -3879,5 +3882,253 @@ mod tests {
         assert_eq!(ctx.get_variable("sType"), Some(&VBValue::String("Object".to_string())));
         assert_eq!(ctx.get_variable("svType"), Some(&VBValue::String("Object".to_string())));
         assert_eq!(ctx.get_variable("aType"), Some(&VBValue::String("Object".to_string())));
+    }
+
+    // ===== HTTP INTEGRATION TESTS =====
+
+    use std::sync::Arc;
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+    fn tmp_asp_dir() -> std::path::PathBuf {
+        // Use the test function name if detected via backtrace. Fallback to counter.
+        let counter = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "asperger_test_{}_{}",
+            std::process::id(),
+            counter
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    }
+
+    fn write_asp(dir: &std::path::Path, name: &str, content: &str) {
+        std::fs::write(dir.join(name), format!("<%@ LANGUAGE=VBScript %>{}", content)).unwrap();
+    }
+
+    fn cleanup_dir(dir: &std::path::Path) {
+        if dir.exists() {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                if let Ok(e) = entry {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+
+    async fn serve_and_get(asp_dir: &str, request: &str) -> String {
+        let config = crate::asp::config::Config {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            folder: asp_dir.to_string(),
+        };
+        let server = crate::asp::server::AspServer::new(config);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let folder = asp_dir.to_string();
+        let handler = Arc::clone(&server.handler_chain);
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+        let _handle = tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    result = listener.accept() => {
+                        let (stream, _) = result.unwrap();
+                        let handler = Arc::clone(&handler);
+                        let folder = folder.clone();
+                        tokio::spawn(async move {
+                            let mut stream = stream;
+                            let _ = crate::asp::server::AspServer::handle_connection(
+                                &handler, &mut stream, &folder,
+                            ).await;
+                        });
+                    }
+                    _ = &mut shutdown_rx => break,
+                }
+            }
+        });
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        client.write_all(request.as_bytes()).await.unwrap();
+        client.shutdown().await.unwrap();
+
+        let mut reader = BufReader::new(&mut client);
+        let mut response = String::new();
+        let mut line = String::new();
+        while reader.read_line(&mut line).await.unwrap() > 0 {
+            response.push_str(&line);
+            line.clear();
+        }
+
+        let _ = shutdown_tx.send(());
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        response
+    }
+
+    #[tokio::test]
+    async fn test_http_get_index_asp() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "index.asp", "<html><body><%= \"Hello, World!\" %></body></html>");
+
+        let response = serve_and_get(dir.to_str().unwrap(), "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+
+        assert!(
+            response.contains("200 OK"),
+            "Expected 200 OK, got: {}",
+            response
+        );
+        assert!(
+            response.contains("Hello, World!"),
+            "Expected Hello, World!, got: {}",
+            response
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_404() {
+        let dir = tmp_asp_dir();
+
+        let response = serve_and_get(dir.to_str().unwrap(), "GET /nonexistent.asp HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+
+        assert!(!response.is_empty(), "Empty response");
+        assert!(
+            response.contains("404"),
+            "Expected 404, got: {}",
+            response
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_403() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "index.asp", "OK");
+
+        // Attempt path traversal (path won't canonicalize, so 404 first)
+        let response = serve_and_get(
+            dir.to_str().unwrap(),
+            "GET /../Cargo.toml HTTP/1.1\r\nHost: localhost\r\n\r\n",
+        )
+        .await;
+
+        assert!(!response.is_empty(), "Empty response");
+        // Should get either 404 (canonicalize fails) or 403 (path traversal detected)
+        assert!(
+            response.contains("404") || response.contains("403"),
+            "Expected 4xx, got: {}",
+            response
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_post_form() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "index.asp", "<%= Request.Form(\"name\") %>");
+
+        let body = "name=World";
+        let request = format!(
+            "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let response = serve_and_get(dir.to_str().unwrap(), &request).await;
+
+        assert!(
+            response.contains("200 OK"),
+            "Expected 200 OK, got: {}",
+            response
+        );
+        let resp_body = response.split("\r\n\r\n").nth(1).unwrap_or("");
+        assert!(
+            resp_body.contains("World"),
+            "Expected body to contain 'World', got: '{}'",
+            resp_body
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_multipart_form() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "index.asp", "<%= Request.Form(\"field1\") %>");
+
+        let boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW";
+        let body = "------WebKitFormBoundary7MA4YWxkTrZu0gW\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n------WebKitFormBoundary7MA4YWxkTrZu0gW--\r\n";
+        let request = format!(
+            "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary={}\r\nContent-Length: {}\r\n\r\n{}",
+            boundary,
+            body.len(),
+            body
+        );
+        let response = serve_and_get(dir.to_str().unwrap(), &request).await;
+
+        assert!(
+            response.contains("200 OK"),
+            "Expected 200 OK, got: {}",
+            response
+        );
+        let resp_body = response.split("\r\n\r\n").nth(1).unwrap_or("");
+        assert!(
+            resp_body.contains("value1"),
+            "Expected body to contain 'value1', got: '{}'",
+            resp_body
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_redirect() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "redirect.asp", "<% Response.Redirect(\"other.asp\") %>");
+
+        let response = serve_and_get(dir.to_str().unwrap(), "GET /redirect.asp HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+
+        assert!(
+            response.contains("302"),
+            "Expected 302, got: {}",
+            response
+        );
+        assert!(
+            response.contains("Location: other.asp"),
+            "Expected Location header, got: {}",
+            response
+        );
+
+        cleanup_dir(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_http_session_cookie() {
+        let dir = tmp_asp_dir();
+        write_asp(&dir, "index.asp", "Session.SessionID");
+
+        let response = serve_and_get(dir.to_str().unwrap(), "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n").await;
+
+        assert!(
+            response.contains("200 OK"),
+            "Expected 200 OK, got: {}",
+            response
+        );
+        assert!(
+            response.contains("Set-Cookie: ASPSESSIONID=")
+                || response.contains("Set-Cookie:ASPSESSIONID="),
+            "Expected Set-Cookie header, got: {}",
+            response
+        );
+
+        cleanup_dir(&dir);
     }
 }

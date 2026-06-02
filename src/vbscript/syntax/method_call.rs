@@ -102,6 +102,31 @@ impl VBSyntax for MethodCall {
             }
         }
 
+        // Handle Server methods
+        if self.object_name.eq_ignore_ascii_case("server") {
+            match self.method_name.to_uppercase().as_str() {
+                "EXECUTE" | "TRANSFER" => {
+                    if !args.is_empty() {
+                        let path = value_utils::to_arg_string(&args[0]);
+                        let callback = context.execute_file_callback.take();
+                        if let Some(cb) = callback {
+                            cb(&path, context).map_err(|e| {
+                                VBSErrorType::RuntimeError.into_error(format!(
+                                    "Server.Execute failed: {e}"
+                                ))
+                            })?;
+                            context.execute_file_callback = Some(cb);
+                        }
+                        if self.method_name.to_uppercase().as_str() == "TRANSFER" {
+                            context.response_ended = true;
+                        }
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+
         // ASP pattern: obj.Property(args) — try property + indexed_get first
         if !args.is_empty() && self.object_name != "__with_obj__" {
             if try_property_indexed_access(

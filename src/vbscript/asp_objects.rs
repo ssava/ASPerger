@@ -30,6 +30,12 @@ pub fn clear_app_store() {
     }
 }
 
+static APP_LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+
+fn get_app_lock() -> &'static std::sync::Mutex<()> {
+    APP_LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 // ===== RequestObject =====
 
 #[derive(Debug, Clone)]
@@ -57,7 +63,7 @@ impl VBScriptObject for RequestObject {
             "COOKIES" => Ok(VBValue::Object(Box::new(RequestCookies(
                 context.request_cookies.clone(),
             )))),
-            "TOTALBYTES" => Ok(VBValue::Number(0.0)),
+            "TOTALBYTES" => Ok(VBValue::Number(context.request_total_bytes as f64)),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
                 "Property '{}' not found on Request",
                 name
@@ -577,7 +583,10 @@ impl VBScriptObject for ApplicationObject {
 
     fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "LOCK" => Ok(VBValue::Empty),
+            "LOCK" => {
+                let _guard = get_app_lock().lock().unwrap();
+                Ok(VBValue::Empty)
+            }
             "UNLOCK" => Ok(VBValue::Empty),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
                 "Method '{}' not found on Application",

@@ -33,11 +33,18 @@ impl Handler for HtmlHandler {
     }
 
     fn handle(&self, block: &AspBlock, context: &mut ExecutionContext) -> Result<(), ASPError> {
-        if let AspBlock::Html(html) = block {
-            // Write the HTML content to the response buffer.
-            context.write(html);
-            Ok(())
-        } else if let Some(next) = &self.next {
+        match block {
+            AspBlock::Html(html) => {
+                context.write(html);
+                return Ok(());
+            }
+            AspBlock::Directive(_, _) => {
+                // Directives are informational; no runtime impact
+                return Ok(());
+            }
+            _ => {}
+        }
+        if let Some(next) = &self.next {
             // Pass the block to the next handler in the chain.
             next.handle(block, context)
         } else {

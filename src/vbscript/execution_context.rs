@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use ahash::AHashMap;
 
 use super::block::UserDefinedFunction;
@@ -52,6 +54,7 @@ pub struct ExecutionContext {
     pub request_headers: AHashMap<String, String>,
     pub request_form: AHashMap<String, String>,
     pub request_cookies: AHashMap<String, String>,
+    pub request_total_bytes: usize,
 
     // Response control
     pub response_status: String,
@@ -66,6 +69,10 @@ pub struct ExecutionContext {
 
     // Debugger
     pub debugger: Option<super::debugger::Debugger>,
+
+    // Server.Execute/Transfer callback
+    pub execute_file_callback:
+        Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
 }
 
 impl ExecutionContext {
@@ -86,6 +93,7 @@ impl ExecutionContext {
             request_headers: AHashMap::new(),
             request_form: AHashMap::new(),
             request_cookies: AHashMap::new(),
+            request_total_bytes: 0,
             response_status: "200 OK".to_string(),
             response_extra_headers: Vec::new(),
             response_ended: false,
@@ -94,6 +102,7 @@ impl ExecutionContext {
             response_cookies: AHashMap::new(),
             session_id: String::new(),
             debugger: None,
+            execute_file_callback: None,
         }
     }
 

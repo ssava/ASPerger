@@ -5,6 +5,7 @@ use std::sync::OnceLock;
 pub enum AspBlock {
     Html(String),
     Code(String),
+    Directive(String, String),
 }
 
 pub struct AspParser {
@@ -21,6 +22,11 @@ fn get_asp_expression_regex() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"<%=\s*(.*?)\s*%>").unwrap())
 }
 
+fn get_asp_directive_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"<%@\s*(\w+)\s*=\s*(\w+)\s*%>").unwrap())
+}
+
 impl AspParser {
     pub fn new(content: String) -> Self {
         AspParser { content }
@@ -29,6 +35,7 @@ impl AspParser {
     pub fn parse(&self) -> Vec<AspBlock> {
         let mut blocks = Vec::new();
         let expr_re = get_asp_expression_regex();
+        let dir_re = get_asp_directive_regex();
         let re = get_asp_regex();
         let mut last_end = 0;
 
@@ -37,6 +44,14 @@ impl AspParser {
             let expr = caps.get(1).map_or("", |m| m.as_str());
             format!("<% Response.Write({}) %>", expr)
         });
+
+        // Second pass: strip directives and add them as Directive blocks
+        let content = dir_re.replace_all(&content, |caps: &regex::Captures| {
+            let name = caps.get(1).map_or("", |m| m.as_str());
+            let value = caps.get(2).map_or("", |m| m.as_str());
+            blocks.push(AspBlock::Directive(name.to_string(), value.to_string()));
+            ""
+        }).to_string();
 
         for cap in re.captures_iter(&content) {
             let whole_match = cap.get(0).unwrap();
