@@ -24,6 +24,7 @@ pub enum Expr {
     PropertyAccess { object: Box<Expr>, property: String },
     MethodCall { object: Box<Expr>, method: String, args: Vec<Expr> },
     NewObject(String),
+    WithObject,
 }
 
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
@@ -137,6 +138,64 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             ));
         }
         return Ok(expr);
+    }
+
+    if token.token_type == TokenType::Dot {
+        let prop = advance(tokens, pos).ok_or_else(|| {
+            VBSErrorType::SyntaxError.into_error("Expected property name after '.'".to_string())
+        })?;
+        if prop.token_type != TokenType::Identifier {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                format!("Expected property name after '.', got '{}'", prop.value)
+            ));
+        }
+        let prop_name = prop.value.clone();
+
+        if let Some(next) = peek(tokens, *pos) {
+            if next.token_type == TokenType::LeftParen {
+                advance(tokens, pos);
+                let mut args = Vec::new();
+                loop {
+                    if let Some(t) = peek(tokens, *pos) {
+                        if t.token_type == TokenType::RightParen {
+                            advance(tokens, pos);
+                            break;
+                        }
+                    } else {
+                        return Err(VBSErrorType::SyntaxError.into_error(
+                            "Unclosed parentheses in method call".to_string()
+                        ));
+                    }
+                    let arg = parse_binary(tokens, pos, 0)?;
+                    args.push(arg);
+                    match peek(tokens, *pos) {
+                        Some(t) if t.token_type == TokenType::Comma => {
+                            advance(tokens, pos);
+                        }
+                        Some(t) if t.token_type == TokenType::RightParen => {
+                            advance(tokens, pos);
+                            break;
+                        }
+                        Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
+                            format!("Expected ',' or ')' after argument, got '{}'", t.value)
+                        )),
+                        None => return Err(VBSErrorType::SyntaxError.into_error(
+                            "Unclosed parentheses in method call".to_string()
+                        )),
+                    }
+                }
+                return Ok(Expr::MethodCall {
+                    object: Box::new(Expr::WithObject),
+                    method: prop_name,
+                    args,
+                });
+            }
+        }
+
+        return Ok(Expr::PropertyAccess {
+            object: Box::new(Expr::WithObject),
+            property: prop_name,
+        });
     }
 
     match token.token_type {
@@ -376,8 +435,18 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
     match expr {
         Expr::Literal(val) => Ok(val.clone()),
         Expr::Variable(name) => {
+            if name == "__with_obj__" {
+                return context.with_object.clone().ok_or_else(|| {
+                    VBSErrorType::RuntimeError.into_error("With object not set".to_string())
+                });
+            }
             context.get_variable(name).cloned().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error(format!("Variable '{}' is not defined", name))
+            })
+        }
+        Expr::WithObject => {
+            context.with_object.clone().ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error("With object not set".to_string())
             })
         }
         Expr::UnaryOp { op, expr } => {
@@ -441,12 +510,30 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
         }
         Expr::MethodCall { object, method, args } => {
             let obj_val = evaluate(object, context)?;
-            match obj_val {
-                VBValue::Object(mut obj) => {
+            let is_object = matches!(&obj_val, VBValue::Object(_));
+            if is_object && !args.is_empty() {
+                // ASP pattern: obj.Property(args) where Property returns a collection
+                // Try property access + indexed_get first
+                if let VBValue::Object(ref obj) = &obj_val {
+                    if let Ok(prop_val) = obj.get_property(method, context) {
+                        if let VBValue::Object(sub_obj) = &prop_val {
+                            let evaluated_arg = evaluate(&args[0], context)?;
+                            if let Ok(result) = sub_obj.indexed_get(&evaluated_arg) {
+                                return Ok(result);
+                            }
+                        }
+                    }
+                }
+            }
+            // Fall back to method call
+            let mut obj_mut = obj_val;
+            match &mut obj_mut {
+                VBValue::Object(ref mut obj) => {
                     let evaluated_args: Result<Vec<VBValue>, VBSError> = args.iter()
                         .map(|arg| evaluate(arg, context))
                         .collect();
-                    obj.call_method(method, &evaluated_args?)
+                    let evaluated_args = evaluated_args?;
+                    obj.call_method(method, &evaluated_args)
                 }
                 _ => Err(VBSErrorType::RuntimeError.into_error(
                     format!("Object doesn't support this property or method: '{}'", method)

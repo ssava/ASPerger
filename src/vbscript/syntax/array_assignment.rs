@@ -18,11 +18,15 @@ impl ArrayAssignment {
 impl VBSyntax for ArrayAssignment {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let idx_val = evaluate(&self.index_expr, context)?;
-        let idx = to_number(&idx_val) as usize;
         let value = evaluate(&self.value_expr, context)?;
 
         match context.get_variable_mut(&self.var_name) {
+            Some(VBValue::Object(ref mut obj)) => {
+                // Object indexed assignment: Session("key") = value
+                obj.indexed_set(&idx_val, value)
+            }
             Some(VBValue::Array(ref mut items)) => {
+                let idx = to_number(&idx_val) as usize;
                 let items = std::sync::Arc::make_mut(items);
                 if idx >= items.len() {
                     return Err(VBSErrorType::RuntimeError.into_error(
@@ -32,8 +36,11 @@ impl VBSyntax for ArrayAssignment {
                 items[idx] = value;
                 Ok(())
             }
-            _ => Err(VBSErrorType::ValueError.into_error(
-                format!("Variable '{}' is not an array", self.var_name)
+            Some(_) => Err(VBSErrorType::ValueError.into_error(
+                format!("Variable '{}' does not support indexed assignment", self.var_name)
+            )),
+            None => Err(VBSErrorType::RuntimeError.into_error(
+                format!("Variable '{}' is not defined", self.var_name)
             )),
         }
     }

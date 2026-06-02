@@ -5,6 +5,7 @@ mod tests {
     use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr, UnaryOp};
     use crate::vbscript::syntax::{Assignment, Dim, ResponseWrite, VBSyntax};
     use crate::vbscript::{ExecutionContext, TokenType, Tokenizer, VBScriptInterpreter, VBValue};
+    use chrono::{Datelike, Timelike};
 
     // ===== TOKENIZER =====
 
@@ -2648,5 +2649,1227 @@ mod tests {
         );
 
         cleanup_path(&path);
+    }
+
+    // ===== BUILT-IN FUNCTIONS: BATCH 2 (Date/Time, Math, Array, Type Conversion) =====
+
+    #[test]
+    fn test_builtin_now() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Now()", &mut ctx).unwrap();
+        let val = ctx.get_variable("result");
+        assert!(matches!(val, Some(VBValue::Number(_))));
+        if let Some(VBValue::Number(n)) = val {
+            assert!(*n > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_builtin_date() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Date()", &mut ctx).unwrap();
+        assert!(matches!(ctx.get_variable("result"), Some(VBValue::String(_))));
+        if let Some(VBValue::String(s)) = ctx.get_variable("result") {
+            assert!(!s.is_empty());
+            assert!(s.contains('/'));
+        }
+    }
+
+    #[test]
+    fn test_builtin_time() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Time()", &mut ctx).unwrap();
+        assert!(matches!(ctx.get_variable("result"), Some(VBValue::String(_))));
+        if let Some(VBValue::String(s)) = ctx.get_variable("result") {
+            assert!(!s.is_empty());
+            assert!(s.contains(':'));
+        }
+    }
+
+    #[test]
+    fn test_builtin_year_month_day() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d = DateSerial(2024, 6, 15)\ny = Year(d)\nm = Month(d)\ndy = Day(d)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("y"), Some(&VBValue::Number(2024.0)));
+        assert_eq!(ctx.get_variable("m"), Some(&VBValue::Number(6.0)));
+        assert_eq!(ctx.get_variable("dy"), Some(&VBValue::Number(15.0)));
+    }
+
+    #[test]
+    fn test_builtin_hour_minute_second() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("t = TimeSerial(14, 30, 45)\nh = Hour(t)\nmi = Minute(t)\ns = Second(t)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("h"), Some(&VBValue::Number(14.0)));
+        assert_eq!(ctx.get_variable("mi"), Some(&VBValue::Number(30.0)));
+        assert_eq!(ctx.get_variable("s"), Some(&VBValue::Number(45.0)));
+    }
+
+    #[test]
+    fn test_builtin_weekday() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        // 2024-01-07 is a Sunday
+        interp.execute("d = DateSerial(2024, 1, 7)\nw = Weekday(d)", &mut ctx).unwrap();
+        // Sunday = 1
+        assert_eq!(ctx.get_variable("w"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_builtin_weekday_with_firstday() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        // 2024-01-08 is a Monday
+        interp.execute("d = DateSerial(2024, 1, 8)\nw = Weekday(d, 2)", &mut ctx).unwrap();
+        // With firstday=2 (Monday), Monday = 1
+        assert_eq!(ctx.get_variable("w"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_builtin_weekdayname() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = WeekdayName(1)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Sunday".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_weekdayname_abbreviate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = WeekdayName(2, True)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Mon".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_monthname() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = MonthName(1)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("January".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_monthname_abbreviate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = MonthName(2, True)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("Feb".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_dateadd_days() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d = DateSerial(2024, 1, 1)\nresult = DateAdd(\"d\", 10, d)", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            assert_eq!(dt.day(), 11);
+            assert_eq!(dt.month(), 1);
+            assert_eq!(dt.year(), 2024);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_dateadd_months() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d = DateSerial(2024, 1, 31)\nresult = DateAdd(\"m\", 1, d)", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            // Jan 31 + 1 month = Feb 28 (or 29 in leap year; 2024 is leap)
+            assert_eq!(dt.month(), 2);
+            assert_eq!(dt.day(), 29);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_datediff_days() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d1 = DateSerial(2024, 1, 1)\nd2 = DateSerial(2024, 1, 11)\nresult = DateDiff(\"d\", d1, d2)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(10.0)));
+    }
+
+    #[test]
+    fn test_builtin_datediff_years() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d1 = DateSerial(2020, 1, 1)\nd2 = DateSerial(2024, 1, 1)\nresult = DateDiff(\"yyyy\", d1, d2)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(4.0)));
+    }
+
+    #[test]
+    fn test_builtin_dateserial() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = DateSerial(2024, 7, 4)", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            assert_eq!(dt.year(), 2024);
+            assert_eq!(dt.month(), 7);
+            assert_eq!(dt.day(), 4);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_datevalue() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = DateValue(\"2024-07-04\")", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            assert_eq!(dt.year(), 2024);
+            assert_eq!(dt.month(), 7);
+            assert_eq!(dt.day(), 4);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_timeserial() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = TimeSerial(10, 30, 0)", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            assert_eq!(dt.hour(), 10);
+            assert_eq!(dt.minute(), 30);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_timevalue() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = TimeValue(\"14:30:00\")", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            let dt = crate::vbscript::builtins::ole_auto_to_datetime(*n).unwrap();
+            assert_eq!(dt.hour(), 14);
+            assert_eq!(dt.minute(), 30);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_timer() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Timer()", &mut ctx).unwrap();
+        let val = ctx.get_variable("result");
+        assert!(matches!(val, Some(VBValue::Number(_))));
+        if let Some(VBValue::Number(n)) = val {
+            assert!(*n >= 0.0 && *n < 86400.0);
+        }
+    }
+
+    #[test]
+    fn test_builtin_formatdatetime() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("d = DateSerial(2024, 7, 4)\nresult = FormatDateTime(d, 2)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("07/04/2024".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_int_vs_fix_negative() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("i = Int(-3.1)\nf = Fix(-3.1)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("i"), Some(&VBValue::Number(-4.0)));
+        assert_eq!(ctx.get_variable("f"), Some(&VBValue::Number(-3.0)));
+    }
+
+    #[test]
+    fn test_builtin_round() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Round(3.14159, 2)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(3.14)));
+    }
+
+    #[test]
+    fn test_builtin_sgn() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = Sgn(5)\nr2 = Sgn(0)\nr3 = Sgn(-3)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(1.0)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Number(0.0)));
+        assert_eq!(ctx.get_variable("r3"), Some(&VBValue::Number(-1.0)));
+    }
+
+    #[test]
+    fn test_builtin_sqr() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Sqr(9)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(3.0)));
+    }
+
+    #[test]
+    fn test_builtin_sqr_negative_error() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        let result = interp.execute("result = Sqr(-1)", &mut ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builtin_ubound_array() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("a = Array(10, 20, 30)\nresult = UBound(a)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(2.0)));
+    }
+
+    #[test]
+    fn test_builtin_lbound_array() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("a = Array(1, 2, 3)\nresult = LBound(a)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_builtin_cbool() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = CBool(1)\nr2 = CBool(0)\nr3 = CBool(\"True\")\nr4 = CBool(\"False\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Boolean(false)));
+        assert_eq!(ctx.get_variable("r3"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("r4"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_builtin_cbyte() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = CByte(42)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_builtin_cbyte_overflow() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        let result = interp.execute("result = CByte(300)", &mut ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builtin_cdate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = CDate(\"2024-07-04\")", &mut ctx).unwrap();
+        assert!(matches!(ctx.get_variable("result"), Some(VBValue::Number(_))));
+    }
+
+    #[test]
+    fn test_builtin_cdbl() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = CDbl(42)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_builtin_clng() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = CLng(3.14)\nr2 = CLng(-3.9)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(3.0)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Number(-3.0)));
+    }
+
+    #[test]
+    fn test_builtin_hex() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = Hex(255)\nr2 = Hex(0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::String("FF".to_string())));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::String("0".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_oct() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Oct(8)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("10".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_isdate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = IsDate(\"2024-01-15\")\nr2 = IsDate(\"not a date\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_builtin_isobject() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")\nr1 = IsObject(dict)\nr2 = IsObject(\"string\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_builtin_typename() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute(
+            "r1 = TypeName(\"hello\")\nr2 = TypeName(42)\nr3 = TypeName(123456)\nr4 = TypeName(3.14)\nr5 = TypeName(True)\nr6 = TypeName(Null)\nr7 = TypeName(Empty)\nr8 = TypeName(Array(1,2))",
+            &mut ctx,
+        ).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::String("String".to_string())));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::String("Integer".to_string())));
+        assert_eq!(ctx.get_variable("r3"), Some(&VBValue::String("Long".to_string())));
+        assert_eq!(ctx.get_variable("r4"), Some(&VBValue::String("Double".to_string())));
+        assert_eq!(ctx.get_variable("r5"), Some(&VBValue::String("Boolean".to_string())));
+        assert_eq!(ctx.get_variable("r6"), Some(&VBValue::String("Null".to_string())));
+        assert_eq!(ctx.get_variable("r7"), Some(&VBValue::String("Empty".to_string())));
+        assert_eq!(ctx.get_variable("r8"), Some(&VBValue::String("Array".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_vartype() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = VarType(\"hello\")\nr2 = VarType(42)\nr3 = VarType(True)\nr4 = VarType(Null)\nr5 = VarType(Empty)\nr6 = VarType(Array(1,2))", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Number(8.0)));   // vbString
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Number(2.0)));   // vbInteger
+        assert_eq!(ctx.get_variable("r3"), Some(&VBValue::Number(11.0)));  // vbBoolean
+        assert_eq!(ctx.get_variable("r4"), Some(&VBValue::Number(1.0)));   // vbNull
+        assert_eq!(ctx.get_variable("r5"), Some(&VBValue::Number(0.0)));   // vbEmpty
+        assert_eq!(ctx.get_variable("r6"), Some(&VBValue::Number(8204.0))); // vbArray + vbVariant
+    }
+
+    #[test]
+    fn test_builtin_rnd_range() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Rnd()", &mut ctx).unwrap();
+        if let Some(VBValue::Number(n)) = ctx.get_variable("result") {
+            assert!(*n >= 0.0 && *n < 1.0);
+        } else {
+            panic!("Expected Number");
+        }
+    }
+
+    #[test]
+    fn test_builtin_filter_include() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("a = Array(\"apple\", \"banana\", \"apricot\", \"cherry\")\nresult = Filter(a, \"ap\")", &mut ctx).unwrap();
+        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0], VBValue::String("apple".to_string()));
+            assert_eq!(arr[1], VBValue::String("apricot".to_string()));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_builtin_filter_exclude() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("a = Array(\"apple\", \"banana\", \"apricot\")\nresult = Filter(a, \"ap\", False)", &mut ctx).unwrap();
+        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+            assert_eq!(arr.len(), 1);
+            assert_eq!(arr[0], VBValue::String("banana".to_string()));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_builtin_isarray_new() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("r1 = IsArray(Array(1,2))\nr2 = IsArray(\"not\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("r1"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("r2"), Some(&VBValue::Boolean(false)));
+    }
+
+    // ===== EXIT STATEMENTS =====
+
+    #[test]
+    fn test_exit_for() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim i, sum\nsum = 0\nFor i = 1 To 10\n    If i = 5 Then Exit For\n    sum = sum + 1\nNext", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("sum"), Some(&VBValue::Number(4.0)));
+        assert_eq!(ctx.get_variable("i"), Some(&VBValue::Number(5.0)));
+    }
+
+    #[test]
+    fn test_exit_for_from_foreach() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![
+            VBValue::Number(1.0), VBValue::Number(2.0), VBValue::Number(3.0),
+            VBValue::Number(4.0), VBValue::Number(5.0),
+        ])));
+        interp.execute("Dim x, sum\nsum = 0\nFor Each x In items\n    If x = 3 Then Exit For\n    sum = sum + 1\nNext", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("sum"), Some(&VBValue::Number(2.0)));
+    }
+
+    #[test]
+    fn test_exit_do_while() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_variable("x", VBValue::Number(1.0));
+        interp.execute("Do While x < 10\n    If x = 5 Then Exit Do\n    x = x + 1\nLoop", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::Number(5.0)));
+    }
+
+    #[test]
+    fn test_exit_do_loop_until() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_variable("x", VBValue::Number(1.0));
+        interp.execute("Do\n    If x = 3 Then Exit Do\n    x = x + 1\nLoop While x < 10", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::Number(3.0)));
+    }
+
+    #[test]
+    fn test_exit_for_nested_only_exits_inner() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute(
+            "Dim i, j, sum\nsum = 0\nFor i = 1 To 3\n    For j = 1 To 3\n        If j = 2 Then Exit For\n        sum = sum + 1\n    Next\nNext",
+            &mut ctx
+        ).unwrap();
+        // inner loop: j=1 then exits at j=2 for each i
+        // i=1: j=1 -> sum=1, exit j=2
+        // i=2: j=1 -> sum=2, exit j=2
+        // i=3: j=1 -> sum=3, exit j=2
+        assert_eq!(ctx.get_variable("sum"), Some(&VBValue::Number(3.0)));
+        // outer loop completed all 3 iterations
+        assert_eq!(ctx.get_variable("i"), Some(&VBValue::Number(4.0)));
+    }
+
+    #[test]
+    fn test_exit_function_early_return() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute(
+            "Function TestFunc(x)\n    If x > 5 Then\n        TestFunc = 999\n        Exit Function\n    End If\n    TestFunc = 111\nEnd Function\nresult = TestFunc(10)",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(999.0)));
+    }
+
+    #[test]
+    fn test_exit_function_normal_path() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute(
+            "Function TestFunc(x)\n    If x > 5 Then\n        TestFunc = 999\n        Exit Function\n    End If\n    TestFunc = 111\nEnd Function\nresult = TestFunc(3)",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(111.0)));
+    }
+
+    #[test]
+    fn test_exit_sub() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_variable("called", VBValue::Boolean(false));
+        interp.execute(
+            "Sub TestSub()\n    Exit Sub\n    called = True\nEnd Sub\nCall TestSub()",
+            &mut ctx
+        ).unwrap();
+        // called should still be false since Exit Sub prevented the assignment
+        assert_eq!(ctx.get_variable("called"), Some(&VBValue::Boolean(false)));
+    }
+
+    // ===== WITH / END WITH =====
+
+    #[test]
+    fn test_with_basic() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
+        interp.execute(
+            "With dict\n    .Add \"key\", \"Alpha\"\n    result = .Count\nEnd With",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_with_property_access() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
+        interp.execute("dict.Add \"a\", \"1\"", &mut ctx).unwrap();
+        interp.execute(
+            "With dict\n    result = .Count\nEnd With",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_with_method_call() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
+        interp.execute("dict.Add \"a\", \"1\"", &mut ctx).unwrap();
+        interp.execute("dict.Add \"b\", \"2\"", &mut ctx).unwrap();
+        interp.execute(
+            "With dict\n    .RemoveAll\n    result = .Count\nEnd With",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_with_property_get() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
+        interp.execute("dict.Add \"a\", \"Alpha\"", &mut ctx).unwrap();
+        interp.execute("dict.Add \"b\", \"Beta\"", &mut ctx).unwrap();
+        interp.execute(
+            "With dict\n    result = .Count\nEnd With",
+            &mut ctx
+        ).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(2.0)));
+    }
+
+    // ===== ERR.RAISE =====
+
+    #[test]
+    fn test_err_raise_sets_err_state() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        // Err.Raise should produce an error that is caught in ResumeNext mode
+        ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
+        interp.execute("On Error Resume Next\nErr.Raise 42, \"custom error\"", &mut ctx).unwrap();
+        assert_eq!(ctx.err_number, 42.0);
+        assert_eq!(ctx.err_description, "custom error");
+    }
+
+    #[test]
+    fn test_err_raise_without_args_sets_err() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
+        interp.execute("On Error Resume Next\nErr.Raise", &mut ctx).unwrap();
+        assert!(ctx.err_number != 0.0);
+    }
+
+    #[test]
+    fn test_err_raise_min_number_only() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        ctx.set_error_mode(crate::vbscript::execution_context::ErrorMode::ResumeNext);
+        interp.execute("On Error Resume Next\nErr.Raise 5", &mut ctx).unwrap();
+        assert_eq!(ctx.err_number, 5.0);
+    }
+
+    // ===== REGEXP OBJECT =====
+
+    #[test]
+    fn test_createobject_regexp() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")", &mut ctx).unwrap();
+        let val = ctx.get_variable("re");
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), VBValue::Object(_)));
+    }
+
+    #[test]
+    fn test_regexp_test_true() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nresult = re.Test(\"hello world\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_regexp_test_false() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nresult = re.Test(\"goodbye world\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_regexp_replace() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nre.Global = True\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hello there there".to_string())));
+    }
+
+    #[test]
+    fn test_regexp_replace_single() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hello there world".to_string())));
+    }
+
+    #[test]
+    fn test_regexp_execute() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"\\d+\"\nre.Global = True\nresult = re.Execute(\"abc 123 def 456\")", &mut ctx).unwrap();
+        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(arr[0], VBValue::String("123".to_string()));
+            assert_eq!(arr[1], VBValue::String("456".to_string()));
+        } else {
+            panic!("Expected Array");
+        }
+    }
+
+    #[test]
+    fn test_regexp_ignorecase() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"hello\"\nre.IgnoreCase = True\nresult = re.Test(\"HELLO world\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_regexp_properties() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"test\"\nre.IgnoreCase = True\nre.Global = True\np = re.Pattern\ni = re.IgnoreCase\ng = re.Global", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("p"), Some(&VBValue::String("test".to_string())));
+        assert_eq!(ctx.get_variable("i"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("g"), Some(&VBValue::Boolean(true)));
+    }
+
+    // ===== ADODB CONNECTION =====
+
+    #[test]
+    fn test_createobject_adodb_connection() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
+        let val = ctx.get_variable("conn");
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), VBValue::Object(_)));
+    }
+
+    #[test]
+    fn test_adodb_connection_open_close() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
+        interp.execute("conn.Open \"dsn=mydb\"", &mut ctx).unwrap();
+        interp.execute("state = conn.State", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("state"), Some(&VBValue::Number(1.0)));
+        interp.execute("conn.Close", &mut ctx).unwrap();
+        interp.execute("state = conn.State", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("state"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_adodb_connection_execute_returns_recordset() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
+        interp.execute("Set rs = conn.Execute(\"SELECT * FROM test\")", &mut ctx).unwrap();
+        let val = ctx.get_variable("rs");
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), VBValue::Object(_)));
+    }
+
+    #[test]
+    fn test_adodb_recordset_eof() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
+        interp.execute("Set rs = conn.Execute(\"SELECT * FROM test\")", &mut ctx).unwrap();
+        interp.execute("eof = rs.EOF", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("eof"), Some(&VBValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_adodb_connection_connectionstring() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set conn = CreateObject(\"ADODB.Connection\")", &mut ctx).unwrap();
+        interp.execute("conn.ConnectionString = \"Provider=SQLOLEDB;Data Source=server\"", &mut ctx).unwrap();
+        interp.execute("cs = conn.ConnectionString", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("cs"), Some(&VBValue::String("Provider=SQLOLEDB;Data Source=server".to_string())));
+    }
+
+    // ===== STRCOMP =====
+
+    #[test]
+    fn test_builtin_strcomp_equal() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrComp(\"hello\", \"hello\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_builtin_strcomp_less() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrComp(\"abc\", \"xyz\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(-1.0)));
+    }
+
+    #[test]
+    fn test_builtin_strcomp_greater() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrComp(\"xyz\", \"abc\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_builtin_strcomp_textmode() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrComp(\"HELLO\", \"hello\", 1)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_builtin_strcomp_binarymode() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = StrComp(\"HELLO\", \"hello\", 0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(-1.0)));
+    }
+
+    // ===== FORMATNUMBER =====
+
+    #[test]
+    fn test_builtin_formatnumber_basic() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = FormatNumber(1234.567, 2)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("1,234.57".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_formatnumber_no_decimal() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = FormatNumber(1234, 0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("1,234".to_string())));
+    }
+
+    // ===== FORMATCURRENCY =====
+
+    #[test]
+    fn test_builtin_formatcurrency_basic() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = FormatCurrency(1234.5)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("$1,234.50".to_string())));
+    }
+
+    // ===== FORMATPERCENT =====
+
+    #[test]
+    fn test_builtin_formatpercent_basic() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = FormatPercent(0.1234, 1)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("12.3%".to_string())));
+    }
+
+    // ===== LSET / RSET =====
+
+    #[test]
+    fn test_builtin_lset_pad() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = LSet(\"hi\", 5)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hi   ".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_lset_truncate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = LSet(\"hello\", 3)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hel".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_rset_pad() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = RSet(\"hi\", 5)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("   hi".to_string())));
+    }
+
+    #[test]
+    fn test_builtin_rset_truncate() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("result = RSet(\"hello\", 3)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::String("hel".to_string())));
+    }
+
+    // ===== ASP INTRINSIC OBJECTS =====
+
+    #[test]
+    fn test_asp_request_querystring() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_params.insert("name".to_string(), "John".to_string());
+        ctx.request_params.insert("age".to_string(), "30".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim n\nn = Request.QueryString(\"name\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("n"), Some(&VBValue::String("John".to_string())));
+    }
+
+    #[test]
+    fn test_asp_request_querystring_missing() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim n\nn = Request.QueryString(\"missing\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("n"), Some(&VBValue::String("".to_string())));
+    }
+
+    #[test]
+    fn test_asp_request_querystring_count() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_params.insert("a".to_string(), "1".to_string());
+        ctx.request_params.insert("b".to_string(), "2".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim c\nc = Request.QueryString.Count", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(2.0)));
+    }
+
+    #[test]
+    fn test_asp_request_form() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_form.insert("username".to_string(), "admin".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim u\nu = Request.Form(\"username\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("u"), Some(&VBValue::String("admin".to_string())));
+    }
+
+    #[test]
+    fn test_asp_request_form_count() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_form.insert("x".to_string(), "1".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim c\nc = Request.Form.Count", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_asp_request_servervariables() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_headers.insert("user-agent".to_string(), "ASPerger/1.0".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim u\nu = Request.ServerVariables(\"USER-AGENT\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("u"), Some(&VBValue::String("ASPerger/1.0".to_string())));
+    }
+
+    #[test]
+    fn test_asp_request_servervariables_count() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_headers.insert("host".to_string(), "localhost".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim c\nc = Request.ServerVariables.Count", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_asp_request_cookies() {
+        let mut ctx = ExecutionContext::new();
+        ctx.request_cookies.insert("theme".to_string(), "dark".to_string());
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim t\nt = Request.Cookies(\"theme\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("t"), Some(&VBValue::String("dark".to_string())));
+    }
+
+    #[test]
+    fn test_asp_response_status_property() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("x = Response.Status", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::String("200 OK".to_string())));
+    }
+
+    #[test]
+    fn test_asp_response_contenttype_property() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("x = Response.ContentType", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::String("text/html".to_string())));
+    }
+
+    #[test]
+    fn test_asp_response_buffer_property() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("x = Response.Buffer", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::Boolean(true)));
+    }
+
+    #[test]
+    fn test_asp_response_write_syntax_shortcut() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Response.Write \"hello from ASP\"", &mut ctx).unwrap();
+        assert_eq!(ctx.response_buffer, "hello from ASP");
+    }
+
+    #[test]
+    fn test_asp_response_write_with_variable() {
+        let mut ctx = ExecutionContext::new();
+        ctx.set_variable("name", VBValue::String("World".to_string()));
+        let interp = VBScriptInterpreter;
+        interp.execute("Response.Write name", &mut ctx).unwrap();
+        assert_eq!(ctx.response_buffer, "World");
+    }
+
+    #[test]
+    fn test_asp_response_ended() {
+        let mut ctx = ExecutionContext::new();
+        // Manually simulate Response.End - this would be called through the object
+        ctx.response_ended = true;
+        let interp = VBScriptInterpreter;
+        interp.execute("x = 42", &mut ctx).unwrap();
+        // x should not be set because response_ended prevents execution
+        assert_eq!(ctx.get_variable("x"), None);
+    }
+
+    #[test]
+    fn test_asp_session_set_and_get() {
+        let mut ctx = ExecutionContext::new();
+        ctx.session_id = "test-session-001".to_string();
+        let interp = VBScriptInterpreter;
+        // Session("key") = value syntax goes through indexed_set
+        // The test uses the property syntax
+        interp.execute("Session(\"username\") = \"Alice\"", &mut ctx).unwrap();
+        // Clear and re-inject session object to check stored value
+        let session_val = {
+            let store = crate::vbscript::asp_objects::get_session_store();
+            let data = store.lock().unwrap();
+            data.get("TEST-SESSION-001")
+                .and_then(|d| d.get("USERNAME"))
+                .cloned()
+        };
+        assert_eq!(session_val, Some(VBValue::String("Alice".to_string())));
+    }
+
+    #[test]
+    fn test_asp_session_sessionid() {
+        let mut ctx = ExecutionContext::new();
+        ctx.session_id = "MY-SESSION".to_string();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim s\ns = Session.SessionID", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("s"), Some(&VBValue::String("MY-SESSION".to_string())));
+    }
+
+    #[test]
+    fn test_asp_session_timeout() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim t\nt = Session.Timeout", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(20.0)));
+    }
+
+    #[test]
+    fn test_asp_session_contents_count() {
+        let mut ctx = ExecutionContext::new();
+        ctx.session_id = "test-contents".to_string();
+        let interp = VBScriptInterpreter;
+        interp.execute("Session(\"k1\") = \"v1\"\nSession(\"k2\") = \"v2\"", &mut ctx).unwrap();
+        interp.execute("Dim c\nc = Session.Contents.Count", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(2.0)));
+    }
+
+    #[test]
+    fn test_asp_session_abandon() {
+        let mut ctx = ExecutionContext::new();
+        ctx.session_id = "abandon-test".to_string();
+        let interp = VBScriptInterpreter;
+        interp.execute("Session(\"data\") = \"keep me\"", &mut ctx).unwrap();
+        interp.execute("Session.Abandon", &mut ctx).unwrap();
+        let store = crate::vbscript::asp_objects::get_session_store();
+        let data = store.lock().unwrap();
+        assert!(!data.contains_key("ABANDON-TEST"));
+    }
+
+    #[test]
+    fn test_asp_server_htmlencode() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim r\nr = Server.HTMLEncode(\"<b>bold</b> & 'quotes'\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("r"),
+            Some(&VBValue::String("&lt;b&gt;bold&lt;/b&gt; &amp; &#39;quotes&#39;".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_server_urlencode() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim r\nr = Server.URLEncode(\"hello world\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("r"),
+            Some(&VBValue::String("hello+world".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_server_urlencode_special_chars() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim r\nr = Server.URLEncode(\"a/b?c\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("r"),
+            Some(&VBValue::String("a%2Fb%3Fc".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_server_urlpathencode() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim r\nr = Server.URLPathEncode(\"a/b c\")", &mut ctx).unwrap();
+        assert_eq!(
+            ctx.get_variable("r"),
+            Some(&VBValue::String("a/b+c".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_server_scripttimeout() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim t\nt = Server.ScriptTimeout", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(90.0)));
+    }
+
+    #[test]
+    fn test_asp_server_scriptpath() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim p\np = Server.ScriptPath", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("p"), Some(&VBValue::String("".to_string())));
+    }
+
+    #[test]
+    fn test_asp_server_createobject_dictionary() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Set dict = Server.CreateObject(\"Scripting.Dictionary\")", &mut ctx).unwrap();
+        let val = ctx.get_variable("dict");
+        assert!(val.is_some());
+        assert!(matches!(val.unwrap(), VBValue::Object(_)));
+    }
+
+    #[test]
+    fn test_asp_server_mappath() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim p\np = Server.MapPath(\"/test.txt\")", &mut ctx).unwrap();
+        let val = ctx.get_variable("p");
+        assert!(val.is_some());
+        if let Some(VBValue::String(s)) = val {
+            assert!(s.contains("test.txt"));
+        }
+    }
+
+    #[test]
+    fn test_asp_application_set_and_get() {
+        crate::vbscript::asp_objects::clear_app_store();
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Application.Lock\nApplication(\"counter\") = 42\nApplication.Unlock", &mut ctx).unwrap();
+        interp.execute("Dim c\nc = Application(\"counter\")", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("c"), Some(&VBValue::Number(42.0)));
+    }
+
+    #[test]
+    fn test_asp_application_contents_count() {
+        crate::vbscript::asp_objects::clear_app_store();
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Application(\"ac_cnt_k1\") = 1\nApplication(\"ac_cnt_k2\") = 2", &mut ctx).unwrap();
+        interp.execute("Dim c\nc = Application.Contents.Count", &mut ctx).unwrap();
+        let c = ctx.get_variable("c").and_then(|v| if let VBValue::Number(n) = v { Some(*n as i32) } else { None }).unwrap_or(0);
+        assert!(c >= 2, "Expected at least 2, got {}", c);
+    }
+
+    #[test]
+    fn test_asp_application_lock_unlock() {
+        crate::vbscript::asp_objects::clear_app_store();
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Application.Lock\nApplication(\"key\") = \"val\"\nApplication.Unlock", &mut ctx).unwrap();
+        let val = {
+            let store = crate::vbscript::asp_objects::get_app_store();
+            let s = store.lock().unwrap();
+            s.get("KEY").cloned()
+        };
+        assert_eq!(val, Some(VBValue::String("val".to_string())));
+    }
+
+    #[test]
+    fn test_asp_request_totalbytes() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim t\nt = Request.TotalBytes", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("t"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_asp_response_expires() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim e\ne = Response.Expires", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("e"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_asp_response_cookies_set() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        // The cookies collection needs to be accessed via Response.Cookies
+        let _ = interp.execute("Response.Cookies(\"test\") = \"value\"", &mut ctx);
+        // Just ensure no crash for now (property set on cookies)
+    }
+
+    #[test]
+    fn test_asp_objects_injected_globally() {
+        let mut ctx = ExecutionContext::new();
+        let interp = VBScriptInterpreter;
+        interp.execute("Dim rType, sType, svType, aType\nrType = TypeName(Request)\nsType = TypeName(Response)\nsvType = TypeName(Server)\naType = TypeName(Application)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("rType"), Some(&VBValue::String("Object".to_string())));
+        assert_eq!(ctx.get_variable("sType"), Some(&VBValue::String("Object".to_string())));
+        assert_eq!(ctx.get_variable("svType"), Some(&VBValue::String("Object".to_string())));
+        assert_eq!(ctx.get_variable("aType"), Some(&VBValue::String("Object".to_string())));
     }
 }

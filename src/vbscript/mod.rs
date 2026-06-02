@@ -9,7 +9,10 @@ pub mod tokenizer;
 pub mod block;
 pub mod builtins;
 pub mod vbobject;
+pub mod asp_objects;
+pub mod adodb;
 pub mod fso;
+pub mod regexp;
 pub mod textstream;
 
 #[cfg(test)]

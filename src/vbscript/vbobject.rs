@@ -260,9 +260,23 @@ impl VBScriptObject for ErrObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue]) -> Result<VBValue, VBSError> {
+    fn call_method(&mut self, name: &str, args: &[VBValue]) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CLEAR" => Ok(VBValue::Empty),
+            "RAISE" => {
+                if args.is_empty() {
+                    return Err(VBSErrorType::ValueError.into_error(
+                        "Err.Raise requires at least 1 argument (number)".to_string()
+                    ));
+                }
+                let number = value_utils::to_arg_f64(&args[0]) as i32;
+                let description = if args.len() > 1 {
+                    value_utils::to_arg_string(&args[1])
+                } else {
+                    "".to_string()
+                };
+                Err(VBSErrorType::RuntimeError.into_error(description).with_code(number))
+            }
             _ => Err(VBSErrorType::RuntimeError.into_error(
                 format!("Method '{}' not found on Err object", name)
             )),

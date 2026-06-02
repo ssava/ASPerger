@@ -20,6 +20,25 @@ impl VBSyntax for PropertySet {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let value = evaluate(&self.value_expr, context)?;
 
+        if self.object_name == "__with_obj__" {
+            // With-block property set: swap with_object out, modify, put back
+            let mut obj_val = context.with_object.take().ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error("With object not set".to_string())
+            })?;
+            let result = match &mut obj_val {
+                VBValue::Object(ref mut obj) => {
+                    obj.set_property(&self.property, value, context)
+                }
+                _ => {
+                    return Err(VBSErrorType::RuntimeError.into_error(
+                        "With object is not an object".to_string()
+                    ));
+                }
+            };
+            context.with_object = Some(obj_val);
+            return result;
+        }
+
         let obj_key = self.object_name.to_uppercase();
 
         // Take the object out of context, replacing with Empty temporarily

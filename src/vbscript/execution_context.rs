@@ -42,6 +42,25 @@ pub struct ExecutionContext {
     error_mode: ErrorMode,
     pub err_number: f64,
     pub err_description: String,
+    pub with_object: Option<VBValue>,
+
+    // Request data (set before each request)
+    pub request_method: String,
+    pub request_path: String,
+    pub request_query_string: String,
+    pub request_params: AHashMap<String, String>,
+    pub request_headers: AHashMap<String, String>,
+    pub request_form: AHashMap<String, String>,
+    pub request_cookies: AHashMap<String, String>,
+
+    // Response control
+    pub response_status: String,
+    pub response_extra_headers: Vec<(String, String)>,
+    pub response_ended: bool,
+    pub response_redirect_url: String,
+
+    // Session
+    pub session_id: String,
 }
 
 impl ExecutionContext {
@@ -54,6 +73,19 @@ impl ExecutionContext {
             error_mode: ErrorMode::Normal,
             err_number: 0.0,
             err_description: String::new(),
+            with_object: None,
+            request_method: "GET".to_string(),
+            request_path: String::new(),
+            request_query_string: String::new(),
+            request_params: AHashMap::new(),
+            request_headers: AHashMap::new(),
+            request_form: AHashMap::new(),
+            request_cookies: AHashMap::new(),
+            response_status: "200 OK".to_string(),
+            response_extra_headers: Vec::new(),
+            response_ended: false,
+            response_redirect_url: String::new(),
+            session_id: String::new(),
         }
     }
 
@@ -121,4 +153,5 @@ impl ExecutionContext {
         self.err_number = 0.0;
         self.err_description.clear();
     }
+
 }

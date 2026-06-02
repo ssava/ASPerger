@@ -55,6 +55,14 @@ pub enum BlockStatement {
         name: String,
         body_lines: Vec<Vec<Token>>,
     },
+    With {
+        object: Expr,
+        body: Vec<BlockStatement>,
+    },
+    ExitFor,
+    ExitDo,
+    ExitFunction,
+    ExitSub,
 }
 
 pub struct ElseIfBlock {
@@ -395,6 +403,33 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(MethodCall::new(object_name, method_name, args)));
     }
 
+    // With-block: .Property = value (property set)
+    if non_ws.len() >= 3
+        && non_ws[0].token_type == TokenType::Dot
+        && non_ws[1].token_type == TokenType::Identifier
+        && non_ws[2].token_type == TokenType::Assign
+    {
+        let property_name = non_ws[1].value.clone();
+        let assign_idx = tokens.iter().position(|t| t.token_type == TokenType::Assign).unwrap();
+        let value_expr = parse_expression(&tokens[assign_idx + 1..])?;
+        return Ok(Box::new(PropertySet::new("__with_obj__".to_string(), property_name, value_expr)));
+    }
+
+    // With-block: .Method arg1, arg2, ... (method call)
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Dot
+        && non_ws[1].token_type == TokenType::Identifier
+    {
+        let method_name = non_ws[1].value.clone();
+        let remaining: Vec<Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).cloned().skip(2).collect();
+        let args = if remaining.is_empty() {
+            Vec::new()
+        } else {
+            parse_comma_args(&remaining)?
+        };
+        return Ok(Box::new(MethodCall::new("__with_obj__".to_string(), method_name, args)));
+    }
+
     Err(VBSErrorType::NotImplementedError
         .into_error(format!("Unrecognized command: {}", tokens_to_string(tokens))))
 }
@@ -420,6 +455,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("on") => {
             parse_on_error_statement(tokens)
+        }
+        TokenType::Identifier if first_token.value.eq_ignore_ascii_case("exit") => {
+            parse_exit_line(tokens)
         }
         _ => {
             parse_expression_or_assignment(tokens)
@@ -710,6 +748,9 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
             Some(t) if t.token_type == TokenType::Class => {
                 blocks.push(parse_class_def(lines, pos)?);
             }
+            Some(t) if t.token_type == TokenType::With => {
+                blocks.push(parse_with_block(lines, pos)?);
+            }
             Some(t)
                 if t.token_type == TokenType::End
                     || t.token_type == TokenType::Next
@@ -723,6 +764,9 @@ fn parse_blocks_inner(lines: &[Vec<Token>], pos: &mut usize) -> Result<Vec<Block
                     || t.token_type == TokenType::Private =>
             {
                 break;
+            }
+            Some(t) if t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("exit") => {
+                blocks.push(parse_exit_statement(lines, pos)?);
             }
             _ => {
                 // Skip comment lines
@@ -1112,6 +1156,73 @@ fn parse_do_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
     }
 }
 
+fn parse_with_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let with_idx = line.iter().position(|t| t.token_type == TokenType::With)
+        .unwrap_or(0);
+    let object = parse_expr_from_slice(line, with_idx + 1)?;
+
+    let mut body = Vec::new();
+    loop {
+        if *pos >= lines.len() {
+            return Err(VBSErrorType::SyntaxError.into_error(
+                "With without End With".to_string()
+            ));
+        }
+
+        let next_line = &lines[*pos];
+        let first = first_non_ws(next_line);
+
+        match first {
+            Some(t) if t.token_type == TokenType::End => {
+                let second = next_line.iter()
+                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                    .skip(1)
+                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                if let Some(s) = second {
+                    if s.value.eq_ignore_ascii_case("with") || s.token_type == TokenType::With {
+                        *pos += 1;
+                        break;
+                    }
+                }
+                // Not End With; skip line to avoid infinite loop
+                *pos += 1;
+            }
+            _ => {
+                let sub_blocks = parse_blocks_inner(lines, pos)?;
+                body.extend(sub_blocks);
+            }
+        }
+    }
+
+    Ok(BlockStatement::With { object, body })
+}
+
+fn parse_exit_statement(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
+    let line = &lines[*pos];
+    *pos += 1;
+
+    let no_ws: Vec<&Token> = line.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+
+    let exit_type = no_ws.iter()
+        .skip(1)
+        .find(|t| t.token_type != TokenType::WhiteSpace)
+        .map(|t| t.value.as_str())
+        .unwrap_or("");
+
+    match exit_type.to_uppercase().as_str() {
+        "FOR" => Ok(BlockStatement::ExitFor),
+        "DO" => Ok(BlockStatement::ExitDo),
+        "FUNCTION" => Ok(BlockStatement::ExitFunction),
+        "SUB" => Ok(BlockStatement::ExitSub),
+        _ => Err(VBSErrorType::SyntaxError.into_error(
+            format!("Invalid Exit statement: Exit {}", exit_type)
+        )),
+    }
+}
+
 // ===== Execution =====
 
 fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<bool, VBSError> {
@@ -1158,6 +1269,31 @@ impl VBSyntax for ErrorSyntax {
 
 fn create_error_syntax(message: String) -> ErrorSyntax {
     ErrorSyntax { message }
+}
+
+struct ExitSyntax {
+    exit_type: VBSErrorType,
+    label: String,
+}
+
+impl VBSyntax for ExitSyntax {
+    fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+        Err(self.exit_type.into_error(self.label.clone()))
+    }
+}
+
+fn parse_exit_line(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let non_ws: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+    let exit_kind = non_ws.get(1).map(|t| t.value.as_str()).unwrap_or("");
+    match exit_kind.to_uppercase().as_str() {
+        "FOR" => Ok(Box::new(ExitSyntax { exit_type: VBSErrorType::ExitFor, label: "Exit For".to_string() })),
+        "DO" => Ok(Box::new(ExitSyntax { exit_type: VBSErrorType::ExitDo, label: "Exit Do".to_string() })),
+        "FUNCTION" => Ok(Box::new(ExitSyntax { exit_type: VBSErrorType::ExitFunction, label: "Exit Function".to_string() })),
+        "SUB" => Ok(Box::new(ExitSyntax { exit_type: VBSErrorType::ExitSub, label: "Exit Sub".to_string() })),
+        _ => Err(VBSErrorType::SyntaxError.into_error(
+            format!("Invalid Exit statement: Exit {}", exit_kind)
+        )),
+    }
 }
 
 pub(crate) struct CallStatement {
@@ -1251,7 +1387,11 @@ pub(crate) fn execute_user_defined_function(
     }
 
     let body_blocks = parse_blocks(&func.body_lines)?;
-    execute_blocks(&body_blocks, context)?;
+    match execute_blocks(&body_blocks, context) {
+        Ok(()) => {}
+        Err(e) if e.is_exit_function() || e.is_exit_sub() => {}
+        Err(e) => return Err(e),
+    }
 
     if func.is_function {
         Ok(context.get_variable(&func.name)
@@ -1359,6 +1499,10 @@ pub fn execute_blocks(
     context: &mut ExecutionContext,
 ) -> Result<(), VBSError> {
     for block in blocks {
+        // Check if Response.End or Response.Redirect was called
+        if context.response_ended {
+            break;
+        }
         match block {
             BlockStatement::FunctionDef { name, params, body_lines } => {
                 context.define_function(UserDefinedFunction {
@@ -1431,13 +1575,21 @@ pub fn execute_blocks(
                 if step_val > 0.0 {
                     while i <= end_val {
                         context.set_variable(counter, VBValue::Number(i));
-                        execute_blocks(body, context)?;
+                        match execute_blocks(body, context) {
+                            Ok(()) => {}
+                            Err(e) if e.is_exit_for() => break,
+                            Err(e) => return Err(e),
+                        }
                         i += step_val;
                     }
                 } else if step_val < 0.0 {
                     while i >= end_val {
                         context.set_variable(counter, VBValue::Number(i));
-                        execute_blocks(body, context)?;
+                        match execute_blocks(body, context) {
+                            Ok(()) => {}
+                            Err(e) if e.is_exit_for() => break,
+                            Err(e) => return Err(e),
+                        }
                         i += step_val;
                     }
                 }
@@ -1449,7 +1601,11 @@ pub fn execute_blocks(
                     VBValue::Array(ref items) => {
                         for item in items.iter() {
                             context.set_variable(element, item.clone());
-                            execute_blocks(body, context)?;
+                            match execute_blocks(body, context) {
+                                Ok(()) => {}
+                                Err(e) if e.is_exit_for() => break,
+                                Err(e) => return Err(e),
+                            }
                         }
                     }
                     _ => {
@@ -1461,7 +1617,11 @@ pub fn execute_blocks(
             }
             BlockStatement::While { condition, body } => {
                 while evaluate_condition(condition, context)? {
-                    execute_blocks(body, context)?;
+                    match execute_blocks(body, context) {
+                        Ok(()) => {}
+                        Err(e) if e.is_exit_do() => break,
+                        Err(e) => return Err(e),
+                    }
                 }
             }
             BlockStatement::Do {
@@ -1472,7 +1632,11 @@ pub fn execute_blocks(
             } => {
                 if *is_post_test {
                     loop {
-                        execute_blocks(body, context)?;
+                        match execute_blocks(body, context) {
+                            Ok(()) => {}
+                            Err(e) if e.is_exit_do() => break,
+                            Err(e) => return Err(e),
+                        }
                         if let Some(cond) = condition {
                             let result = evaluate_condition(cond, context)?;
                             if *is_until {
@@ -1494,7 +1658,11 @@ pub fn execute_blocks(
                                 if !result { break; }
                             }
                         }
-                        execute_blocks(body, context)?;
+                        match execute_blocks(body, context) {
+                            Ok(()) => {}
+                            Err(e) if e.is_exit_do() => break,
+                            Err(e) => return Err(e),
+                        }
                     }
                 }
             }
@@ -1533,6 +1701,27 @@ pub fn execute_blocks(
                     };
                     context.define_class(class_def);
                 }
+            }
+            BlockStatement::With { object, body } => {
+                let obj_val = evaluate(object, context)?;
+                let prev_with = context.with_object.replace(obj_val);
+                let result = execute_blocks(body, context);
+                context.with_object = prev_with;
+                if let Err(e) = result {
+                    return Err(e);
+                }
+            }
+            BlockStatement::ExitFor => {
+                return Err(VBSErrorType::ExitFor.into_error("Exit For".to_string()));
+            }
+            BlockStatement::ExitDo => {
+                return Err(VBSErrorType::ExitDo.into_error("Exit Do".to_string()));
+            }
+            BlockStatement::ExitFunction => {
+                return Err(VBSErrorType::ExitFunction.into_error("Exit Function".to_string()));
+            }
+            BlockStatement::ExitSub => {
+                return Err(VBSErrorType::ExitSub.into_error("Exit Sub".to_string()));
             }
         }
     }

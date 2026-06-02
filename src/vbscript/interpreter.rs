@@ -23,6 +23,34 @@ impl VBScriptInterpreter {
             context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
         }
 
+        // Inject ASP intrinsic objects (only if they don't already exist)
+        if context.get_variable("REQUEST").is_none() {
+            context.set_variable("Request", VBValue::Object(Box::new(
+                crate::vbscript::asp_objects::RequestObject,
+            )));
+        }
+        if context.get_variable("RESPONSE").is_none() {
+            context.set_variable("Response", VBValue::Object(Box::new(
+                crate::vbscript::asp_objects::ResponseObject,
+            )));
+        }
+        if context.get_variable("SESSION").is_none() {
+            let session = crate::vbscript::asp_objects::SessionObject {
+                session_id: context.session_id.clone(),
+            };
+            context.set_variable("Session", VBValue::Object(Box::new(session)));
+        }
+        if context.get_variable("SERVER").is_none() {
+            context.set_variable("Server", VBValue::Object(Box::new(
+                crate::vbscript::asp_objects::ServerObject,
+            )));
+        }
+        if context.get_variable("APPLICATION").is_none() {
+            context.set_variable("Application", VBValue::Object(Box::new(
+                crate::vbscript::asp_objects::ApplicationObject,
+            )));
+        }
+
         let blocks = block::parse_blocks(&lines)?;
         block::execute_blocks(&blocks, context)
     }
