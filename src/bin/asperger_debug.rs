@@ -1,16 +1,25 @@
 use std::io::{BufReader, BufWriter, Write};
 use std::sync::{Arc, Mutex};
 
+use clap::Parser;
 use dap::events;
 use dap::prelude::*;
 use dap::responses;
 use dap::types;
 
 use asperger::vbscript::debugger::{DebugCommand, DebugEvent, Debugger, StoppedReason};
-use asperger::vbscript::execution_context::ExecutionContext;
-use asperger::vbscript::interpreter::VBScriptInterpreter;
+use asperger::vbscript::{ExecutionContext, VBScriptInterpreter};
+
+#[derive(Parser)]
+#[command(name = "asperger-debug", version, about = "VBScript debug adapter (DAP)")]
+struct Cli {
+    /// Path to the script to debug
+    program: Option<String>,
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cli = Cli::parse();
+
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
 
@@ -77,6 +86,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Command::Launch(ref args) => {
                 if let Some(ref extra) = args.additional_data {
                     if let Some(program) = extra.get("program").and_then(|v| v.as_str()) {
+                        script_path = program.to_string();
+                    }
+                }
+                if script_path.is_empty() {
+                    if let Some(ref program) = cli.program {
                         script_path = program.to_string();
                     }
                 }
