@@ -86,6 +86,8 @@ impl VBSyntax for MethodCall {
                     return Ok(());
                 }
                 "FLUSH" => {
+                    context.response_flushed.push_str(&context.response_buffer);
+                    context.response_buffer.clear();
                     return Ok(());
                 }
                 "ADDHEADER" => {

@@ -5,6 +5,7 @@ pub trait VBSyntax {
 
 // Re-export all syntax constructs
 mod response_write;
+mod response_cookies_set;
 mod dim;
 mod assignment;
 mod method_call;
@@ -14,6 +15,7 @@ mod property_set;
 mod on_error;
 
 pub use response_write::ResponseWrite;
+pub use response_cookies_set::ResponseCookiesSet;
 use super::vbs_error::VBSError;
 pub use dim::Dim;
 pub use assignment::Assignment;

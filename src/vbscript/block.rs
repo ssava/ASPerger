@@ -1,7 +1,7 @@
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::expr::{evaluate, parse_expression, Expr};
 use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
-use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext, PropertySet, ReDim, ResponseWrite, VBSyntax};
+use super::syntax::{ArrayAssignment, Assignment, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext, PropertySet, ReDim, ResponseCookiesSet, ResponseWrite, VBSyntax};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 use ahash::AHashMap;
 
@@ -312,6 +312,42 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
             Expr::Literal(VBValue::Empty)
         };
         return Ok(Box::new(ResponseWrite::new(expr)));
+    }
+
+    // Response.Cookies("key") = value
+    if non_ws.len() >= 7
+        && non_ws[0].value.eq_ignore_ascii_case("response")
+        && non_ws[1].token_type == TokenType::Dot
+        && non_ws[2].value.eq_ignore_ascii_case("cookies")
+        && non_ws[3].token_type == TokenType::LeftParen
+    {
+        let mut i = 0;
+        while i < tokens.len() && !(tokens[i].token_type == TokenType::Identifier && tokens[i].value.eq_ignore_ascii_case("cookies")) {
+            i += 1;
+        }
+        // skip "cookies"
+        i += 1;
+        // find matching )
+        let paren_start = i + 1;
+        let mut depth = 1;
+        while i < tokens.len() && depth > 0 {
+            i += 1;
+            if i < tokens.len() {
+                if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
+                else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
+            }
+        }
+        let key_expr = parse_expression(&tokens[paren_start..i])?;
+        i += 1;
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+        if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
+            i += 1;
+            let value_expr = parse_expression(&tokens[i..])?;
+            return Ok(Box::new(ResponseCookiesSet::new(key_expr, value_expr)));
+        }
+        // if no =, treat as method call (fall through)
     }
 
     // var = expr (bare assignment, no Set keyword)

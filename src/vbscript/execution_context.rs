@@ -58,6 +58,8 @@ pub struct ExecutionContext {
     pub response_extra_headers: Vec<(String, String)>,
     pub response_ended: bool,
     pub response_redirect_url: String,
+    pub response_flushed: String,
+    pub response_cookies: AHashMap<String, String>,
 
     // Session
     pub session_id: String,
@@ -88,6 +90,8 @@ impl ExecutionContext {
             response_extra_headers: Vec::new(),
             response_ended: false,
             response_redirect_url: String::new(),
+            response_flushed: String::new(),
+            response_cookies: AHashMap::new(),
             session_id: String::new(),
             debugger: None,
         }

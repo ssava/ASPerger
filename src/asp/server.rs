@@ -96,61 +96,6 @@ impl AspServer {
         cookies
     }
 
-    fn parse_request(
-        request: &[u8],
-    ) -> Option<(
-        String,
-        String,
-        String,
-        AHashMap<String, String>,
-        AHashMap<String, String>,
-        AHashMap<String, String>,
-        Vec<u8>,
-    )> {
-        let request_str = String::from_utf8_lossy(request);
-        let mut lines = request_str.lines();
-
-        // Parse request line: "GET /path?query HTTP/1.1"
-        let first_line = lines.next()?;
-        let mut parts = first_line.split_whitespace();
-        let method = parts.next()?.to_string();
-        let full_path = parts.next()?.to_string();
-
-        // Split path and query string
-        let (path, query_string) = match full_path.split_once('?') {
-            Some((p, q)) => (p.to_string(), q.to_string()),
-            None => (full_path.clone(), String::new()),
-        };
-        let clean_path = path.trim_start_matches('/').to_string();
-
-        let params = Self::parse_query_string(&query_string);
-
-        // Parse headers
-        let mut headers = AHashMap::new();
-        let mut header_lines = Vec::new();
-        for line in lines.by_ref() {
-            if line.is_empty() {
-                break;
-            }
-            header_lines.push(line.to_string());
-            if let Some((key, value)) = line.split_once(':') {
-                headers.insert(key.trim().to_lowercase(), value.trim().to_string());
-            }
-        }
-
-        // Parse cookies
-        let cookies = headers
-            .get("cookie")
-            .map(|c| Self::parse_cookies(c))
-            .unwrap_or_default();
-
-        // Read remaining bytes as body
-        let body_start = request_str.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
-        let body = request[body_start..].to_vec();
-
-        Some((method, clean_path, query_string, headers, params, cookies, body))
-    }
-
     fn rand_hex() -> String {
         let val: u64 = {
             use std::time::{SystemTime, UNIX_EPOCH};
@@ -207,14 +152,16 @@ impl AspServer {
         content: &str,
         extra_headers: &[(String, String)],
     ) -> Result<(), ASPError> {
+        let has_content_type = extra_headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
         let mut response = format!(
             "HTTP/1.1 {}\r\n\
-             Content-Type: {}; charset=utf-8\r\n\
              Content-Length: {}\r\n",
             status_line,
-            content_type,
             content.len(),
         );
+        if !has_content_type {
+            response.push_str(&format!("Content-Type: {}; charset=utf-8\r\n", content_type));
+        }
         for (key, value) in extra_headers {
             response.push_str(&format!("{}: {}\r\n", key, value));
         }
@@ -261,18 +208,64 @@ impl AspServer {
         stream: &mut tokio::net::TcpStream,
         folder: &str,
     ) -> Result<(), ASPError> {
-        let mut buffer = [0; 4096];
-        let bytes_read = stream.read(&mut buffer).await.map_err(|e| {
-            ASPError::new(500, format!("Error reading from client: {}", e))
-        })?;
+        use tokio::io::AsyncBufReadExt;
+        use tokio::io::BufReader;
 
-        let (method, path, query_string, headers, params, cookies, body) =
-            match Self::parse_request(&buffer[..bytes_read]) {
-                Some(result) => result,
-                None => {
-                    return Self::send_response(stream, 400, "text/plain", "Bad Request").await;
-                }
-            };
+        let mut reader = BufReader::new(&mut *stream);
+        let mut request_buf = Vec::new();
+        let mut headers = AHashMap::new();
+
+        // Read request line
+        let mut request_line = String::new();
+        reader.read_line(&mut request_line).await.map_err(|e| {
+            ASPError::new(500, format!("Error reading request line: {}", e))
+        })?;
+        request_buf.extend_from_slice(request_line.as_bytes());
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("GET").to_string();
+        let full_path = parts.next().unwrap_or("/").to_string();
+        let (path, query_string) = match full_path.split_once('?') {
+            Some((p, q)) => (p.trim_start_matches('/').to_string(), q.to_string()),
+            None => (full_path.trim_start_matches('/').to_string(), String::new()),
+        };
+
+        // Read headers line by line
+        loop {
+            let mut line = String::new();
+            let n = reader.read_line(&mut line).await.map_err(|e| {
+                ASPError::new(500, format!("Error reading header: {}", e))
+            })?;
+            if n <= 1 || line.trim().is_empty() {
+                break;
+            }
+            request_buf.extend_from_slice(line.as_bytes());
+            if let Some((key, value)) = line.split_once(':') {
+                headers.insert(key.trim().to_lowercase(), value.trim().to_string());
+            }
+        }
+
+        // Parse cookies from headers
+        let cookies = headers
+            .get("cookie")
+            .map(|c| Self::parse_cookies(c))
+            .unwrap_or_default();
+
+        // Read body based on Content-Length
+        let content_length: usize = headers
+            .get("content-length")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let body = if content_length > 0 {
+            let mut body = vec![0u8; content_length];
+            reader.read_exact(&mut body).await.map_err(|e| {
+                ASPError::new(500, format!("Error reading body: {}", e))
+            })?;
+            body
+        } else {
+            Vec::new()
+        };
+
+        let params = Self::parse_query_string(&query_string);
 
         // Support basic file lookup
         let file_path = format!(
@@ -342,14 +335,15 @@ impl AspServer {
                 .get("ASPSESSIONID")
                 .cloned()
                 .unwrap_or_default();
-            if existing_session.is_empty() {
+            let session_was_new = existing_session.is_empty();
+            if session_was_new {
                 context.session_id = Self::generate_session_id();
             } else {
                 context.session_id = existing_session;
             }
 
-            // Build session cookie for response
-            if !context.session_id.is_empty() {
+            // Build session cookie for response (only for new sessions)
+            if session_was_new && !context.session_id.is_empty() {
                 context.response_extra_headers.push((
                     "Set-Cookie".to_string(),
                     format!("ASPSESSIONID={}; path=/", context.session_id),
@@ -370,15 +364,37 @@ impl AspServer {
                         if context.response_ended {
                             break;
                         }
-                        response_content.push_str(&format!("<!-- Error: {} -->", e));
+                        response_content.push_str(&context.response_buffer);
+                        response_content.push_str(&format!("\n<!-- Error: {} -->\n", e));
                     }
                 }
                 context.flush_response_buffer();
             }
 
+            // Transfer response cookies to headers
+            for (name, val) in &context.response_cookies {
+                context.response_extra_headers.push((
+                    "Set-Cookie".to_string(),
+                    format!("{}={}; path=/", name, val),
+                ));
+            }
+
+            // Prepend flushed content
+            if !context.response_flushed.is_empty() {
+                response_content = format!("{}{}", context.response_flushed, response_content);
+            }
+
             // Build response based on context state
             if !context.response_redirect_url.is_empty() {
-                Self::send_response(stream, 302, "text/html", "").await
+                response_content.clear();
+                Self::send_response_with_headers(
+                    stream,
+                    "302 Found",
+                    "text/html",
+                    "",
+                    &context.response_extra_headers,
+                )
+                .await
             } else {
                 Self::send_response_with_headers(
                     stream,
