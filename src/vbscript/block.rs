@@ -1377,6 +1377,14 @@ pub(crate) fn execute_user_defined_function(
     args: &[VBValue],
     context: &mut ExecutionContext,
 ) -> Result<VBValue, VBSError> {
+    // Push stack frame for debugger
+    if let Some(ref debugger) = context.debugger {
+        let vars: AHashMap<String, VBValue> = func.params.iter().enumerate()
+            .map(|(i, p)| (p.clone(), args.get(i).cloned().unwrap_or(VBValue::Empty)))
+            .collect();
+        debugger.push_frame(&func.name, "", 0, vars);
+    }
+
     for (i, param) in func.params.iter().enumerate() {
         let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
         context.set_variable(param, val);
@@ -1391,6 +1399,11 @@ pub(crate) fn execute_user_defined_function(
         Ok(()) => {}
         Err(e) if e.is_exit_function() || e.is_exit_sub() => {}
         Err(e) => return Err(e),
+    }
+
+    // Pop stack frame for debugger
+    if let Some(ref debugger) = context.debugger {
+        debugger.pop_frame();
     }
 
     if func.is_function {
@@ -1503,6 +1516,13 @@ pub fn execute_blocks(
         if context.response_ended {
             break;
         }
+
+        // Debugger hook: check breakpoints and stepping
+        if let Some(ref debugger) = context.debugger {
+            let frame_depth = debugger.current_frame_depth();
+            debugger.check("", 0, frame_depth)?;
+        }
+
         match block {
             BlockStatement::FunctionDef { name, params, body_lines } => {
                 context.define_function(UserDefinedFunction {

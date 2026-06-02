@@ -1,0 +1,45 @@
+{
+    "name": "asperger-debug",
+    "displayName": "ASPerger Debugger",
+    "description": "Debug adapter for ASP Classic / VBScript files",
+    "version": "0.1.0",
+    "engines": {
+        "vscode": "^1.60.0"
+    },
+    "categories": [
+        "Debuggers"
+    ],
+    "activationEvents": [
+        "onDebug"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "debuggers": [
+            {
+                "type": "asperger",
+                "label": "ASPerger Debugger",
+                "program": "./bin/asperger_debug",
+                "runtime": "",
+                "languages": ["asp"],
+                "configurationAttributes": {
+                    "launch": {
+                        "properties": {
+                            "program": {
+                                "type": "string",
+                                "description": "Path to the .asp file to debug"
+                            }
+                        }
+                    }
+                },
+                "initialConfigurations": [
+                    {
+                        "type": "asperger",
+                        "request": "launch",
+                        "name": "Debug ASP file",
+                        "program": "${file}"
+                    }
+                ]
+            }
+        ]
+    }
+}

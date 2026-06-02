@@ -61,6 +61,9 @@ pub struct ExecutionContext {
 
     // Session
     pub session_id: String,
+
+    // Debugger
+    pub debugger: Option<super::debugger::Debugger>,
 }
 
 impl ExecutionContext {
@@ -86,6 +89,7 @@ impl ExecutionContext {
             response_ended: false,
             response_redirect_url: String::new(),
             session_id: String::new(),
+            debugger: None,
         }
     }
 

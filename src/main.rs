@@ -1,10 +1,7 @@
-mod asp;
-mod vbscript;
-
 use clap::Parser;
 
-use crate::asp::config::Config;
-use crate::asp::server::AspServer;
+use asperger::asp::config::Config;
+use asperger::asp::server::AspServer;
 
 #[tokio::main]
 async fn main() {
