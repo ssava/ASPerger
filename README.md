@@ -6,6 +6,7 @@ A lightweight **ASP Classic / VBScript** server written in Rust. Parses and exec
 
 - **HTTP server** — serves `.asp` files with `<% %>` code blocks + static files
 - **Full VBScript interpreter** — custom tokenizer, Pratt expression parser, block evaluator
+- **Preprocessor** — `<!-- #include file="..." -->` / `<!-- #include virtual="..." -->` with recursive expansion and cycle detection; `<%@ LANGUAGE %`, `<%@ ENABLESESSIONSTATE %>`, `<%@ CODEPAGE %>`, `<%@ LCID %>`, `<%@ TRANSACTION %>` directives
 - **Control flow** — `If/Then/ElseIf/Else/End If`, `For/Next`, `For Each/Next`, `While/Wend`, `Do/Loop` (pre/post-test, While/Until), `Select Case`
 - **Functions & Subs** — `Function`/`End Function`, `Sub`/`End Sub`, `Call`, `Exit Function`, `Exit Sub`, `Exit For`, `Exit Do`
 - **Classes** — `Class`/`End Class` with `Public`/`Private` members, `Property Get`/`Property Let`, `With`/`End With`
@@ -24,8 +25,8 @@ A lightweight **ASP Classic / VBScript** server written in Rust. Parses and exec
 |--------|--------|-------------|
 | `Request` | ✅ | `Form`, `QueryString`, `Cookies`, `ServerVariables`, `TotalBytes` — all with `.Count` |
 | `Response` | ✅ | `.Write()`, `.End()`, `.Buffer`, `.ContentType`, `.Status`, `.Expires`, `.Cookies` |
-| `Session` | ✅ | `.SessionID`, `.Timeout`, `.Abandon()`, `.Contents.Count`, indexed `Session("key")` |
-| `Server` | ✅ | `.HTMLEncode()`, `.URLEncode()`, `.URLPathEncode()`, `.MapPath()`, `.CreateObject()`, `.ScriptTimeout`, `.ScriptPath` |
+| `Session` | ✅ | `.SessionID`, `.Timeout`, `.Abandon()`, `.Contents.Count`, indexed `Session("key")` — disabled when `<%@ ENABLESESSIONSTATE=False %>` |
+| `Server` | ✅ | `.HTMLEncode()`, `.URLEncode()`, `.URLPathEncode()`, `.MapPath()`, `.CreateObject()`, `.ScriptTimeout`, `.ScriptPath`, `.Execute()`, `.Transfer()` |
 | `Application` | ✅ | `.Lock()`/`.Unlock()`, `.Contents.Count`, indexed `Application("key")` |
 
 ### COM Objects
@@ -132,6 +133,12 @@ The repository includes a self-evaluating test suite at `asp_files/index.asp` th
 | `While` / `Wend` | ✅ |
 | Comparison operators (`Is`, `=`, `<>`, etc.) | ✅ |
 | Comments (`'`, `REM`) | ✅ |
+| `<%@ %>` directives (LANGUAGE, ENABLESESSIONSTATE, CODEPAGE, LCID, TRANSACTION) | ✅ |
+| `<!-- #include file="..." -->` / `virtual="..."` | ✅ |
+| `Server.Execute` / `Server.Transfer` | ✅ |
+| `Request.TotalBytes` | ✅ |
+| Multipart form data | ✅ |
+| `Application.Lock` / `.Unlock` (global mutex) | ✅ |
 | VS Code DAP debugging | ✅ |
 
 ## Architecture
@@ -140,26 +147,34 @@ The repository includes a self-evaluating test suite at `asp_files/index.asp` th
 HTTP request
     │
     ▼
-  ┌─────────────┐
-  │  ASP Parser  │  Splits file into Html blocks and <% Code %> blocks
-  └──────┬──────┘
+  ┌──────────────────┐
+  │ IncludeResolver  │  Expands <!-- #include ... --> at source level
+  └──────┬───────────┘
          │
-  ┌──────▼──────┐
-  │  Tokenizer   │  Lexes VBScript source into tokens
-  └──────┬──────┘
+  ┌──────▼───────────┐
+  │  ASP Parser       │  Splits file into Html, Code, and Directive blocks
+  └──────┬───────────┘
          │
-  ┌──────▼──────┐
-  │   Parser    │  Pratt expression parser + recursive block parser
-  └──────┬──────┘
+  ┌──────▼───────────┐
+  │  Preprocessor    │  Consumes Directive blocks → sets page configuration
+  └──────┬───────────┘
          │
-  ┌──────▼───────┐
-  │  Interpreter  │  Walks the AST, evaluates expressions, executes blocks
-  │  + Objects   │  ASP objects, COM objects, built-in functions
-  └──────┬───────┘
+  ┌──────▼───────────┐
+  │  Tokenizer        │  Lexes VBScript source into tokens
+  └──────┬───────────┘
          │
-  ┌──────▼──────┐
-  │  Response    │  Buffered output → HTTP 200 response
-  └─────────────┘
+  ┌──────▼───────────┐
+  │   Parser          │  Pratt expression parser + recursive block parser
+  └──────┬───────────┘
+         │
+  ┌──────▼────────────┐
+  │  Interpreter       │  Walks the AST, evaluates expressions, executes blocks
+  │  + Objects         │  ASP objects, COM objects, built-in functions
+  └──────┬────────────┘
+         │
+  ┌──────▼───────────┐
+  │  Response         │  Buffered output → HTTP 200 response
+  └──────────────────┘
 ```
 
 ## Debugging
