@@ -6,6 +6,11 @@ mod tests {
     use crate::vbscript::syntax::{Assignment, Dim, ResponseWrite, VBSyntax};
     use crate::vbscript::{ExecutionContext, TokenType, Tokenizer, VBScriptInterpreter, VBValue};
     use chrono::{Datelike, Timelike};
+    use std::sync::{LazyLock, Mutex};
+
+    /// Serializes tests that access the global APPLICATION_STORE to prevent
+    /// parallel race conditions (one test's clear_app_store() wiping another's entries).
+    static APP_STORE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     // ===== TOKENIZER =====
 
@@ -1777,6 +1782,7 @@ mod tests {
 
     #[test]
     fn test_asp_index_page() {
+        let _guard = APP_STORE_LOCK.lock().unwrap();
         let content = fs::read_to_string("asp_files/index.asp")
             .expect("Failed to read asp_files/index.asp");
         let parser = AspParser::new(content);
@@ -1815,8 +1821,7 @@ mod tests {
                     let passed: i32 = counts[..slash].trim().parse().unwrap_or(-1);
                     let total: i32 = counts[slash + 1..].trim().parse().unwrap_or(-1);
                     assert_eq!(total, 29, "Expected 29 total tests, got {}", total);
-                    // 28 tests pass — 1 test (18) unimplemented
-                    assert_eq!(passed, 28, "Expected 28 passing tests, got {}. Check if unimplemented features changed", passed);
+                    assert_eq!(passed, 29, "Expected 29 passing tests, got {}. Check if unimplemented features changed", passed);
                     return;
                 }
             }
@@ -3804,6 +3809,7 @@ mod tests {
 
     #[test]
     fn test_asp_application_set_and_get() {
+        let _guard = APP_STORE_LOCK.lock().unwrap();
         crate::vbscript::asp_objects::clear_app_store();
         let mut ctx = ExecutionContext::new();
         let interp = VBScriptInterpreter;
@@ -3814,6 +3820,7 @@ mod tests {
 
     #[test]
     fn test_asp_application_contents_count() {
+        let _guard = APP_STORE_LOCK.lock().unwrap();
         crate::vbscript::asp_objects::clear_app_store();
         let mut ctx = ExecutionContext::new();
         let interp = VBScriptInterpreter;
@@ -3825,6 +3832,7 @@ mod tests {
 
     #[test]
     fn test_asp_application_lock_unlock() {
+        let _guard = APP_STORE_LOCK.lock().unwrap();
         crate::vbscript::asp_objects::clear_app_store();
         let mut ctx = ExecutionContext::new();
         let interp = VBScriptInterpreter;

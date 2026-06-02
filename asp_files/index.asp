@@ -273,17 +273,22 @@
             Public name
         End Class
 
-        Dim obj
+        Dim obj, withResult
         Set obj = New TestClass
         With obj
             .value = 42
             .name = "Test Object"
-            Response.Write(.name & ": " & .value)
+            withResult = .name & ": " & .value
         End With
         %>
         <%
         testTotal = testTotal + 1
-        Response.Write("<span class='error'>FAIL (not implemented)</span>")
+        If withResult = "Test Object: 42" Then
+            testPassed = testPassed + 1
+            Response.Write("<span class='success'>PASS</span>")
+        Else
+            Response.Write("<span class='error'>FAIL (got '" & withResult & "')</span>")
+        End If
         %>
     </div>
 
