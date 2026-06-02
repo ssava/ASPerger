@@ -6,7 +6,7 @@ use dap::prelude::*;
 use dap::responses;
 use dap::types;
 
-use asperger::vbscript::debugger::{DebugCommand, Debugger};
+use asperger::vbscript::debugger::{DebugCommand, DebugEvent, Debugger, StoppedReason};
 use asperger::vbscript::execution_context::ExecutionContext;
 use asperger::vbscript::interpreter::VBScriptInterpreter;
 
@@ -137,9 +137,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let rsp = req.success(ResponseBody::ConfigurationDone);
                 server.respond(rsp)?;
 
-                let (debugger, state, _event_rx) = Debugger::new();
+                let (debugger, state, event_rx) = Debugger::new();
                 debugger_state = Some(state.clone());
                 command_tx = Some(debugger.command_tx.clone());
+
+                // Forward DebugEvents from interpreter thread to VS Code
+                let evt_so = server_output.clone();
+                std::thread::spawn(move || {
+                    while let Ok(event) = event_rx.recv() {
+                        let mut so = match evt_so.lock() {
+                            Ok(s) => s,
+                            Err(_) => break,
+                        };
+                        match event {
+                            DebugEvent::Stopped { reason, thread_id, .. } => {
+                                let dap_reason = match reason {
+                                    StoppedReason::Breakpoint => types::StoppedEventReason::Breakpoint,
+                                    StoppedReason::Step => types::StoppedEventReason::Step,
+                                    StoppedReason::Pause => types::StoppedEventReason::Pause,
+                                };
+                                let _ = so.send_event(Event::Stopped(events::StoppedEventBody {
+                                    reason: dap_reason,
+                                    description: None,
+                                    thread_id: Some(thread_id as i64),
+                                    preserve_focus_hint: None,
+                                    text: None,
+                                    all_threads_stopped: Some(true),
+                                    hit_breakpoint_ids: None,
+                                }));
+                            }
+                            DebugEvent::Terminated => break,
+                        }
+                    }
+                });
 
                 let script = script_path.clone();
                 let so = server_output.clone();
