@@ -1,3 +1,6 @@
+//! Core VBScript value type (`VBValue`) representing all script-level
+//! data: strings, numbers, booleans, null, empty, arrays, and objects.
+
 use std::sync::Arc;
 use super::vbobject::VBScriptObject;
 use std::{fmt, str::FromStr};

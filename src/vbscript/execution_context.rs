@@ -36,6 +36,7 @@ pub struct ClassDefinition {
     pub properties: AHashMap<String, PropertyDef>,
 }
 
+/// Variable scope: holds variables, functions, classes, error state, and the with-object.
 pub struct Scope {
     variables: AHashMap<String, VBValue>,
     functions: AHashMap<String, UserDefinedFunction>,
@@ -114,6 +115,7 @@ impl Scope {
     }
 }
 
+/// Per-request HTTP data populated by the server before script execution.
 #[derive(Default)]
 pub struct RequestContext {
     pub method: String,
@@ -128,6 +130,7 @@ pub struct RequestContext {
     pub lcid: u32,
 }
 
+/// Response state accumulated during script execution.
 #[derive(Default)]
 pub struct ResponseContext {
     pub buffer: String,
@@ -149,24 +152,37 @@ impl ResponseContext {
     }
 }
 
+/// Session state: unique identifier and enabled flag.
 #[derive(Default)]
 pub struct SessionContext {
     pub id: String,
     pub enabled: bool,
 }
 
+/// Aggregate execution context that owns all per-request state.
+///
+/// Provides delegation methods to inner sub-contexts (`scope`, `request`,
+/// `response`, `session`) and holds the shared `store` for persistence.
 pub struct ExecutionContext {
+    /// Variable scope, functions, classes, error state, with-object.
     pub scope: Scope,
+    /// Incoming request data.
     pub request: RequestContext,
+    /// Output buffer, status, headers, redirect state.
     pub response: ResponseContext,
+    /// Session identifier and enabled flag.
     pub session: SessionContext,
+    /// Shared session/application store (injected by the server).
     pub store: Option<Arc<Store>>,
+    /// Optional DAP debugger.
     pub debugger: Option<super::debugger::Debugger>,
+    /// Callback for Server.Execute / Server.Transfer.
     pub execute_file_callback:
         Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
 }
 
 impl ExecutionContext {
+    /// Create a new execution context with defaults.
     pub fn new() -> Self {
         ExecutionContext {
             scope: Scope::new(),
@@ -190,42 +206,53 @@ impl ExecutionContext {
         }
     }
 
+    /// Clear the response buffer.
     pub fn flush_response_buffer(&mut self) {
         self.response.flush_buffer();
     }
 
+    /// Write a string to the response buffer.
     pub fn write(&mut self, content: &str) {
         self.response.write(content);
     }
 
+    /// Set a variable in the current scope.
     pub fn set_variable(&mut self, name: &str, value: VBValue) {
         self.scope.set_variable(name, value);
     }
 
+    /// Get a reference to a variable in the current scope.
     pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
         self.scope.get_variable(name)
     }
 
+    /// Get a mutable reference to a variable in the current scope.
     pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
         self.scope.get_variable_mut(name)
     }
 
+    /// Define a user-defined function in the current scope.
     pub fn define_function(&mut self, func: UserDefinedFunction) {
         self.scope.define_function(func);
     }
 
+    /// Look up a user-defined function by name.
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
         self.scope.get_function(name)
     }
 
+    /// Define a class in the current scope.
     pub fn define_class(&mut self, class: ClassDefinition) {
         self.scope.define_class(class);
     }
 
+    /// Look up a class definition by name.
     pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
         self.scope.get_class(name)
     }
 
+    /// Temporarily replace the current variable scope with `instance_vars`,
+    /// run closure `f`, then restore the saved scope. Used for class Property Get/Let/Set.
     pub fn with_instance_scope<T>(
         &mut self,
         instance_vars: &mut AHashMap<String, VBValue>,
@@ -237,18 +264,22 @@ impl ExecutionContext {
         result
     }
 
+    /// Get the current error mode.
     pub fn get_error_mode(&self) -> &ErrorMode {
         self.scope.get_error_mode()
     }
 
+    /// Set the error mode (Normal or ResumeNext).
     pub fn set_error_mode(&mut self, mode: ErrorMode) {
         self.scope.set_error_mode(mode);
     }
 
+    /// Record an error in the scope (sets err_number and err_description).
     pub fn set_err(&mut self, err: VBSError) {
         self.scope.set_err(err);
     }
 
+    /// Clear the recorded error state.
     pub fn clear_err(&mut self) {
         self.scope.clear_err();
     }

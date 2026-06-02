@@ -1,3 +1,6 @@
+//! Scripting.FileSystemObject implementation: `FileSystemObject`, `File`,
+//! `Folder`, `Drive` objects with methods for file I/O and directory traversal.
+
 use std::fs;
 use std::path::{Path, PathBuf};
 

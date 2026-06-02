@@ -1,3 +1,7 @@
+//! ADODB COM object stubs: `Connection`, `Recordset`, `Field`, `Parameter`,
+//! and related types. Provides minimal script-level access for basic database
+//! scenarios.
+
 use ahash::AHashMap;
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;

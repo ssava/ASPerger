@@ -1,3 +1,7 @@
+//! VBScript interpreter and runtime: tokenizer, parser, expression evaluator,
+//! execution context, built-in functions, COM object implementations, debugger,
+//! and ASP intrinsic object wrappers.
+
 pub mod value;
 pub mod execution_context;
 pub mod interpreter;

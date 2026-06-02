@@ -47,11 +47,12 @@ impl Handler for HtmlHandler {
             // No handler available to process the block.
             Err(ASPError::new(
                 500,
-                "Nessun handler disponibile per il blocco".to_string(),
+                "No handler available for the block".to_string(),
             ))
         }
     }
 }
+/// Handles `AspBlock::Code` blocks by executing VBScript through the interpreter.
 pub struct CodeHandler {
     interpreter: Arc<dyn Interpreter>,
     next: Option<Arc<dyn Handler + Send + Sync>>,
@@ -85,7 +86,7 @@ impl Handler for CodeHandler {
             // No handler available to process the block.
             Err(ASPError::new(
                 500,
-                "Nessun handler disponibile per il blocco".to_string(),
+                "No handler available for the block".to_string(),
             ))
         }
     }

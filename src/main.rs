@@ -5,10 +5,10 @@ use asperger::asp::server::AspServer;
 
 #[tokio::main]
 async fn main() {
-    // Leggi i parametri di avvio
+    // Parse command-line arguments.
     let config = Config::parse();
 
-    // Avvia il server con la configurazione specificata
+    // Start the server with the specified configuration.
     let server = AspServer::new(config);
     if let Err(e) = server.start().await {
         eprintln!("Server error: {}", e);

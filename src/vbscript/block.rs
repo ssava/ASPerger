@@ -1,3 +1,8 @@
+//! VBScript block / control-flow parsing and execution.
+//! Handles If/ElseIf/Else, For/While/Do loops, Select Case,
+//! With/End With, Class/Property definitions, Function/Sub declarations,
+//! and top-level statement dispatch.
+
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::expr::{evaluate, parse_expression, Expr};
 use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
@@ -285,10 +290,21 @@ fn parse_comma_args(tokens: &[Token]) -> Result<Vec<Expr>, VBSError> {
     Ok(args)
 }
 
+/// Disambiguate an ambiguous token sequence into one of several syntax node types.
+///
+/// Tries patterns in order of specificity:
+///  1. Response.Write(expr)
+///  2. Response.Cookies("key") = value
+///  3. var = expr           (assignment)
+///  4. arr(idx) = expr      (array element assignment)
+///  5. obj.Property = expr  (property set)
+///  6. obj.Method(args)     (method call)
+///  7. .Property = value    (With-block property set)
+///  8. .Method(args)        (With-block method call)
 fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
     let non_ws: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
 
-    // Response.Write expr
+    // 1. Response.Write expr
     if non_ws.len() >= 3
         && non_ws[0].value.eq_ignore_ascii_case("response")
         && non_ws[1].token_type == TokenType::Dot
@@ -314,7 +330,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(ResponseWrite::new(expr)));
     }
 
-    // Response.Cookies("key") = value
+    // 2. Response.Cookies("key") = value
     if non_ws.len() >= 7
         && non_ws[0].value.eq_ignore_ascii_case("response")
         && non_ws[1].token_type == TokenType::Dot
@@ -350,7 +366,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         // if no =, treat as method call (fall through)
     }
 
-    // var = expr (bare assignment, no Set keyword)
+    // 3. var = expr (bare assignment, no Set keyword)
     if non_ws.len() >= 2
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Assign
@@ -361,7 +377,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(Assignment::new(var_name, expr)));
     }
 
-    // arr(idx) = expr (array element assignment)
+    // 4. arr(idx) = expr (array element assignment)
     if non_ws.len() >= 4
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::LeftParen
@@ -750,6 +766,7 @@ fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
 
 // ===== Block parsing =====
 
+/// Parse a sequence of tokenized lines into a tree of `BlockStatement` nodes.
 pub fn parse_blocks(lines: &[Vec<Token>]) -> Result<Vec<BlockStatement>, VBSError> {
     let mut pos = 0;
     parse_blocks_inner(lines, &mut pos)
@@ -1543,6 +1560,8 @@ fn extract_properties_from_class_body(body_lines: &[Vec<Token>]) -> Result<AHash
     Ok(properties)
 }
 
+/// Execute a slice of `BlockStatement` nodes in order, handling control flow
+/// (Exit For/Do/Function/Sub) and debugger hooks.
 pub fn execute_blocks(
     blocks: &[BlockStatement],
     context: &mut ExecutionContext,
@@ -1560,6 +1579,7 @@ pub fn execute_blocks(
         }
 
         match block {
+            // --- Function/Sub definitions: register for later use ---
             BlockStatement::FunctionDef { name, params, body_lines } => {
                 context.define_function(UserDefinedFunction {
                     name: name.clone(),
@@ -1576,7 +1596,9 @@ pub fn execute_blocks(
                     is_function: false,
                 });
             }
+            // --- Syntax nodes (assignment, method call, dim, etc.) ---
             BlockStatement::Syntax(syntax) => {
+                // On Error Resume Next: record error and continue
                 let result = syntax.execute(context);
                 if let Err(e) = result {
                     if *context.get_error_mode() == ErrorMode::ResumeNext {
@@ -1586,10 +1608,12 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- Parse failure: unrecognised statement ---
             BlockStatement::Unrecognized(line_text) => {
                 return Err(VBSErrorType::NotImplementedError
                     .into_error(format!("Unrecognized command: {}", line_text)));
             }
+            // --- If / ElseIf / Else ---
             BlockStatement::If {
                 condition,
                 then_body,
@@ -1614,6 +1638,7 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- For (numeric counter step) ---
             BlockStatement::For {
                 counter,
                 start,
@@ -1627,6 +1652,7 @@ pub fn execute_blocks(
                     .map(|s| evaluate_numeric(s, context))
                     .unwrap_or(Ok(1.0))?;
 
+                // Positive step: up-count, Negative step: down-count
                 let mut i = start_val;
                 if step_val > 0.0 {
                     while i <= end_val {
@@ -1651,6 +1677,7 @@ pub fn execute_blocks(
                 }
                 context.set_variable(counter, VBValue::Number(i));
             }
+            // --- For Each (array/collection iteration) ---
             BlockStatement::ForEach { element, group, body } => {
                 let group_val = evaluate(group, context)?;
                 match group_val {
@@ -1671,6 +1698,7 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- While condition loop ---
             BlockStatement::While { condition, body } => {
                 while evaluate_condition(condition, context)? {
                     match execute_blocks(body, context) {
@@ -1680,6 +1708,8 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- Do [While/Until] [condition] / Loop [While/Until] [condition] ---
+            // Two execution modes: post-test (Loop While/Until) and pre-test (Do While/Until)
             BlockStatement::Do {
                 body,
                 condition,
@@ -1687,6 +1717,7 @@ pub fn execute_blocks(
                 is_post_test,
             } => {
                 if *is_post_test {
+                    // Post-test: execute body first, check condition after
                     loop {
                         match execute_blocks(body, context) {
                             Ok(()) => {}
@@ -1705,6 +1736,7 @@ pub fn execute_blocks(
                         }
                     }
                 } else {
+                    // Pre-test: check condition before each iteration
                     loop {
                         if let Some(cond) = condition {
                             let result = evaluate_condition(cond, context)?;
@@ -1722,6 +1754,7 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- Select Case ---
             BlockStatement::SelectCase { expression, cases, else_body } => {
                 let expr_val = evaluate(expression, context)?;
                 let mut matched = false;
@@ -1744,6 +1777,7 @@ pub fn execute_blocks(
                     }
                 }
             }
+            // --- Class definition: extract properties and register ---
             BlockStatement::ClassDef { name, body_lines } => {
                 if name.is_empty() {
                     return Err(VBSErrorType::SyntaxError.into_error(
@@ -1758,6 +1792,7 @@ pub fn execute_blocks(
                     context.define_class(class_def);
                 }
             }
+            // --- With block: swap scope with-object, restore after body ---
             BlockStatement::With { object, body } => {
                 let obj_val = evaluate(object, context)?;
                 let prev_with = context.scope.with_object.replace(obj_val);
@@ -1767,6 +1802,7 @@ pub fn execute_blocks(
                     return Err(e);
                 }
             }
+            // --- Control-flow sentinels propagated as errors ---
             BlockStatement::ExitFor => {
                 return Err(VBSErrorType::ExitFor.into_error("Exit For".to_string()));
             }

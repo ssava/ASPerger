@@ -1,3 +1,6 @@
+//! DAP debugger integration. Provides breakpoints, stepping, stack frames,
+//! and communication channels between the interpreter and the VS Code debug adapter.
+
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 

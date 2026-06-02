@@ -1,3 +1,6 @@
+//! `TextStream` object returned by FileSystemObject file operations.
+//! Provides read/write/append access to text files.
+
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::sync::{Arc, Mutex};

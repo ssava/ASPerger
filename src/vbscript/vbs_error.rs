@@ -1,3 +1,5 @@
+//! VBScript error types and error-handling primitives.
+
 #[derive(Debug)]
 pub struct VBSError {
     pub code: u16,
@@ -40,6 +42,9 @@ impl std::fmt::Display for VBSError {
 
 impl std::error::Error for VBSError {}
 
+/// Categorised VBScript error types used for control flow and error reporting.
+/// SyntaxError, ValueError, RuntimeError, NotImplementedError are real errors;
+/// ExitFor/ExitDo/ExitFunction/ExitSub are control-flow signals.
 #[derive(Debug, Clone, Copy)]
 pub enum VBSErrorType {
     SyntaxError = 1001,

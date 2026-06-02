@@ -1,3 +1,6 @@
+//! Resolves `<!-- #include file="..." -->` and `<!-- #include virtual="..." -->`
+//! directives by recursively expanding them in ASP source text.
+
 use regex::Regex;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -11,9 +14,12 @@ fn get_include_regex() -> &'static Regex {
     })
 }
 
+/// Resolves `<!-- #include ... -->` directives in ASP source text.
 pub struct IncludeResolver;
 
 impl IncludeResolver {
+    /// Expand all includes in `source`, resolving paths relative to `base_dir`
+    /// and `root_dir`. Returns the fully expanded source text or an error.
     pub fn expand(
         source: &str,
         base_dir: &Path,

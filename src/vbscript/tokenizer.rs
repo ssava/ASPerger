@@ -1,3 +1,6 @@
+//! Tokenizer / lexer for the VBScript language. Converts source text
+//! into a sequence of `Token` values with associated `TokenType` tags.
+
 use std::str::Chars;
 use std::iter::Peekable;
 

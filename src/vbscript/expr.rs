@@ -1,3 +1,8 @@
+//! Expression parser and evaluator.
+//! Defines `Expr` (AST for expressions), `BinOp`, `UnaryOp`, and the
+//! `evaluate` / `parse_expression` / `to_number` functions used throughout
+//! the interpreter.
+
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 

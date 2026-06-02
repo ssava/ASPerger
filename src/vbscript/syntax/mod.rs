@@ -1,4 +1,7 @@
-// Define the VBSyntax trait
+//! Syntax node trait and AST node types for parsed VBScript constructs.
+//! Each variant (assignment, method call, dim, redim, etc.) implements
+//! the `VBSyntax` trait and is executed during script evaluation.
+
 pub trait VBSyntax {
     fn execute(&self, context: &mut crate::vbscript::ExecutionContext) -> Result<(), VBSError>;
 }

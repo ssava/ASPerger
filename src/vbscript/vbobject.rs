@@ -5,10 +5,16 @@ use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 
 #[allow(dead_code)]
+/// Trait for VBScript COM / intrinsic objects that can expose properties,
+/// methods, and indexed access to scripts.
 pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
+    /// Clone the object into a new boxed trait object.
     fn clone_box(&self) -> Box<dyn VBScriptObject>;
+    /// Return a human-readable type name for debugging.
     fn type_name(&self) -> &'static str { "VBScriptObject" }
+    /// Get a named property value.
     fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError>;
+    /// Set a named property value.
     fn set_property(&mut self, _name: &str, _value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(VBSErrorType::RuntimeError.into_error(
             "Object does not support setting properties".to_string()

@@ -1,3 +1,6 @@
+//! Built-in VBScript functions: string, math, date/time, type conversion,
+//! array, and miscellaneous operations dispatched by name.
+
 use super::fso::FileSystemObject;
 use super::value::VBValue;
 use super::value_utils;

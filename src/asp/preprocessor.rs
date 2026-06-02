@@ -1,5 +1,10 @@
+//! Preprocessor for `<%@ ... %>` ASP directives. Filters directive blocks
+//! from the parsed block list and returns a `DirectiveConfig` with settings
+//! for language, session state, code page, LCID, and transaction.
+
 use crate::asp::parser::AspBlock;
 
+/// Configuration extracted from `<%@ ... %>` directives.
 #[derive(Debug, Clone)]
 pub struct DirectiveConfig {
     pub language: String,
@@ -21,9 +26,11 @@ impl Default for DirectiveConfig {
     }
 }
 
+/// Processes `AspBlock::Directive` blocks extracted by the parser.
 pub struct Preprocessor;
 
 impl Preprocessor {
+    /// Create a new Preprocessor.
     pub fn new() -> Self {
         Preprocessor
     }

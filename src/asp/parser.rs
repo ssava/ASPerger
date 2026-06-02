@@ -1,13 +1,22 @@
+//! ASP block parser. Splits raw ASP source text into `AspBlock` variants
+//! (Html, Code, Directive), handling `<%= %>` expression shorthand and
+//! `<%@ %>` directive syntax via regex.
+
 use regex::Regex;
 use std::sync::OnceLock;
 
+/// Represents a single parsed segment of an ASP page.
 #[derive(Debug)]
 pub enum AspBlock {
+    /// Literal HTML content to be sent to the client.
     Html(String),
+    /// VBScript code between `<% %>` delimiters.
     Code(String),
+    /// An `<%@ ... %>` directive with name and value.
     Directive(String, String),
 }
 
+/// Parses ASP source text into a sequence of `AspBlock` values.
 pub struct AspParser {
     content: String,
 }

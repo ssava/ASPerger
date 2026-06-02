@@ -1,3 +1,5 @@
+//! ASP-level error type used throughout the server layer.
+
 #[derive(Debug)]
 pub struct ASPError {
     pub code: u16,

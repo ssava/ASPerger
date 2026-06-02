@@ -1,5 +1,8 @@
+//! Utility functions for converting `VBValue` instances to primitive types.
+
 use super::value::VBValue;
 
+/// Convert a `VBValue` to its string representation.
 pub fn to_arg_string(val: &VBValue) -> String {
     match val {
         VBValue::String(s) => s.clone(),

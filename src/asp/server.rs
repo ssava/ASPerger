@@ -9,31 +9,50 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+/// Parsed HTTP request received by the server.
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
+    /// HTTP method (GET, POST, etc.).
     pub method: String,
+    /// Request path (e.g. "index.asp").
     pub path: String,
+    /// Raw query string portion of the URL.
     pub query_string: String,
+    /// Request headers keyed by lowercased name.
     pub headers: AHashMap<String, String>,
+    /// Raw request body bytes.
     pub body: Vec<u8>,
+    /// Parsed cookies from the Cookie header.
     pub cookies: AHashMap<String, String>,
 }
 
+/// HTTP response to be written to the client.
 #[derive(Debug, Clone)]
 pub struct HttpResponse {
+    /// Status line (e.g. "200 OK", "404 Not Found").
     pub status_line: String,
+    /// Content-Type header value.
     pub content_type: String,
+    /// Response body string.
     pub body: String,
+    /// Additional headers to include in the response.
     pub extra_headers: Vec<(String, String)>,
 }
 
+/// Main ASP server, owning the handler chain, shared store, and config.
 pub struct AspServer {
+    /// Chain of handlers that process ASP blocks.
     pub handler_chain: Arc<dyn Handler + Send + Sync>,
+    /// Shared session/application data store.
     pub store: Arc<Store>,
+    /// Server configuration (host, port, folder).
     config: Config,
 }
 
 impl AspServer {
+    /// Create a new `AspServer` with the given configuration.
+    /// Initializes the VBScript interpreter, sets up the handler chain
+    /// (HtmlHandler → CodeHandler), and creates a shared `Store`.
     pub fn new(config: Config) -> Self {
         let interpreter: Arc<dyn Interpreter> = Arc::new(VBScriptInterpreter);
 
@@ -49,6 +68,8 @@ impl AspServer {
         }
     }
 
+    /// Start the HTTP server, listening on the configured host:port.
+    /// Each incoming connection is handled in a separate Tokio task.
     pub async fn start(&self) -> std::io::Result<()> {
         let listener = TcpListener::bind(format!("{}:{}", self.config.host, self.config.port)).await?;
         println!(
@@ -206,6 +227,8 @@ impl AspServer {
         Ok(())
     }
 
+    /// Read and parse an HTTP request from the given stream.
+    /// Returns an `HttpRequest` with method, path, headers, body, and cookies.
     pub async fn read_request(
         stream: &mut tokio::net::TcpStream,
     ) -> Result<HttpRequest, ASPError> {
@@ -269,6 +292,9 @@ impl AspServer {
         })
     }
 
+    /// Inject the five ASP intrinsic objects (Request, Response, Session,
+    /// Server, Application) into the execution context as global variables.
+    /// Safe to call multiple times (only injects missing objects).
     pub fn inject_asp_intrinsic_objects(context: &mut ExecutionContext) {
         use crate::vbscript::asp_objects::*;
         if context.get_variable("REQUEST").is_none() {
@@ -292,6 +318,9 @@ impl AspServer {
         }
     }
 
+    /// Process a parsed HTTP request: resolve includes, parse ASP blocks,
+    /// apply preprocessor directives, inject intrinsic objects, and execute
+    /// blocks through the handler chain. Returns an `HttpResponse`.
     pub async fn process_request(
         request: HttpRequest,
         handler_chain: &Arc<dyn Handler + Send + Sync>,
@@ -537,6 +566,7 @@ impl AspServer {
         }
     }
 
+    /// Handle a single HTTP connection: read request, process it, and write the response.
     pub async fn handle_connection(
         handler_chain: &Arc<dyn Handler + Send + Sync>,
         stream: &mut tokio::net::TcpStream,

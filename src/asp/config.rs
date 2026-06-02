@@ -1,18 +1,18 @@
 use clap::Parser;
 
-/// Configurazione del server ASP
+/// ASP server configuration.
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 pub struct Config {
-    /// Indirizzo su cui il server sarà in ascolto
+    /// Host address the server will listen on.
     #[clap(long, default_value = "127.0.0.1")]
     pub host: String,
 
-    /// Porta su cui il server sarà in ascolto
+    /// Port the server will listen on.
     #[clap(short, long, default_value = "8080")]
     pub port: u16,
 
-    /// Cartella contenente i file ASP
+    /// Directory containing ASP files to serve.
     #[clap(short, long, default_value = "./")]
     pub folder: String,
 }

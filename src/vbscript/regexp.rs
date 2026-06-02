@@ -1,3 +1,6 @@
+//! VBScript.RegExp COM object implementation for regular expression matching
+//! and replacement.
+
 use regex::Regex;
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;
