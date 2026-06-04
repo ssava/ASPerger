@@ -1866,9 +1866,7 @@ pub fn execute_blocks(
             } else {
                 block.line()
             };
-            eprintln!("[DEBUG] check: file={:?} line={} depth={}", context.script_path, file_line, frame_depth);
             debugger.check(&context.script_path, file_line, frame_depth)?;
-            eprintln!("[DEBUG] check returned");
         }
 
         match block {

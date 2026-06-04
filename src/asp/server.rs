@@ -370,16 +370,10 @@ impl AspServer {
         );
         let path_obj = Path::new(&file_path);
 
-        eprintln!("[ASP] file_path={:?}", file_path);
-
         let canonical_path = match path_obj.canonicalize() {
-            Ok(p) => {
-                eprintln!("[ASP] canonical_path={:?}", p);
-                p
-            }
+            Ok(p) => p,
             Err(e) => {
                 let err = ASPError::new(404, &format!("File not found: {} (folder={}, path={}, error={})", file_path, folder, request.path, e));
-                eprintln!("[ASP] canonicalize failed: {}", e);
                 return Ok(HttpResponse {
                     status_line: "404 Not Found".to_string(),
                     content_type: "text/html".to_string(),
@@ -392,7 +386,6 @@ impl AspServer {
         let canonical_folder = Path::new(folder)
             .canonicalize()
             .map_err(|_| ASPError::new(500, "Server configuration error".to_string()))?;
-        eprintln!("[ASP] canonical_folder={:?}", canonical_folder);
 
         if !canonical_path.starts_with(canonical_folder) {
             let err = ASPError::new(403, "Forbidden: access denied");
@@ -557,10 +550,8 @@ impl AspServer {
 
         // Execute filtered blocks
         let mut response_content = String::new();
-        eprintln!("[ASP] block execution starting, count={}", filtered_blocks.len());
 
         for block in &filtered_blocks {
-            eprintln!("[ASP]  -> processing block");
             if context.response.ended {
                 break;
             }
@@ -593,9 +584,6 @@ impl AspServer {
         }
 
         // Build response based on context state
-        eprintln!("[ASP] block execution done, response_content={} bytes, redirect={:?}, status={:?}",
-            response_content.len(), context.response.redirect_url, context.response.status);
-
         if !context.response.redirect_url.is_empty() {
             response_content.clear();
             Ok(HttpResponse {

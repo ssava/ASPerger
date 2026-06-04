@@ -225,10 +225,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let so = server_output.clone();
                 let debugger = debugger_instance.take().unwrap();
 
-                // Set initial step mode to step-in so we stop at the first line
+                // Start in Continue mode — user must set explicit breakpoints
                 if let Some(ref state) = debugger_state {
                     let mut s = state.lock().unwrap();
-                    s.step_mode = asperger::vbscript::debugger::StepMode::StepIn;
+                    s.step_mode = asperger::vbscript::debugger::StepMode::Continue;
                 }
 
                 // Determine served root folder.
@@ -388,28 +388,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let variables: Vec<types::Variable> = if let Some(ref state) = debugger_state {
                     let s = state.lock().unwrap();
                     let frame_idx = (ref_id.saturating_sub(1000)) as usize;
-                    let vars = s.stack_frames.get(frame_idx).map(|f| &f.variables).unwrap();
-                    vars.iter()
-                        .map(|(k, v)| types::Variable {
-                            name: k.clone(),
-                            value: format!("{:?}", v),
-                            type_field: Some(match v {
-                                asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
-                                asperger::vbscript::VBValue::String(_) => "String".to_string(),
-                                asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
-                                asperger::vbscript::VBValue::Null => "Null".to_string(),
-                                asperger::vbscript::VBValue::Empty => "Empty".to_string(),
-                                asperger::vbscript::VBValue::Array(_) => "Array".to_string(),
-                                asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
-                            }),
-                            variables_reference: 0,
-                            named_variables: None,
-                            indexed_variables: None,
-                            evaluate_name: None,
-                            memory_reference: None,
-                            presentation_hint: None,
-                        })
-                        .collect()
+                    if let Some(frame) = s.stack_frames.get(frame_idx) {
+                        frame
+                            .variables
+                            .iter()
+                            .map(|(k, v)| types::Variable {
+                                name: k.clone(),
+                                value: format!("{:?}", v),
+                                type_field: Some(match v {
+                                    asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
+                                    asperger::vbscript::VBValue::String(_) => "String".to_string(),
+                                    asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
+                                    asperger::vbscript::VBValue::Null => "Null".to_string(),
+                                    asperger::vbscript::VBValue::Empty => "Empty".to_string(),
+                                    asperger::vbscript::VBValue::Array(_) => "Array".to_string(),
+                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
+                                }),
+                                variables_reference: 0,
+                                named_variables: None,
+                                indexed_variables: None,
+                                evaluate_name: None,
+                                memory_reference: None,
+                                presentation_hint: None,
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    }
                 } else {
                     vec![]
                 };
@@ -481,6 +486,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
     // Use a single-thread Tokio runtime for all async I/O
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_io()
+        .enable_time()
         .build()
         .unwrap();
 
@@ -556,29 +562,49 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                     }));
                 }
 
-                let response = AspServer::process_request(
-                    request,
-                    &server.handler_chain,
-                    &folder,
-                    &default_document,
-                    &server.store,
-                    Some(Arc::clone(&debugger)),
+                let response = match tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    AspServer::process_request(
+                        request,
+                        &server.handler_chain,
+                        &folder,
+                        &default_document,
+                        &server.store,
+                        Some(Arc::clone(&debugger)),
+                    ),
                 )
                 .await
-                .unwrap_or_else(|e| {
-                    let mut so = server_output.lock().unwrap();
-                    let _ = so.send_event(Event::Output(events::OutputEventBody {
-                        output: format!("Debug server: process error: {}\n", e),
-                        category: Some(types::OutputEventCategory::Stderr),
-                        ..Default::default()
-                    }));
-                    asperger::asp::server::HttpResponse {
-                        status_line: "500 Internal Server Error".to_string(),
-                        content_type: "text/plain".to_string(),
-                        body: format!("Error: {}", e),
-                        extra_headers: Vec::new(),
+                {
+                    Ok(Ok(r)) => r,
+                    Ok(Err(e)) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: format!("Debug server: process error: {}\n", e),
+                            category: Some(types::OutputEventCategory::Stderr),
+                            ..Default::default()
+                        }));
+                        asperger::asp::server::HttpResponse {
+                            status_line: "500 Internal Server Error".to_string(),
+                            content_type: "text/plain".to_string(),
+                            body: format!("Error: {}", e),
+                            extra_headers: Vec::new(),
+                        }
                     }
-                });
+                    Err(_) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: "Debug server: process_request TIMEOUT (10s) — debugger likely blocked on check()\n".to_string(),
+                            category: Some(types::OutputEventCategory::Stderr),
+                            ..Default::default()
+                        }));
+                        asperger::asp::server::HttpResponse {
+                            status_line: "504 Gateway Timeout".to_string(),
+                            content_type: "text/plain".to_string(),
+                            body: "Debug server timeout — debugger blocked indefinitely".to_string(),
+                            extra_headers: Vec::new(),
+                        }
+                    }
+                };
 
                 match AspServer::write_response(&mut stream, &response).await {
                     Ok(()) => {
