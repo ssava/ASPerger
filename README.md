@@ -77,6 +77,47 @@ Example:
 cargo run -- --host 0.0.0.0 --port 3000 --folder ./www
 ```
 
+## Configuration (`asp.ini`)
+
+Place an `asp.ini` file in the served folder to configure the server. Settings are merged with precedence: **CLI / VS Code launch config > INI > hardcoded defaults**.
+
+```ini
+[server]
+; host = 127.0.0.1
+; port = 9090
+; default_document = index.asp
+```
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `host` | `127.0.0.1` | Bind address |
+| `port` | `9090` | HTTP server port |
+| `default_document` | `index.asp` | File served when requesting the root path (`/`) |
+
+### VS Code launch config
+
+In the debug adapter the same settings are available as launch configuration attributes:
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `folder` | `string` | Root directory to serve ASP files from |
+| `program` | `string` | Path to an `.asp` file (parent used as served root if `folder` unset) |
+| `port` | `number` | HTTP server port (default `9090`) |
+| `defaultDocument` | `string` | Default file served for root path (default `"index.asp"`) |
+
+Example `.vscode/launch.json`:
+
+```json
+{
+    "type": "asperger",
+    "request": "launch",
+    "name": "Debug ASP file",
+    "folder": "${workspaceFolder}/asp_files",
+    "defaultDocument": "index.asp",
+    "port": 9090
+}
+```
+
 ## Demo
 
 The repository includes a self-evaluating test suite at `asp_files/index.asp` that exercises **all 29 tests** and displays a **Summary: 29/29 passed** at the bottom. Run the server and open the page to see:

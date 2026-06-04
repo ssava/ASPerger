@@ -33,14 +33,21 @@ The binary is at `target/debug/asperger-debug`.
 
 ### 2. Install the VS Code extension
 
-Copy the `extension/` folder contents into your VS Code extensions directory, or symlink it:
+First, symlink the debug adapter binary into the extension directory:
+
+```bash
+mkdir -p extension/bin
+ln -sf "$(pwd)/target/debug/asperger-debug" extension/bin/asperger-debug
+```
+
+Then symlink the extension folder into the VS Code extensions directory (must use `publisher.name` format):
 
 ```bash
 # Linux/macOS
-ln -s "$(pwd)/extension" ~/.vscode/extensions/asperger-debug
+ln -sf "$(pwd)/extension" ~/.vscode/extensions/ssava.asperger-debug
 ```
 
-Then reload VS Code.
+Then reload VS Code (`Ctrl+Shift+P` → "Developer: Reload Window").
 
 ### 3. Create a launch configuration
 
