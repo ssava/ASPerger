@@ -1866,7 +1866,12 @@ pub fn execute_blocks(
             } else {
                 block.line()
             };
-            debugger.check(&context.script_path, file_line, frame_depth)?;
+            debugger.check(
+                &context.script_path,
+                file_line,
+                frame_depth,
+                Some(context.scope.variables()),
+            )?;
         }
 
         match block {

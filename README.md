@@ -52,6 +52,13 @@ Full Debug Adapter Protocol (DAP) support — step through VBScript code in VS C
 
 See [`DEBUG.md`](DEBUG.md) for setup instructions.
 
+#### Known limitations
+
+- **Watch/hover**: Only simple variable name lookups and literals — compound expressions (`a + b`) not yet supported
+- No conditional breakpoints
+- Variables are read-only (cannot modify during debug)
+- Single-threaded (one request at a time)
+
 ## Quick start
 
 ```bash

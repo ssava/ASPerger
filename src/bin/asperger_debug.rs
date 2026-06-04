@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     supports_function_breakpoints: Some(false),
                     supports_conditional_breakpoints: Some(false),
                     supports_hit_conditional_breakpoints: Some(false),
-                    supports_evaluate_for_hovers: Some(false),
+                    supports_evaluate_for_hovers: Some(true),
                     supports_step_back: Some(false),
                     supports_set_variable: Some(false),
                     supports_restart_frame: Some(false),
@@ -394,7 +394,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .iter()
                             .map(|(k, v)| types::Variable {
                                 name: k.clone(),
-                                value: format!("{:?}", v),
+                                value: v.to_string(),
                                 type_field: Some(match v {
                                     asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
                                     asperger::vbscript::VBValue::String(_) => "String".to_string(),
@@ -424,10 +424,60 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 server.respond(rsp)?;
             }
 
-            Command::SetExceptionBreakpoints(_) => {
-                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(
-                    responses::SetExceptionBreakpointsResponse { breakpoints: None },
-                ));
+            Command::Evaluate(ref args) => {
+                let expression = args.expression.trim().to_string();
+                let frame_id = args.frame_id.unwrap_or(0);
+
+                let (result, type_field) = if let Some(ref state) = debugger_state {
+                    let s = state.lock().unwrap();
+                    let upper = expression.to_uppercase();
+
+                    // Look up the expression in the specified frame, then fall back to all frames
+                    let found = s.stack_frames.get(frame_id as usize)
+                        .and_then(|f| f.variables.get(&upper))
+                        .or_else(|| {
+                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(&upper))
+                        });
+
+                    match found {
+                        Some(v) => (v.to_string(), Some(match v {
+                            asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
+                            asperger::vbscript::VBValue::String(_) => "String".to_string(),
+                            asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
+                            asperger::vbscript::VBValue::Null => "Null".to_string(),
+                            asperger::vbscript::VBValue::Empty => "Empty".to_string(),
+                            asperger::vbscript::VBValue::Array(_) => "Array".to_string(),
+                            asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
+                        })),
+                        None => {
+                            // Try to interpret as a literal
+                            let trimmed = expression.trim();
+                            if trimmed.eq_ignore_ascii_case("true") {
+                                ("True".to_string(), Some("Boolean".to_string()))
+                            } else if trimmed.eq_ignore_ascii_case("false") {
+                                ("False".to_string(), Some("Boolean".to_string()))
+                            } else if trimmed.parse::<f64>().is_ok() {
+                                (trimmed.to_string(), Some("Double".to_string()))
+                            } else if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
+                                (trimmed[1..trimmed.len()-1].to_string(), Some("String".to_string()))
+                            } else {
+                                (format!("<error: '{}' not found>", expression), Some("Error".to_string()))
+                            }
+                        }
+                    }
+                } else {
+                    ("<error: no debugger state>".to_string(), Some("Error".to_string()))
+                };
+
+                let rsp = req.success(ResponseBody::Evaluate(responses::EvaluateResponse {
+                    result,
+                    type_field,
+                    presentation_hint: None,
+                    variables_reference: 0,
+                    named_variables: None,
+                    indexed_variables: None,
+                    memory_reference: None,
+                }));
                 server.respond(rsp)?;
             }
 

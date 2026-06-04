@@ -99,6 +99,7 @@ impl Debugger {
         file: &str,
         line: usize,
         frame_depth: usize,
+        vars: Option<&AHashMap<String, VBValue>>,
     ) -> Result<(), crate::vbscript::vbs_error::VBSError> {
         use crate::vbscript::vbs_error::VBSErrorType;
 
@@ -121,6 +122,22 @@ impl Debugger {
                 s.paused = true;
                 s.current_file = file.to_string();
                 s.current_line = line;
+
+                // Capture variables into the current frame
+                if let Some(vars) = vars {
+                    let cloned = vars.clone();
+                    if s.stack_frames.is_empty() {
+                        s.stack_frames.push(StackFrame {
+                            name: "Top Level".to_string(),
+                            file: file.to_string(),
+                            line,
+                            variables: cloned,
+                        });
+                    } else if let Some(top) = s.stack_frames.last_mut() {
+                        top.variables = cloned;
+                        top.line = line;
+                    }
+                }
             }
 
             let reason = match self.state.lock().unwrap().step_mode {
@@ -143,6 +160,7 @@ impl Debugger {
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::Continue;
                     s.paused = false;
+                    s.stack_frames.clear();
                 }
                 Ok(DebugCommand::Next) => {
                     let mut s = self.state.lock().unwrap();
@@ -151,18 +169,21 @@ impl Debugger {
                     s.current_file = file.to_string();
                     s.current_line = line;
                     s.paused = false;
+                    s.stack_frames.clear();
                 }
                 Ok(DebugCommand::StepIn) => {
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::StepIn;
                     s.step_frame_depth = frame_depth;
                     s.paused = false;
+                    s.stack_frames.clear();
                 }
                 Ok(DebugCommand::StepOut) => {
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::StepOut;
                     s.step_frame_depth = frame_depth;
                     s.paused = false;
+                    s.stack_frames.clear();
                 }
                 Ok(DebugCommand::Disconnect) => {
                     return Err(

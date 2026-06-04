@@ -124,7 +124,7 @@ Stack frames are pushed/popped in `execute_user_defined_function` (`src/vbscript
 
 ### Limitations
 
-- No expression evaluation (watch/hover) yet
+- **Watch/hover expressions**: Simple variable name lookup (case-insensitive) and literals (`42`, `"hello"`, `True`) are supported. Compound expressions like `a + b` are not evaluated — use separate watch entries per variable.
 - No conditional breakpoints
 - Variables are read-only (no set-variable support)
 - Single-threaded debugger (one thread ID)
