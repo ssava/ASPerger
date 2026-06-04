@@ -43,23 +43,20 @@ impl Preprocessor {
 
         for block in blocks {
             match block {
-                AspBlock::Directive(name, value) => {
-                    match name.to_uppercase().as_str() {
-                        "LANGUAGE" => config.language = value.clone(),
-                        "ENABLESESSIONSTATE" => {
-                            config.enable_session_state =
-                                value.eq_ignore_ascii_case("true")
-                        }
-                        "TRANSACTION" => config.transaction = Some(value.clone()),
-                        "CODEPAGE" => {
-                            config.code_page = value.parse().ok();
-                        }
-                        "LCID" => {
-                            config.lcid = value.parse().ok();
-                        }
-                        _ => {}
+                AspBlock::Directive(name, value) => match name.to_uppercase().as_str() {
+                    "LANGUAGE" => config.language = value.clone(),
+                    "ENABLESESSIONSTATE" => {
+                        config.enable_session_state = value.eq_ignore_ascii_case("true")
                     }
-                }
+                    "TRANSACTION" => config.transaction = Some(value.clone()),
+                    "CODEPAGE" => {
+                        config.code_page = value.parse().ok();
+                    }
+                    "LCID" => {
+                        config.lcid = value.parse().ok();
+                    }
+                    _ => {}
+                },
                 other => filtered.push(other),
             }
         }
@@ -77,7 +74,7 @@ mod tests {
     fn test_process_no_directives() {
         let blocks = vec![
             AspBlock::Html("<html>".to_string()),
-            AspBlock::Code("x = 1".to_string()),
+            AspBlock::Code("x = 1".to_string(), 0),
         ];
         let p = Preprocessor::new();
         let (config, filtered) = p.process(&blocks);
@@ -90,10 +87,7 @@ mod tests {
     fn test_process_directives() {
         let blocks = vec![
             AspBlock::Directive("LANGUAGE".to_string(), "VBScript".to_string()),
-            AspBlock::Directive(
-                "ENABLESESSIONSTATE".to_string(),
-                "False".to_string(),
-            ),
+            AspBlock::Directive("ENABLESESSIONSTATE".to_string(), "False".to_string()),
             AspBlock::Directive("CODEPAGE".to_string(), "65001".to_string()),
             AspBlock::Html("content".to_string()),
         ];
@@ -113,10 +107,7 @@ mod tests {
     fn test_process_lcid_transaction() {
         let blocks = vec![
             AspBlock::Directive("LCID".to_string(), "1033".to_string()),
-            AspBlock::Directive(
-                "TRANSACTION".to_string(),
-                "Required".to_string(),
-            ),
+            AspBlock::Directive("TRANSACTION".to_string(), "Required".to_string()),
         ];
         let p = Preprocessor::new();
         let (config, _) = p.process(&blocks);
@@ -126,9 +117,10 @@ mod tests {
 
     #[test]
     fn test_process_unknown_directive_ignored() {
-        let blocks = vec![
-            AspBlock::Directive("UNKNOWN".to_string(), "value".to_string()),
-        ];
+        let blocks = vec![AspBlock::Directive(
+            "UNKNOWN".to_string(),
+            "value".to_string(),
+        )];
         let p = Preprocessor::new();
         let (config, filtered) = p.process(&blocks);
         assert!(filtered.is_empty());

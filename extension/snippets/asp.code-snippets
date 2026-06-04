@@ -1,0 +1,369 @@
+{
+    "ASP Block": {
+        "prefix": "asp",
+        "body": "<%${1: code}%>",
+        "description": "ASP code block"
+    },
+    "ASP Expression": {
+        "prefix": "aspe",
+        "body": "<%= ${1:expression} %>",
+        "description": "ASP output expression"
+    },
+    "Response.Write": {
+        "prefix": "w",
+        "body": "Response.Write(${1:value})",
+        "description": "Response.Write"
+    },
+    "If End If": {
+        "prefix": "if",
+        "body": [
+            "If ${1:condition} Then",
+            "\t${2:code}",
+            "End If"
+        ],
+        "description": "If...End If block"
+    },
+    "If Else End If": {
+        "prefix": "ife",
+        "body": [
+            "If ${1:condition} Then",
+            "\t${2:code}",
+            "Else",
+            "\t${3:code}",
+            "End If"
+        ],
+        "description": "If...Else...End If block"
+    },
+    "If ElseIf": {
+        "prefix": "ifelseif",
+        "body": [
+            "If ${1:condition} Then",
+            "\t${2:code}",
+            "ElseIf ${3:condition} Then",
+            "\t${4:code}",
+            "Else",
+            "\t${5:code}",
+            "End If"
+        ],
+        "description": "If...ElseIf...Else...End If block"
+    },
+    "For Loop": {
+        "prefix": "for",
+        "body": [
+            "For ${1:i} = ${2:1} To ${3:N}",
+            "\t${4:code}",
+            "Next"
+        ],
+        "description": "For...Next loop"
+    },
+    "For Each Loop": {
+        "prefix": "foreach",
+        "body": [
+            "For Each ${1:item} In ${2:collection}",
+            "\t${3:code}",
+            "Next"
+        ],
+        "description": "For Each...Next loop"
+    },
+    "For Step Loop": {
+        "prefix": "forstep",
+        "body": [
+            "For ${1:i} = ${2:1} To ${3:N} Step ${4:1}",
+            "\t${5:code}",
+            "Next"
+        ],
+        "description": "For...Step...Next loop"
+    },
+    "Do While Loop": {
+        "prefix": "dowhile",
+        "body": [
+            "Do While ${1:condition}",
+            "\t${2:code}",
+            "Loop"
+        ],
+        "description": "Do While...Loop"
+    },
+    "Do Until Loop": {
+        "prefix": "dountil",
+        "body": [
+            "Do Until ${1:condition}",
+            "\t${2:code}",
+            "Loop"
+        ],
+        "description": "Do Until...Loop"
+    },
+    "Do Loop While": {
+        "prefix": "doloopwhile",
+        "body": [
+            "Do",
+            "\t${1:code}",
+            "Loop While ${2:condition}"
+        ],
+        "description": "Do...Loop While"
+    },
+    "Do Loop Until": {
+        "prefix": "doloopuntil",
+        "body": [
+            "Do",
+            "\t${1:code}",
+            "Loop Until ${2:condition}"
+        ],
+        "description": "Do...Loop Until"
+    },
+    "While Wend": {
+        "prefix": "while",
+        "body": [
+            "While ${1:condition}",
+            "\t${2:code}",
+            "Wend"
+        ],
+        "description": "While...Wend loop"
+    },
+    "Select Case": {
+        "prefix": "select",
+        "body": [
+            "Select Case ${1:expression}",
+            "\tCase ${2:value}",
+            "\t\t${3:code}",
+            "\tCase Else",
+            "\t\t${4:code}",
+            "End Select"
+        ],
+        "description": "Select Case block"
+    },
+    "Function": {
+        "prefix": "function",
+        "body": [
+            "Function ${1:name}(${2:args})",
+            "\t${3:code}",
+            "End Function"
+        ],
+        "description": "Function definition"
+    },
+    "Function with return": {
+        "prefix": "funcret",
+        "body": [
+            "Function ${1:name}(${2:args})",
+            "\tDim ${3:result}",
+            "\t${4:code}",
+            "\t${1:name} = ${3:result}",
+            "End Function"
+        ],
+        "description": "Function with return value"
+    },
+    "Sub": {
+        "prefix": "sub",
+        "body": [
+            "Sub ${1:name}(${2:args})",
+            "\t${3:code}",
+            "End Sub"
+        ],
+        "description": "Sub definition"
+    },
+    "Class": {
+        "prefix": "class",
+        "body": [
+            "Class ${1:name}",
+            "\tPrivate m_${2:field}",
+            "",
+            "\tPublic Property Get ${3:Property}()",
+            "\t\t${3:Property} = m_${2:field}",
+            "\tEnd Property",
+            "",
+            "\tPublic Property Let ${3:Property}(${4:value})",
+            "\t\tm_${2:field} = ${4:value}",
+            "\tEnd Property",
+            "",
+            "\tPrivate Sub Class_Initialize()",
+            "\t\t${5:code}",
+            "\tEnd Sub",
+            "",
+            "\tPrivate Sub Class_Terminate()",
+            "\t\t${6:code}",
+            "\tEnd Sub",
+            "End Class"
+        ],
+        "description": "Class definition"
+    },
+    "Property Get": {
+        "prefix": "propget",
+        "body": [
+            "Public Property Get ${1:name}()",
+            "\t${1:name} = m_${2:value}",
+            "End Property"
+        ],
+        "description": "Property Get"
+    },
+    "Property Let": {
+        "prefix": "proplet",
+        "body": [
+            "Public Property Let ${1:name}(${2:value})",
+            "\tm_${3:field} = ${2:value}",
+            "End Property"
+        ],
+        "description": "Property Let"
+    },
+    "With block": {
+        "prefix": "with",
+        "body": [
+            "With ${1:object}",
+            "\t.${2:property} = ${3:value}",
+            "End With"
+        ],
+        "description": "With...End With"
+    },
+    "Server.CreateObject": {
+        "prefix": "create",
+        "body": "Set ${1:obj} = Server.CreateObject(\"${2:ProgID}\")",
+        "description": "Server.CreateObject"
+    },
+    "Response.Redirect": {
+        "prefix": "redirect",
+        "body": "Response.Redirect(\"${1:url}\")",
+        "description": "Response.Redirect"
+    },
+    "Request.Form": {
+        "prefix": "form",
+        "body": "Request.Form(\"${1:name}\")",
+        "description": "Request.Form"
+    },
+    "Request.QueryString": {
+        "prefix": "qs",
+        "body": "Request.QueryString(\"${1:name}\")",
+        "description": "Request.QueryString"
+    },
+    "Request.ServerVariables": {
+        "prefix": "sv",
+        "body": "Request.ServerVariables(\"${1:name}\")",
+        "description": "Request.ServerVariables"
+    },
+    "Session variable": {
+        "prefix": "session",
+        "body": "Session(\"${1:name}\") = ${2:value}",
+        "description": "Session variable"
+    },
+    "Application variable": {
+        "prefix": "app",
+        "body": "Application(\"${1:name}\") = ${2:value}",
+        "description": "Application variable"
+    },
+    "Application.Lock/Unlock": {
+        "prefix": "applock",
+        "body": [
+            "Application.Lock",
+            "Application(\"${1:name}\") = ${2:value}",
+            "Application.Unlock"
+        ],
+        "description": "Application.Lock...Unlock"
+    },
+    "ADODB Connection": {
+        "prefix": "conn",
+        "body": [
+            "Dim conn${1:Connection}",
+            "Set conn${1:Connection} = Server.CreateObject(\"ADODB.Connection\")",
+            "conn${1:Connection}.Open \"${2:connection_string}\"",
+            "${3:code}",
+            "conn${1:Connection}.Close",
+            "Set conn${1:Connection} = Nothing"
+        ],
+        "description": "ADODB.Connection template"
+    },
+    "ADODB Recordset": {
+        "prefix": "rs",
+        "body": [
+            "Dim rs${1:Recordset}",
+            "Set rs${1:Recordset} = Server.CreateObject(\"ADODB.Recordset\")",
+            "rs${1:Recordset}.Open \"${2:sql}\", conn${3:Connection}",
+            "",
+            "Do While Not rs${1:Recordset}.EOF",
+            "\t${4:code}",
+            "\trs${1:Recordset}.MoveNext",
+            "Loop",
+            "",
+            "rs${1:Recordset}.Close",
+            "Set rs${1:Recordset} = Nothing"
+        ],
+        "description": "ADODB.Recordset template"
+    },
+    "On Error Resume Next": {
+        "prefix": "oern",
+        "body": "On Error Resume Next",
+        "description": "On Error Resume Next"
+    },
+    "On Error Goto 0": {
+        "prefix": "oeg0",
+        "body": "On Error Goto 0",
+        "description": "On Error Goto 0"
+    },
+    "Error handling block": {
+        "prefix": "onerror",
+        "body": [
+            "On Error Resume Next",
+            "${1:code}",
+            "If Err.Number <> 0 Then",
+            "\tResponse.Write(\"Error \" & Err.Number & \": \" & Err.Description)",
+            "\tErr.Clear",
+            "End If",
+            "On Error Goto 0"
+        ],
+        "description": "On Error handling block"
+    },
+    "Dim multiple variables": {
+        "prefix": "dim",
+        "body": "Dim ${1:var1}, ${2:var2}, ${3:var3}",
+        "description": "Dim multiple variables"
+    },
+    "ReDim array": {
+        "prefix": "redim",
+        "body": "ReDim ${1:arr}(${2:size})",
+        "description": "ReDim array"
+    },
+    "ReDim Preserve": {
+        "prefix": "redimp",
+        "body": "ReDim Preserve ${1:arr}(${2:size})",
+        "description": "ReDim Preserve array"
+    },
+    "Include file": {
+        "prefix": "include",
+        "body": "<!--#include file=\"${1:file.asp}\" -->",
+        "description": "Server-side include (file)"
+    },
+    "Include virtual": {
+        "prefix": "includev",
+        "body": "<!--#include virtual=\"${1:/path/file.asp}\" -->",
+        "description": "Server-side include (virtual)"
+    },
+    "Array literal": {
+        "prefix": "array",
+        "body": "Array(${1:value1}, ${2:value2})",
+        "description": "Array function"
+    },
+    "Dictionary Create": {
+        "prefix": "dict",
+        "body": [
+            "Dim ${1:dict}",
+            "Set ${1:dict} = Server.CreateObject(\"Scripting.Dictionary\")",
+            "${1:dict}.Add \"${2:key}\", \"${3:value}\""
+        ],
+        "description": "Scripting.Dictionary"
+    },
+    "FileSystemObject": {
+        "prefix": "fso",
+        "body": [
+            "Dim ${1:fso}",
+            "Set ${1:fso} = Server.CreateObject(\"Scripting.FileSystemObject\")"
+        ],
+        "description": "Scripting.FileSystemObject"
+    },
+    "RegExp": {
+        "prefix": "regex",
+        "body": [
+            "Dim ${1:re}",
+            "Set ${1:re} = New RegExp",
+            "${1:re}.Pattern = \"${2:pattern}\"",
+            "${1:re}.IgnoreCase = ${3:True}",
+            "${1:re}.Global = ${4:True}"
+        ],
+        "description": "RegExp object"
+    }
+}

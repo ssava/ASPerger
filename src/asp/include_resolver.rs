@@ -20,11 +20,7 @@ pub struct IncludeResolver;
 impl IncludeResolver {
     /// Expand all includes in `source`, resolving paths relative to `base_dir`
     /// and `root_dir`. Returns the fully expanded source text or an error.
-    pub fn expand(
-        source: &str,
-        base_dir: &Path,
-        root_dir: &Path,
-    ) -> Result<String, String> {
+    pub fn expand(source: &str, base_dir: &Path, root_dir: &Path) -> Result<String, String> {
         let mut path_stack = Vec::new();
         Self::expand_recursive(source, base_dir, root_dir, &mut path_stack, 0)
     }
@@ -61,9 +57,9 @@ impl IncludeResolver {
                 root_dir.join(trimmed)
             };
 
-            let canonical = resolved.canonicalize().map_err(|e| {
-                format!("Include file not found '{}': {}", resolved.display(), e)
-            })?;
+            let canonical = resolved
+                .canonicalize()
+                .map_err(|e| format!("Include file not found '{}': {}", resolved.display(), e))?;
 
             if path_stack.contains(&canonical) {
                 return Err(format!(
@@ -72,13 +68,8 @@ impl IncludeResolver {
                 ));
             }
 
-            let included = std::fs::read_to_string(&canonical).map_err(|e| {
-                format!(
-                    "Could not read include '{}': {}",
-                    canonical.display(),
-                    e
-                )
-            })?;
+            let included = std::fs::read_to_string(&canonical)
+                .map_err(|e| format!("Could not read include '{}': {}", canonical.display(), e))?;
 
             path_stack.push(canonical.clone());
             let expanded = Self::expand_recursive(
@@ -120,8 +111,7 @@ mod tests {
         fs::write(&inc_path, "<h1>Header</h1>").unwrap();
 
         let source = "before<!-- #include file=\"header.inc\" -->after";
-        let result =
-            IncludeResolver::expand(source, &dir, &dir).unwrap();
+        let result = IncludeResolver::expand(source, &dir, &dir).unwrap();
 
         assert_eq!(result, "before<h1>Header</h1>after");
         fs::remove_dir_all(&dir).ok();
@@ -135,7 +125,8 @@ mod tests {
         fs::write(dir.join("b.inc"), "B<!-- #include file=\"c.inc\" -->B").unwrap();
         fs::write(dir.join("c.inc"), "C").unwrap();
 
-        let result = IncludeResolver::expand("X<!-- #include file=\"a.inc\" -->X", &dir, &dir).unwrap();
+        let result =
+            IncludeResolver::expand("X<!-- #include file=\"a.inc\" -->X", &dir, &dir).unwrap();
         assert_eq!(result, "XABCBAX");
         fs::remove_dir_all(&dir).ok();
     }
@@ -171,11 +162,7 @@ mod tests {
         let dir = std::env::temp_dir().join("include_test_missing");
         let _ = fs::create_dir_all(&dir);
 
-        let result = IncludeResolver::expand(
-            "<!-- #include file=\"nope.inc\" -->",
-            &dir,
-            &dir,
-        );
+        let result = IncludeResolver::expand("<!-- #include file=\"nope.inc\" -->", &dir, &dir);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
         fs::remove_dir_all(&dir).ok();

@@ -99,26 +99,31 @@ pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError>
         n if n.eq_ignore_ascii_case("FORMATPERCENT") => builtin_formatpercent(&args),
         n if n.eq_ignore_ascii_case("LSET") => builtin_lset(&args),
         n if n.eq_ignore_ascii_case("RSET") => builtin_rset(&args),
-        _ => Err(VBSErrorType::NotImplementedError.into_error(
-            format!("Function '{}' is not implemented", name)
-        )),
+        _ => Err(VBSErrorType::NotImplementedError
+            .into_error(format!("Function '{}' is not implemented", name))),
     }
 }
 
 fn expect_arg_count(args: &[VBValue], expected: usize, name: &str) -> Result<(), VBSError> {
     if args.len() != expected {
-        return Err(VBSErrorType::ValueError.into_error(
-            format!("{} requires {} argument(s), got {}", name, expected, args.len())
-        ));
+        return Err(VBSErrorType::ValueError.into_error(format!(
+            "{} requires {} argument(s), got {}",
+            name,
+            expected,
+            args.len()
+        )));
     }
     Ok(())
 }
 
 fn expect_min_args(args: &[VBValue], min: usize, name: &str) -> Result<(), VBSError> {
     if args.len() < min {
-        return Err(VBSErrorType::ValueError.into_error(
-            format!("{} requires at least {} argument(s), got {}", name, min, args.len())
-        ));
+        return Err(VBSErrorType::ValueError.into_error(format!(
+            "{} requires at least {} argument(s), got {}",
+            name,
+            min,
+            args.len()
+        )));
     }
     Ok(())
 }
@@ -131,13 +136,16 @@ fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CreateObject")?;
     let prog_id = value_utils::to_arg_string(&args[0]);
     match prog_id.to_uppercase().as_str() {
-        "ADODB.CONNECTION" => Ok(VBValue::Object(Box::new(crate::vbscript::adodb::Connection::new()))),
+        "ADODB.CONNECTION" => Ok(VBValue::Object(Box::new(
+            crate::vbscript::adodb::Connection::new(),
+        ))),
         "SCRIPTING.DICTIONARY" => Ok(VBValue::Object(Box::new(Dictionary::new()))),
         "SCRIPTING.FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(FileSystemObject::new()))),
-        "VBSCRIPT.REGEXP" => Ok(VBValue::Object(Box::new(crate::vbscript::regexp::RegExpObject::new()))),
-        _ => Err(VBSErrorType::NotImplementedError.into_error(
-            format!("CreateObject('{}') is not implemented", prog_id)
-        )),
+        "VBSCRIPT.REGEXP" => Ok(VBValue::Object(Box::new(
+            crate::vbscript::regexp::RegExpObject::new(),
+        ))),
+        _ => Err(VBSErrorType::NotImplementedError
+            .into_error(format!("CreateObject('{}') is not implemented", prog_id))),
     }
 }
 
@@ -249,13 +257,22 @@ fn builtin_isempty(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_instr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     // InStr([start, ]string1, string2)
     let (start, s1, s2) = if args.len() == 3 {
-        (value_utils::to_arg_f64(&args[0]) as usize, value_utils::to_arg_string(&args[1]), value_utils::to_arg_string(&args[2]))
+        (
+            value_utils::to_arg_f64(&args[0]) as usize,
+            value_utils::to_arg_string(&args[1]),
+            value_utils::to_arg_string(&args[2]),
+        )
     } else if args.len() == 2 {
-        (1usize, value_utils::to_arg_string(&args[0]), value_utils::to_arg_string(&args[1]))
+        (
+            1usize,
+            value_utils::to_arg_string(&args[0]),
+            value_utils::to_arg_string(&args[1]),
+        )
     } else {
-        return Err(VBSErrorType::ValueError.into_error(
-            format!("InStr requires 2 or 3 arguments, got {}", args.len())
-        ));
+        return Err(VBSErrorType::ValueError.into_error(format!(
+            "InStr requires 2 or 3 arguments, got {}",
+            args.len()
+        )));
     };
 
     if start < 1 || start > s1.len() {
@@ -304,7 +321,10 @@ fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
             }
             result
         };
-        split_result.into_iter().map(|p| VBValue::String(p.to_string())).collect()
+        split_result
+            .into_iter()
+            .map(|p| VBValue::String(p.to_string()))
+            .collect()
     };
     Ok(VBValue::Array(std::sync::Arc::new(parts)))
 }
@@ -318,9 +338,10 @@ fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
     };
     let arr = match &args[0] {
         VBValue::Array(a) => a,
-        _ => return Err(VBSErrorType::ValueError.into_error(
-            "Join requires an array as first argument".to_string()
-        )),
+        _ => {
+            return Err(VBSErrorType::ValueError
+                .into_error("Join requires an array as first argument".to_string()))
+        }
     };
     let strings: Vec<String> = arr.iter().map(|v| value_utils::to_arg_string(v)).collect();
     Ok(VBValue::String(strings.join(&delimiter)))
@@ -380,9 +401,9 @@ fn builtin_asc(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Asc")?;
     let s = value_utils::to_arg_string(&args[0]);
     if s.is_empty() {
-        return Err(VBSErrorType::ValueError.into_error(
-            "Asc requires a non-empty string".to_string()
-        ));
+        return Err(
+            VBSErrorType::ValueError.into_error("Asc requires a non-empty string".to_string())
+        );
     }
     let code = s.chars().next().unwrap() as u32;
     Ok(VBValue::Number(code as f64))
@@ -393,9 +414,9 @@ fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let code = value_utils::to_arg_f64(&args[0]) as u32;
     match char::from_u32(code) {
         Some(c) => Ok(VBValue::String(c.to_string())),
-        None => Err(VBSErrorType::ValueError.into_error(
-            format!("Invalid character code: {}", code)
-        )),
+        None => {
+            Err(VBSErrorType::ValueError.into_error(format!("Invalid character code: {}", code)))
+        }
     }
 }
 
@@ -493,7 +514,10 @@ pub(crate) fn ole_auto_to_datetime(serial: f64) -> Option<chrono::NaiveDateTime>
 
 fn datetime_to_ole_auto(dt: chrono::NaiveDateTime) -> f64 {
     let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap();
-    let epoch_dt = chrono::NaiveDateTime::new(epoch, chrono::NaiveTime::from_num_seconds_from_midnight_opt(0, 0).unwrap());
+    let epoch_dt = chrono::NaiveDateTime::new(
+        epoch,
+        chrono::NaiveTime::from_num_seconds_from_midnight_opt(0, 0).unwrap(),
+    );
     let days = dt.signed_duration_since(epoch_dt).num_days() as f64;
     let seconds = dt.num_seconds_from_midnight() as f64;
     days + seconds / 86400.0
@@ -523,8 +547,7 @@ fn add_months(dt: chrono::NaiveDateTime, months: i32) -> chrono::NaiveDateTime {
     let new_month = (total_months.rem_euclid(12) + 1) as u32;
     let max_day = days_in_month(new_year, new_month);
     let new_day = dt.day().min(max_day);
-    let date =
-        chrono::NaiveDate::from_ymd_opt(new_year, new_month, new_day).expect("valid date");
+    let date = chrono::NaiveDate::from_ymd_opt(new_year, new_month, new_day).expect("valid date");
     chrono::NaiveDateTime::new(date, dt.time())
 }
 
@@ -676,13 +699,17 @@ fn builtin_weekdayname(args: &[VBValue]) -> Result<VBValue, VBSError> {
         1
     };
     if weekday < 1 || weekday > 7 {
-        return Err(
-            VBSErrorType::ValueError.into_error("Invalid weekday".to_string())
-        );
+        return Err(VBSErrorType::ValueError.into_error("Invalid weekday".to_string()));
     }
     let idx = ((weekday - 1) + (firstday - 1)) % 7;
     let names = [
-        "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
     ];
     let short = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     if abbreviate {
@@ -701,13 +728,21 @@ fn builtin_monthname(args: &[VBValue]) -> Result<VBValue, VBSError> {
         false
     };
     if month < 1 || month > 12 {
-        return Err(
-            VBSErrorType::ValueError.into_error("Invalid month".to_string())
-        );
+        return Err(VBSErrorType::ValueError.into_error("Invalid month".to_string()));
     }
     let names = [
-        "January", "February", "March", "April", "May", "June", "July", "August", "September",
-        "October", "November", "December",
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
     ];
     let short = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -756,10 +791,9 @@ fn builtin_dateadd(args: &[VBValue]) -> Result<VBValue, VBSError> {
                 .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Date overflow".to_string()))?
         }
         _ => {
-            return Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Invalid interval '{}'",
-                interval
-            )))
+            return Err(
+                VBSErrorType::RuntimeError.into_error(format!("Invalid interval '{}'", interval))
+            )
         }
     };
     Ok(VBValue::Number(datetime_to_ole_auto(result)))
@@ -780,9 +814,7 @@ fn builtin_datediff(args: &[VBValue]) -> Result<VBValue, VBSError> {
             ((dt2.year() - dt1.year()) * 12 + (dt2.month() as i32 - dt1.month() as i32)) as f64
                 / 3.0
         }
-        "m" => {
-            ((dt2.year() - dt1.year()) * 12 + dt2.month() as i32 - dt1.month() as i32) as f64
-        }
+        "m" => ((dt2.year() - dt1.year()) * 12 + dt2.month() as i32 - dt1.month() as i32) as f64,
         "y" | "d" => {
             let dur = dt2.signed_duration_since(dt1);
             dur.num_days() as f64
@@ -832,10 +864,9 @@ fn builtin_datediff(args: &[VBValue]) -> Result<VBValue, VBSError> {
             dur.num_seconds() as f64
         }
         _ => {
-            return Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Invalid interval '{}'",
-                interval
-            )))
+            return Err(
+                VBSErrorType::RuntimeError.into_error(format!("Invalid interval '{}'", interval))
+            )
         }
     };
     Ok(VBValue::Number(result))
@@ -860,8 +891,7 @@ fn builtin_datepart(args: &[VBValue]) -> Result<VBValue, VBSError> {
             } else {
                 1
             };
-            let jan1 =
-                chrono::NaiveDate::from_ymd_opt(dt.year(), 1, 1).unwrap();
+            let jan1 = chrono::NaiveDate::from_ymd_opt(dt.year(), 1, 1).unwrap();
             let jan1_wd = jan1.weekday().num_days_from_sunday() as i32;
             let day_of_year = dt.ordinal() as i32 - 1;
             let week = (day_of_year + jan1_wd) / 7 + 1;
@@ -871,10 +901,9 @@ fn builtin_datepart(args: &[VBValue]) -> Result<VBValue, VBSError> {
         "n" => dt.minute() as f64,
         "s" => dt.second() as f64,
         _ => {
-            return Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Invalid interval '{}'",
-                interval
-            )))
+            return Err(
+                VBSErrorType::RuntimeError.into_error(format!("Invalid interval '{}'", interval))
+            )
         }
     };
     Ok(VBValue::Number(result))
@@ -905,8 +934,7 @@ fn builtin_datevalue(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = value_utils::to_arg_string(&args[0]);
     let dt = try_parse_date(&s)
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date string".to_string()))?;
-    let date =
-        chrono::NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day()).unwrap();
+    let date = chrono::NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day()).unwrap();
     let result = datetime_to_ole_auto(chrono::NaiveDateTime::new(
         date,
         chrono::NaiveTime::from_num_seconds_from_midnight_opt(0, 0).unwrap(),
@@ -922,10 +950,8 @@ fn builtin_timeserial(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let total_seconds = hour * 3600 + minute * 60 + second;
     let s = ((total_seconds % 86400) + 86400) % 86400;
     let time = chrono::NaiveTime::from_num_seconds_from_midnight_opt(s as u32, 0).unwrap();
-    let dt = chrono::NaiveDateTime::new(
-        chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap(),
-        time,
-    );
+    let dt =
+        chrono::NaiveDateTime::new(chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap(), time);
     Ok(VBValue::Number(datetime_to_ole_auto(dt)))
 }
 
@@ -948,10 +974,8 @@ fn builtin_timevalue(args: &[VBValue]) -> Result<VBValue, VBSError> {
                 .ok_or(std::io::Error::new(std::io::ErrorKind::Other, ""))
         })
         .map_err(|_| VBSErrorType::RuntimeError.into_error("Invalid time string".to_string()))?;
-    let dt = chrono::NaiveDateTime::new(
-        chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap(),
-        time,
-    );
+    let dt =
+        chrono::NaiveDateTime::new(chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap(), time);
     Ok(VBValue::Number(datetime_to_ole_auto(dt)))
 }
 
@@ -973,30 +997,16 @@ fn builtin_formatdatetime(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let dt = ole_auto_to_datetime(n)
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     let s = match namedformat {
-        0 => format!(
-            "{} {}",
-            dt.format("%m/%d/%Y"),
-            dt.format("%H:%M:%S")
-        ),
+        0 => format!("{} {}", dt.format("%m/%d/%Y"), dt.format("%H:%M:%S")),
         1 => dt.format("%A, %B %-d, %Y").to_string(),
         2 => dt.format("%m/%d/%Y").to_string(),
         3 => {
             let h12 = dt.hour12().1;
             let ampm = if dt.hour() < 12 { "AM" } else { "PM" };
-            format!(
-                "{:02}:{:02}:{:02} {}",
-                h12,
-                dt.minute(),
-                dt.second(),
-                ampm
-            )
+            format!("{:02}:{:02}:{:02} {}", h12, dt.minute(), dt.second(), ampm)
         }
         4 => dt.format("%H:%M").to_string(),
-        _ => format!(
-            "{} {}",
-            dt.format("%m/%d/%Y"),
-            dt.format("%H:%M:%S")
-        ),
+        _ => format!("{} {}", dt.format("%m/%d/%Y"), dt.format("%H:%M:%S")),
     };
     Ok(VBValue::String(s))
 }
@@ -1084,9 +1094,8 @@ fn builtin_sqr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Sqr")?;
     let n = value_utils::to_arg_f64(&args[0]);
     if n < 0.0 {
-        return Err(VBSErrorType::RuntimeError.into_error(
-            "Cannot calculate square root of a negative number".to_string(),
-        ));
+        return Err(VBSErrorType::RuntimeError
+            .into_error("Cannot calculate square root of a negative number".to_string()));
     }
     Ok(VBValue::Number(n.sqrt()))
 }
@@ -1098,15 +1107,11 @@ fn builtin_ubound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let arr = match &args[0] {
         VBValue::Array(a) => a,
         _ => {
-            return Err(
-                VBSErrorType::ValueError.into_error("UBound requires an array".to_string())
-            )
+            return Err(VBSErrorType::ValueError.into_error("UBound requires an array".to_string()))
         }
     };
     if arr.is_empty() {
-        return Err(
-            VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
-        );
+        return Err(VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string()));
     }
     if args.len() >= 2 {
         let _dim = value_utils::to_arg_f64(&args[1]) as usize;
@@ -1119,15 +1124,13 @@ fn builtin_lbound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     match &args[0] {
         VBValue::Array(a) => {
             if a.is_empty() {
-                return Err(VBSErrorType::RuntimeError.into_error(
-                    "Subscript out of range".to_string(),
-                ));
+                return Err(
+                    VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
+                );
             }
         }
         _ => {
-            return Err(
-                VBSErrorType::ValueError.into_error("LBound requires an array".to_string())
-            )
+            return Err(VBSErrorType::ValueError.into_error("LBound requires an array".to_string()))
         }
     };
     Ok(VBValue::Number(0.0))
@@ -1138,9 +1141,7 @@ fn builtin_filter(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let arr = match &args[0] {
         VBValue::Array(a) => a,
         _ => {
-            return Err(
-                VBSErrorType::ValueError.into_error("Filter requires an array".to_string())
-            )
+            return Err(VBSErrorType::ValueError.into_error("Filter requires an array".to_string()))
         }
     };
     let match_str = value_utils::to_arg_string(&args[1]);
@@ -1159,8 +1160,7 @@ fn builtin_filter(args: &[VBValue]) -> Result<VBValue, VBSError> {
         .filter(|v| {
             let s = value_utils::to_arg_string(v);
             let found = if compare == 1 {
-                s.to_lowercase()
-                    .contains(&match_str.to_lowercase())
+                s.to_lowercase().contains(&match_str.to_lowercase())
             } else {
                 s.contains(&match_str)
             };
@@ -1186,9 +1186,7 @@ fn builtin_cbyte(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CByte")?;
     let n = value_utils::to_arg_f64(&args[0]).round();
     if n < 0.0 || n > 255.0 {
-        return Err(
-            VBSErrorType::RuntimeError.into_error("Overflow".to_string())
-        );
+        return Err(VBSErrorType::RuntimeError.into_error("Overflow".to_string()));
     }
     Ok(VBValue::Number(n))
 }
@@ -1340,9 +1338,8 @@ fn builtin_strcomp(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_formatnumber(args: &[VBValue]) -> Result<VBValue, VBSError> {
     if args.is_empty() {
-        return Err(VBSErrorType::ValueError.into_error(
-            "FormatNumber requires at least 1 argument".to_string()
-        ));
+        return Err(VBSErrorType::ValueError
+            .into_error("FormatNumber requires at least 1 argument".to_string()));
     }
     let num = value_utils::to_arg_f64(&args[0]);
     let numdigits = if args.len() >= 2 {
@@ -1371,9 +1368,8 @@ fn builtin_formatnumber(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_formatcurrency(args: &[VBValue]) -> Result<VBValue, VBSError> {
     if args.is_empty() {
-        return Err(VBSErrorType::ValueError.into_error(
-            "FormatCurrency requires at least 1 argument".to_string()
-        ));
+        return Err(VBSErrorType::ValueError
+            .into_error("FormatCurrency requires at least 1 argument".to_string()));
     }
     let num = value_utils::to_arg_f64(&args[0]);
     let numdigits = if args.len() >= 2 {
@@ -1408,9 +1404,8 @@ fn builtin_formatcurrency(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_formatpercent(args: &[VBValue]) -> Result<VBValue, VBSError> {
     if args.is_empty() {
-        return Err(VBSErrorType::ValueError.into_error(
-            "FormatPercent requires at least 1 argument".to_string()
-        ));
+        return Err(VBSErrorType::ValueError
+            .into_error("FormatPercent requires at least 1 argument".to_string()));
     }
     let num = value_utils::to_arg_f64(&args[0]) * 100.0;
     let numdigits = if args.len() >= 2 {
@@ -1488,4 +1483,3 @@ fn format_number_internal(num: f64, numdigits: usize) -> String {
         format!("{}{}", sign, comma_int)
     }
 }
-

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 
 use super::block::UserDefinedFunction;
+use super::debugger::Debugger;
 use super::store::Store;
 use super::tokenizer::Token;
 use super::vbs_error::VBSError;
@@ -174,11 +175,16 @@ pub struct ExecutionContext {
     pub session: SessionContext,
     /// Shared session/application store (injected by the server).
     pub store: Option<Arc<Store>>,
-    /// Optional DAP debugger.
-    pub debugger: Option<super::debugger::Debugger>,
+    /// Path to the script being executed (for debugger file/breakpoint matching).
+    pub script_path: String,
+    /// Optional DAP debugger (shared across requests via Arc).
+    pub debugger: Option<Arc<Debugger>>,
     /// Callback for Server.Execute / Server.Transfer.
     pub execute_file_callback:
         Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
+    /// Physical ASP file line where the current VBScript code block starts.
+    /// Used to offset `block.line()` values to match VS Code breakpoints.
+    pub code_start_line: usize,
 }
 
 impl ExecutionContext {
@@ -201,8 +207,10 @@ impl ExecutionContext {
                 ..SessionContext::default()
             },
             store: None,
+            script_path: String::new(),
             debugger: None,
             execute_file_callback: None,
+            code_start_line: 0,
         }
     }
 

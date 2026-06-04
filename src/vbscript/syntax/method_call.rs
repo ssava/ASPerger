@@ -1,9 +1,9 @@
-use super::VBSyntax;
 use super::super::expr::{evaluate, Expr};
 use super::super::value::VBValue;
 use super::super::value_utils;
 use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
+use super::VBSyntax;
 
 pub struct MethodCall {
     object_name: String,
@@ -13,7 +13,11 @@ pub struct MethodCall {
 
 impl MethodCall {
     pub fn new(object_name: String, method_name: String, args: Vec<Expr>) -> Self {
-        MethodCall { object_name, method_name, args }
+        MethodCall {
+            object_name,
+            method_name,
+            args,
+        }
     }
 }
 
@@ -58,9 +62,8 @@ fn try_property_indexed_access(
 
 impl VBSyntax for MethodCall {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        let args: Result<Vec<VBValue>, VBSError> = self.args.iter()
-            .map(|arg| evaluate(arg, context))
-            .collect();
+        let args: Result<Vec<VBValue>, VBSError> =
+            self.args.iter().map(|arg| evaluate(arg, context)).collect();
         let args = args?;
 
         // Handle Response methods that need context access
@@ -70,7 +73,9 @@ impl VBSyntax for MethodCall {
                     if !args.is_empty() {
                         let url = value_utils::to_arg_string(&args[0]);
                         context.response.status = "302 Found".to_string();
-                        context.response.extra_headers
+                        context
+                            .response
+                            .extra_headers
                             .push(("Location".to_string(), url.clone()));
                         context.response.redirect_url = url;
                         context.response.ended = true;
@@ -111,9 +116,8 @@ impl VBSyntax for MethodCall {
                         let callback = context.execute_file_callback.take();
                         if let Some(cb) = callback {
                             cb(&path, context).map_err(|e| {
-                                VBSErrorType::RuntimeError.into_error(format!(
-                                    "Server.Execute failed: {e}"
-                                ))
+                                VBSErrorType::RuntimeError
+                                    .into_error(format!("Server.Execute failed: {e}"))
                             })?;
                             context.execute_file_callback = Some(cb);
                         }
@@ -129,12 +133,9 @@ impl VBSyntax for MethodCall {
 
         // ASP pattern: obj.Property(args) — try property + indexed_get first
         if !args.is_empty() && self.object_name != "__with_obj__" {
-            if try_property_indexed_access(
-                &self.object_name,
-                &self.method_name,
-                &args,
-                context,
-            )?.is_some() {
+            if try_property_indexed_access(&self.object_name, &self.method_name, &args, context)?
+                .is_some()
+            {
                 return Ok(());
             }
         }
@@ -150,9 +151,8 @@ impl VBSyntax for MethodCall {
                 }
                 _ => {
                     context.scope.with_object = Some(obj_val);
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        "With object is not an object".to_string()
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error("With object is not an object".to_string()));
                 }
             }
             context.scope.with_object = Some(obj_val);
@@ -172,9 +172,8 @@ impl VBSyntax for MethodCall {
                 context.set_variable(&self.object_name.to_uppercase(), obj_val);
                 result.map(|_| ())
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Object variable '{}' is not set", self.object_name)
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Object variable '{}' is not set", self.object_name))),
         }
     }
 }

@@ -69,13 +69,13 @@ impl CodeHandler {
 }
 
 impl Handler for CodeHandler {
-    fn set_next(&mut self, next: Arc<dyn Handler + Send + Sync>){
+    fn set_next(&mut self, next: Arc<dyn Handler + Send + Sync>) {
         self.next = Some(next);
     }
 
     fn handle(&self, block: &AspBlock, context: &mut ExecutionContext) -> Result<(), ASPError> {
-        if let AspBlock::Code(code) = block {
-            // Execute the VBScript code using the interpreter.
+        if let AspBlock::Code(code, start_line) = block {
+            context.code_start_line = *start_line;
             self.interpreter
                 .execute(code, context)
                 .map_err(|e| ASPError::new(500, e.to_string()))

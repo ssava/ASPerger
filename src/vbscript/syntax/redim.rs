@@ -11,7 +11,11 @@ pub struct ReDim {
 
 impl ReDim {
     pub fn new(var_name: String, size_expr: Expr, preserve: bool) -> Self {
-        ReDim { var_name, size_expr, preserve }
+        ReDim {
+            var_name,
+            size_expr,
+            preserve,
+        }
     }
 }
 
@@ -27,14 +31,21 @@ impl VBSyntax for ReDim {
                     let mut items = vec![VBValue::Empty; new_len];
                     let copy_len = old_items.len().min(new_len);
                     items[..copy_len].clone_from_slice(&old_items[..copy_len]);
-                    context.set_variable(&self.var_name, VBValue::Array(std::sync::Arc::new(items)));
+                    context
+                        .set_variable(&self.var_name, VBValue::Array(std::sync::Arc::new(items)));
                 }
                 _ => {
-                    context.set_variable(&self.var_name, VBValue::Array(std::sync::Arc::new(vec![VBValue::Empty; new_len])));
+                    context.set_variable(
+                        &self.var_name,
+                        VBValue::Array(std::sync::Arc::new(vec![VBValue::Empty; new_len])),
+                    );
                 }
             }
         } else {
-            context.set_variable(&self.var_name, VBValue::Array(std::sync::Arc::new(vec![VBValue::Empty; new_len])));
+            context.set_variable(
+                &self.var_name,
+                VBValue::Array(std::sync::Arc::new(vec![VBValue::Empty; new_len])),
+            );
         }
 
         Ok(())

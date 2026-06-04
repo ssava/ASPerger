@@ -7,23 +7,23 @@ pub trait VBSyntax {
 }
 
 // Re-export all syntax constructs
-mod response_write;
-mod response_cookies_set;
-mod dim;
-mod assignment;
-mod method_call;
-mod redim;
 mod array_assignment;
-mod property_set;
+mod assignment;
+mod dim;
+mod method_call;
 mod on_error;
+mod property_set;
+mod redim;
+mod response_cookies_set;
+mod response_write;
 
-pub use response_write::ResponseWrite;
-pub use response_cookies_set::ResponseCookiesSet;
 use super::vbs_error::VBSError;
-pub use dim::Dim;
-pub use assignment::Assignment;
-pub use method_call::MethodCall;
-pub use redim::ReDim;
 pub use array_assignment::ArrayAssignment;
+pub use assignment::Assignment;
+pub use dim::Dim;
+pub use method_call::MethodCall;
+pub use on_error::{OnErrorGoto0, OnErrorResumeNext};
 pub use property_set::PropertySet;
-pub use on_error::{OnErrorResumeNext, OnErrorGoto0};
+pub use redim::ReDim;
+pub use response_cookies_set::ResponseCookiesSet;
+pub use response_write::ResponseWrite;

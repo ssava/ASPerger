@@ -1,8 +1,8 @@
 //! Core VBScript value type (`VBValue`) representing all script-level
 //! data: strings, numbers, booleans, null, empty, arrays, and objects.
 
-use std::sync::Arc;
 use super::vbobject::VBScriptObject;
+use std::sync::Arc;
 use std::{fmt, str::FromStr};
 
 #[derive(Debug)]
@@ -52,8 +52,12 @@ impl fmt::Display for VBValue {
             VBValue::String(s) => write!(f, "{}", s),
             VBValue::Number(n) => write!(f, "{}", n),
             VBValue::Boolean(b) => {
-                if *b { write!(f, "True") } else { write!(f, "False") }
-            },
+                if *b {
+                    write!(f, "True")
+                } else {
+                    write!(f, "False")
+                }
+            }
             VBValue::Null => write!(f, "null"),
             VBValue::Empty => write!(f, "Empty"),
             VBValue::Array(v) => write!(f, "Array({})", v.len()),

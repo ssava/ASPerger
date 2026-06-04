@@ -25,9 +25,7 @@ impl Store {
     }
 
     /// Lock and return a mutable guard to the session store.
-    pub fn lock_sessions(
-        &self,
-    ) -> MutexGuard<'_, AHashMap<String, AHashMap<String, VBValue>>> {
+    pub fn lock_sessions(&self) -> MutexGuard<'_, AHashMap<String, AHashMap<String, VBValue>>> {
         self.sessions.lock().unwrap()
     }
 

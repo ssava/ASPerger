@@ -7,26 +7,71 @@
         "vscode": "^1.60.0"
     },
     "categories": [
-        "Debuggers"
+        "Debuggers",
+        "Programming Languages"
     ],
     "activationEvents": [
-        "onDebug"
+        "onDebug",
+        "onLanguage:asp"
     ],
     "main": "./extension.js",
     "contributes": {
+        "languages": [
+            {
+                "id": "asp",
+                "configuration": "./language-configuration.json",
+                "aliases": ["ASP", "ASP Classic", "asp"],
+                "extensions": [".asp", ".asa"]
+            }
+        ],
+        "grammars": [
+            {
+                "language": "asp",
+                "scopeName": "text.html.asp",
+                "path": "./syntaxes/asp.html.tmLanguage.json",
+                "embeddedLanguages": {
+                    "text.html.asp": "asp",
+                    "text.html": "html",
+                    "source.asp": "vbscript"
+                }
+            }
+        ],
+        "breakpoints": [
+            { "language": "asp" }
+        ],
+        "snippets": [
+            {
+                "language": "asp",
+                "path": "./snippets/asp.code-snippets"
+            }
+        ],
         "debuggers": [
             {
                 "type": "asperger",
                 "label": "ASPerger Debugger",
-                "program": "./bin/asperger_debug",
-                "runtime": "",
+                "program": "./bin/asperger-debug",
                 "languages": ["asp"],
                 "configurationAttributes": {
                     "launch": {
+                        "required": [],
                         "properties": {
+                            "folder": {
+                                "type": "string",
+                                "description": "Root directory to serve ASP files from"
+                            },
                             "program": {
                                 "type": "string",
-                                "description": "Path to the .asp file to debug"
+                                "description": "Path to an .asp file; its parent directory is used as served root if 'folder' is not set"
+                            },
+                            "port": {
+                                "type": "number",
+                                "default": 9090,
+                                "description": "HTTP server port for the debug session"
+                            },
+                            "defaultDocument": {
+                                "type": "string",
+                                "default": "index.asp",
+                                "description": "Default file served when requesting the root path"
                             }
                         }
                     }
@@ -36,7 +81,7 @@
                         "type": "asperger",
                         "request": "launch",
                         "name": "Debug ASP file",
-                        "program": "${file}"
+                        "folder": "${workspaceFolder}/asp_files"
                     }
                 ]
             }

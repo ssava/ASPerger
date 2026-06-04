@@ -19,7 +19,11 @@ impl VBScriptObject for RequestObject {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "QUERYSTRING" => Ok(VBValue::Object(Box::new(RequestQueryString(
                 context.request.params.clone(),
@@ -34,20 +38,21 @@ impl VBScriptObject for RequestObject {
                 context.request.cookies.clone(),
             )))),
             "TOTALBYTES" => Ok(VBValue::Number(context.request.total_bytes as f64)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Request",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Request", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "BINARYREAD" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on Request",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Request", name))),
         }
     }
 }
@@ -64,7 +69,11 @@ impl VBScriptObject for RequestQueryString {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
             _ => Err(VBSErrorType::RuntimeError.into_error(format!(
@@ -73,12 +82,21 @@ impl VBScriptObject for RequestQueryString {
             ))),
         }
     }
-    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -93,21 +111,32 @@ impl VBScriptObject for RequestForm {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on RequestForm",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on RequestForm", name))),
         }
     }
-    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -122,21 +151,38 @@ impl VBScriptObject for RequestServerVariables {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
             _ => {
-                let val = self.0.get(&name.to_lowercase()).cloned().unwrap_or_default();
+                let val = self
+                    .0
+                    .get(&name.to_lowercase())
+                    .cloned()
+                    .unwrap_or_default();
                 Ok(VBValue::String(val))
             }
         }
     }
-    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key.to_lowercase()).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -151,7 +197,11 @@ impl VBScriptObject for RequestCookies {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
             _ => {
@@ -160,12 +210,21 @@ impl VBScriptObject for RequestCookies {
             }
         }
     }
-    fn indexed_get(&self, index: &VBValue, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -183,17 +242,19 @@ impl VBScriptObject for ResponseObject {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "BUFFER" => Ok(VBValue::Boolean(true)),
             "CONTENTTYPE" => Ok(VBValue::String("text/html".to_string())),
             "STATUS" => Ok(VBValue::String(context.response.status.clone())),
             "EXPIRES" => Ok(VBValue::Number(0.0)),
             "COOKIES" => Ok(VBValue::Object(Box::new(ResponseCookies::new()))),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Response",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Response", name))),
         }
     }
 
@@ -205,23 +266,27 @@ impl VBScriptObject for ResponseObject {
     ) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "CONTENTTYPE" => {
-                context
-                    .response.extra_headers
-                    .push(("Content-Type".to_string(), value_utils::to_arg_string(&value)));
+                context.response.extra_headers.push((
+                    "Content-Type".to_string(),
+                    value_utils::to_arg_string(&value),
+                ));
                 Ok(())
             }
             "STATUS" => {
                 context.response.status = value_utils::to_arg_string(&value);
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Response",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Response", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "WRITE" => {
                 if !args.is_empty() {
@@ -231,17 +296,13 @@ impl VBScriptObject for ResponseObject {
                 }
                 Ok(VBValue::Empty)
             }
-            "REDIRECT" => {
-                Ok(VBValue::Empty)
-            }
+            "REDIRECT" => Ok(VBValue::Empty),
             "END" => Ok(VBValue::Empty),
             "CLEAR" => Ok(VBValue::Empty),
             "FLUSH" => Ok(VBValue::Empty),
             "ADDHEADER" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on Response",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Response", name))),
         }
     }
 }
@@ -268,17 +329,31 @@ impl VBScriptObject for ResponseCookies {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let val = self.cookies.get(name).cloned().unwrap_or_default();
         Ok(VBValue::String(val))
     }
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         let name = value_utils::to_arg_string(index);
         let val = value_utils::to_arg_string(&value);
         self.cookies.insert(name, val);
         Ok(())
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -299,7 +374,11 @@ impl VBScriptObject for SessionObject {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         if !self.session_enabled {
             return Ok(VBValue::Empty);
         }
@@ -347,7 +426,12 @@ impl VBScriptObject for SessionObject {
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue], context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        _args: &[VBValue],
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         if !self.session_enabled {
             return Ok(VBValue::Empty);
         }
@@ -359,14 +443,16 @@ impl VBScriptObject for SessionObject {
                 }
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on Session",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Session", name))),
         }
     }
 
-    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         if !self.session_enabled {
             return Ok(VBValue::Empty);
         }
@@ -383,7 +469,12 @@ impl VBScriptObject for SessionObject {
         Ok(VBValue::Empty)
     }
 
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         if !self.session_enabled {
             return Ok(());
         }
@@ -417,7 +508,11 @@ impl VBScriptObject for SessionContents {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => {
                 if let Some(ref store) = context.store {
@@ -442,7 +537,12 @@ impl VBScriptObject for SessionContents {
             }
         }
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
 }
@@ -460,24 +560,30 @@ impl VBScriptObject for ServerObject {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "SCRIPTPATH" => Ok(VBValue::String("".to_string())),
             "SCRIPTTIMEOUT" => Ok(VBValue::Number(90.0)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Server",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Server", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CREATEOBJECT" => {
                 if args.is_empty() {
-                    return Err(VBSErrorType::ValueError.into_error(
-                        "Server.CreateObject requires 1 argument".to_string(),
-                    ));
+                    return Err(VBSErrorType::ValueError
+                        .into_error("Server.CreateObject requires 1 argument".to_string()));
                 }
                 let prog_id = value_utils::to_arg_string(&args[0]);
                 match prog_id.to_uppercase().as_str() {
@@ -490,9 +596,9 @@ impl VBScriptObject for ServerObject {
                     "VBSCRIPT.REGEXP" => Ok(VBValue::Object(Box::new(
                         super::regexp::RegExpObject::new(),
                     ))),
-                    "ADODB.CONNECTION" => Ok(VBValue::Object(Box::new(
-                        super::adodb::Connection::new(),
-                    ))),
+                    "ADODB.CONNECTION" => {
+                        Ok(VBValue::Object(Box::new(super::adodb::Connection::new())))
+                    }
                     _ => Err(VBSErrorType::NotImplementedError.into_error(format!(
                         "Server.CreateObject('{}') is not implemented",
                         prog_id
@@ -546,10 +652,8 @@ impl VBScriptObject for ServerObject {
                     .collect();
                 Ok(VBValue::String(encoded))
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on Server",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Server", name))),
         }
     }
 }
@@ -567,18 +671,25 @@ impl VBScriptObject for ApplicationObject {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "CONTENTS" => Ok(VBValue::Object(Box::new(ApplicationContents))),
             "STATICOBJECTS" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Application",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Application", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, _args: &[VBValue], context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        _args: &[VBValue],
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "LOCK" => {
                 if let Some(ref store) = context.store {
@@ -587,14 +698,16 @@ impl VBScriptObject for ApplicationObject {
                 Ok(VBValue::Empty)
             }
             "UNLOCK" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on Application",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Application", name))),
         }
     }
 
-    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
             let apps = store.lock_apps();
@@ -606,7 +719,12 @@ impl VBScriptObject for ApplicationObject {
         Ok(VBValue::Empty)
     }
 
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
             let mut apps = store.lock_apps();
@@ -626,7 +744,11 @@ impl VBScriptObject for ApplicationContents {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
-    fn get_property(&self, name: &str, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => {
                 if let Some(ref store) = context.store {
@@ -647,10 +769,19 @@ impl VBScriptObject for ApplicationContents {
             }
         }
     }
-    fn call_method(&mut self, _name: &str, _args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         Ok(VBValue::Empty)
     }
-    fn indexed_get(&self, index: &VBValue, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
             let apps = store.lock_apps();
@@ -661,7 +792,12 @@ impl VBScriptObject for ApplicationContents {
         }
         Ok(VBValue::Empty)
     }
-    fn indexed_set(&mut self, index: &VBValue, value: VBValue, context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
             let mut apps = store.lock_apps();

@@ -73,8 +73,7 @@ impl TextStream {
 
     fn check_closed(inner: &TextStreamInner) -> Result<(), VBSError> {
         if inner.closed {
-            return Err(VBSErrorType::RuntimeError
-                .into_error("TextStream is closed".to_string()));
+            return Err(VBSErrorType::RuntimeError.into_error("TextStream is closed".to_string()));
         }
         Ok(())
     }
@@ -97,13 +96,19 @@ impl TextStream {
 }
 
 impl VBScriptObject for TextStream {
-    fn type_name(&self) -> &'static str { "TextStream" }
+    fn type_name(&self) -> &'static str {
+        "TextStream"
+    }
 
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let inner = self.inner.lock().unwrap();
         Self::check_closed(&inner)?;
         match name.to_uppercase().as_str() {
@@ -111,13 +116,17 @@ impl VBScriptObject for TextStream {
             "ATENDOFLINE" => Ok(VBValue::Boolean(inner.at_end_of_line)),
             "LINE" => Ok(VBValue::Number(inner.line as f64)),
             "COLUMN" => Ok(VBValue::Number(inner.column as f64)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Property '{}' not found on TextStream", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on TextStream", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         let mut inner = self.inner.lock().unwrap();
         Self::check_closed(&inner)?;
 
@@ -273,12 +282,8 @@ impl VBScriptObject for TextStream {
                 inner.closed = true;
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Method '{}' not found on TextStream", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on TextStream", name))),
         }
     }
-
 }
-
-

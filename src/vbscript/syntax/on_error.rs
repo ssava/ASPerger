@@ -1,7 +1,7 @@
-use super::VBSyntax;
 use super::super::execution_context::ErrorMode;
 use super::super::vbs_error::VBSError;
 use super::super::ExecutionContext;
+use super::VBSyntax;
 
 pub struct OnErrorResumeNext;
 

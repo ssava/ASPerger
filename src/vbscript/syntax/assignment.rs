@@ -1,6 +1,6 @@
+use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
-use super::VBSyntax;
 
 pub struct Assignment {
     var_name: String,

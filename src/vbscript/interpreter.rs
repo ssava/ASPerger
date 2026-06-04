@@ -1,10 +1,10 @@
 use std::vec::Vec;
 
 use crate::vbscript::block;
-use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::vbobject::ErrObject;
-use crate::vbscript::{Token, TokenType, Tokenizer, VBValue};
+use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::ExecutionContext;
+use crate::vbscript::{Token, TokenType, Tokenizer, VBValue};
 
 /// Trait abstraction over VBScript execution, enabling alternate
 /// interpreter implementations (e.g. mocking in tests).

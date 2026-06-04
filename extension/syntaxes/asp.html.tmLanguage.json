@@ -1,0 +1,186 @@
+{
+    "name": "ASP Classic",
+    "scopeName": "text.html.asp",
+    "fileTypes": ["asp", "asa"],
+    "injections": {
+        "text.html.asp": {
+            "patterns": [
+                {
+                    "begin": "<%=?",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.section.embedded.begin.asp" }
+                    },
+                    "end": "%>",
+                    "endCaptures": {
+                        "0": { "name": "punctuation.section.embedded.end.asp" }
+                    },
+                    "contentName": "source.asp",
+                    "patterns": [
+                        { "include": "#sources_asp" }
+                    ]
+                }
+            ]
+        }
+    },
+    "patterns": [
+        { "include": "text.html.basic" }
+    ],
+    "repository": {
+        "sources_asp": {
+            "patterns": [
+                { "include": "#comments" },
+                { "include": "#strings" },
+                { "include": "#date_literals" },
+                { "include": "#numbers" },
+                { "include": "#constants" },
+                { "include": "#asp_objects" },
+                { "include": "#builtin_functions" },
+                { "include": "#statements" },
+                { "include": "#operators" },
+                { "include": "#keywords" },
+                { "include": "#identifiers" }
+            ]
+        },
+        "comments": {
+            "patterns": [
+                {
+                    "begin": "'",
+                    "beginCaptures": {
+                        "0": { "name": "punctuation.definition.comment.asp" }
+                    },
+                    "end": "$",
+                    "name": "comment.line.apostrophe.asp"
+                },
+                {
+                    "match": "(?i)\\bREM\\b.*$",
+                    "name": "comment.line.rem.asp"
+                }
+            ]
+        },
+        "strings": {
+            "name": "string.quoted.double.asp",
+            "begin": "\"",
+            "beginCaptures": {
+                "0": { "name": "punctuation.definition.string.begin.asp" }
+            },
+            "end": "\"",
+            "endCaptures": {
+                "0": { "name": "punctuation.definition.string.end.asp" }
+            },
+            "patterns": [
+                {
+                    "match": "\"\"",
+                    "name": "constant.character.escape.quote.asp"
+                }
+            ]
+        },
+        "date_literals": {
+            "match": "#[^#]*#",
+            "name": "constant.language.date.asp"
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "match": "(?i)\\b&H[0-9A-F]+\\b",
+                    "name": "constant.numeric.hex.asp"
+                },
+                {
+                    "match": "(?i)\\b&O[0-7]+\\b",
+                    "name": "constant.numeric.octal.asp"
+                },
+                {
+                    "match": "\\b(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?\\b",
+                    "name": "constant.numeric.asp"
+                }
+            ]
+        },
+        "constants": {
+            "patterns": [
+                {
+                    "match": "(?i)\\b(True|False|Nothing|Null|Empty)\\b",
+                    "name": "constant.language.asp"
+                },
+                {
+                    "match": "(?i)\\b(vbCrLf|vbCr|vbLf|vbNewLine|vbNullChar|vbNullString|vbTab|vbFormFeed|vbVerticalTab|vbObjectError|vbOKOnly|vbOKCancel|vbAbortRetryIgnore|vbYesNoCancel|vbYesNo|vbRetryCancel|vbCritical|vbQuestion|vbExclamation|vbInformation|vbOK|vbCancel|vbAbort|vbRetry|vbIgnore|vbYes|vbNo|vbBlack|vbRed|vbGreen|vbYellow|vbBlue|vbMagenta|vbCyan|vbWhite|vbBinaryCompare|vbTextCompare|vbSunday|vbMonday|vbTuesday|vbWednesday|vbThursday|vbFriday|vbSaturday|vbUseSystemDayOfWeek|vbFirstJan1|vbFirstFourDays|vbFirstFullWeek|vbGeneralDate|vbLongDate|vbShortDate|vbLongTime|vbShortTime|vbUpperCase|vbLowerCase|vbProperCase|vbWide|vbNarrow|vbKatakana|vbHiragana|vbSimplifiedChinese|vbTraditionalChinese|vbUnicode|vbFromUnicode|vbArray|vbByte|vbInteger|vbLong|vbSingle|vbDouble|vbCurrency|vbDate|vbString|vbObject|vbError|vbBoolean|vbVariant|vbDataObject|vbDecimal|vbEmpty|vbNull|vbInteger|vbLong|vbSingle|vbDouble)\\b",
+                    "name": "support.constant.asp"
+                }
+            ]
+        },
+        "asp_objects": {
+            "match": "(?i)\\b(Application|ASPError|Request|Response|Server|Session|ObjectContext)\\b",
+            "name": "support.class.asp"
+        },
+        "builtin_functions": {
+            "patterns": [
+                {
+                    "match": "(?i)(?<=\\.)\\s*(Write|WriteLine|Redirect|BinaryWrite|Clear|End|Flush|AddHeader|AppendToLog|BinaryRead|Cookies|Form|QueryString|ServerVariables|ClientCertificate|TotalBytes|CreateObject|Execute|Transfer|HTMLEncode|URLEncode|URLPathEncode|MapPath|GetLastError|ScriptTimeout|Contents|StaticObjects|Abandon|Lock|Unlock|Contents|StaticObjects|CreateObject)\\b",
+                    "name": "support.function.asp"
+                },
+                {
+                    "match": "(?i)\\b(Abs|Array|Asc|AscB|AscW|Atn|CBool|CByte|CCur|CDate|CDbl|Chr|ChrB|ChrW|CInt|CLng|CSng|CStr|CVErr|CreateObject|Date|DateAdd|DateDiff|DatePart|DateSerial|DateValue|Day|Eval|Execute|Exit|Exp|Filter|FormatCurrency|FormatDateTime|FormatNumber|FormatPercent|GetLocale|GetObject|GetRef|Hex|Hour|InputBox|InStr|InStrB|InStrRev|Int|Fix|IsArray|IsDate|IsEmpty|IsNull|IsNumeric|IsObject|Join|LBound|LCase|Left|LeftB|Len|LenB|LoadPicture|Log|LTrim|RTrim|Trim|Mid|MidB|Minute|Month|MonthName|MsgBox|Now|Oct|Replace|Right|RightB|Rnd|Round|ScriptEngine|ScriptEngineBuildVersion|ScriptEngineMajorVersion|ScriptEngineMinorVersion|Second|SetLocale|Sgn|Sin|Space|Split|Sqr|StrComp|StrReverse|String|Tan|Time|Timer|TimeSerial|TimeValue|TypeName|UBound|UCase|VarType|Weekday|WeekdayName|Year)\\b",
+                    "name": "support.function.asp"
+                }
+            ]
+        },
+        "statements": {
+            "patterns": [
+                {
+                    "match": "(?i)\\b(If|Then|Else|ElseIf|End If|EndIf)\\b",
+                    "name": "keyword.control.conditional.asp"
+                },
+                {
+                    "match": "(?i)\\b(For|Each|Next|To|Step|While|Wend|Do|Loop|Until|Exit For|Exit Do|Exit While)\\b",
+                    "name": "keyword.control.loop.asp"
+                },
+                {
+                    "match": "(?i)\\b(Select|Case|End Select)\\b",
+                    "name": "keyword.control.select.asp"
+                },
+                {
+                    "match": "(?i)\\b(With|End With)\\b",
+                    "name": "keyword.control.with.asp"
+                },
+                {
+                    "match": "(?i)\\b(Function|End Function|Sub|End Sub|Property|Get|Let|Set|End Property)\\b",
+                    "name": "keyword.control.asp"
+                },
+                {
+                    "match": "(?i)\\b(Class|End Class|New)\\b",
+                    "name": "keyword.control.class.asp"
+                },
+                {
+                    "match": "(?i)\\b(Dim|ReDim|Preserve|Const|Set|Call|Randomize|ExecuteGlobal|Option Explicit|On Error Resume Next|On Error GoTo 0|Private|Public)\\b",
+                    "name": "keyword.other.asp"
+                },
+                {
+                    "match": "(?i)\\b(Exit Function|Exit Sub|Exit Property|Exit Do|Exit For|Exit While)\\b",
+                    "name": "keyword.control.exit.asp"
+                },
+                {
+                    "match": "(?i)\\b(Error|Raise|Err|Description|Number|Source|HelpFile|HelpContext|Clear)\\b",
+                    "name": "keyword.other.error.asp"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "match": "(?i)\\b(And|Or|Not|Xor|Eqv|Imp|Is|Mod|Like)\\b",
+                    "name": "keyword.operator.asp"
+                },
+                {
+                    "match": "[+\\-*/\\\\^&]|=|<>|<|>|<=|>=",
+                    "name": "keyword.operator.asp"
+                }
+            ]
+        },
+        "keywords": {
+            "match": "(?i)\\b(Me|Nothing|Default)\\b",
+            "name": "keyword.other.asp"
+        },
+        "identifiers": {
+            "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+            "name": "variable.other.asp"
+        }
+    }
+}

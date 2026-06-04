@@ -4,7 +4,7 @@ function activate(context) {
     context.subscriptions.push(
         vscode.debug.registerDebugAdapterDescriptorFactory('asperger', {
             createDebugAdapterDescriptor(session) {
-                const command = context.asAbsolutePath('./bin/asperger_debug');
+                const command = context.asAbsolutePath('./bin/asperger-debug');
                 return new vscode.DebugAdapterExecutable(command);
             }
         })

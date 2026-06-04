@@ -1,8 +1,8 @@
-use super::VBSyntax;
 use super::super::expr::{evaluate, Expr};
 use super::super::value::VBValue;
 use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
+use super::VBSyntax;
 
 pub struct PropertySet {
     object_name: String,
@@ -12,7 +12,11 @@ pub struct PropertySet {
 
 impl PropertySet {
     pub fn new(object_name: String, property: String, value_expr: Expr) -> Self {
-        PropertySet { object_name, property, value_expr }
+        PropertySet {
+            object_name,
+            property,
+            value_expr,
+        }
     }
 }
 
@@ -26,13 +30,10 @@ impl VBSyntax for PropertySet {
                 VBSErrorType::RuntimeError.into_error("With object not set".to_string())
             })?;
             let result = match &mut obj_val {
-                VBValue::Object(ref mut obj) => {
-                    obj.set_property(&self.property, value, context)
-                }
+                VBValue::Object(ref mut obj) => obj.set_property(&self.property, value, context),
                 _ => {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        "With object is not an object".to_string()
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error("With object is not an object".to_string()));
                 }
             };
             context.scope.with_object = Some(obj_val);
@@ -46,9 +47,8 @@ impl VBSyntax for PropertySet {
             let slot: &mut VBValue = match context.get_variable_mut(&self.object_name) {
                 Some(v @ VBValue::Object(_)) => v,
                 _ => {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("Object variable '{}' is not set", self.object_name)
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Object variable '{}' is not set", self.object_name)));
                 }
             };
             let mut replacement = VBValue::Empty;

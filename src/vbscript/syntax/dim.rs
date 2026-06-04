@@ -1,5 +1,5 @@
-use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 use super::VBSyntax;
+use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
 pub struct Dim {
     var_names: Vec<(String, bool)>,

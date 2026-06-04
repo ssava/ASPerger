@@ -8,7 +8,10 @@ pub struct ASPError {
 
 impl ASPError {
     pub fn new(code: u16, message: impl Into<String>) -> Self {
-        ASPError { code, message: message.into() }
+        ASPError {
+            code,
+            message: message.into(),
+        }
     }
 }
 

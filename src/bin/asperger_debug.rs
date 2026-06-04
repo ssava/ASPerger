@@ -6,12 +6,16 @@ use dap::events;
 use dap::prelude::*;
 use dap::responses;
 use dap::types;
-
+use asperger::asp::config::Config as AspConfig;
+use asperger::asp::server::AspServer;
 use asperger::vbscript::debugger::{DebugCommand, DebugEvent, Debugger, StoppedReason};
-use asperger::vbscript::{ExecutionContext, VBScriptInterpreter};
 
 #[derive(Parser)]
-#[command(name = "asperger-debug", version, about = "VBScript debug adapter (DAP)")]
+#[command(
+    name = "asperger-debug",
+    version,
+    about = "VBScript debug adapter (DAP)"
+)]
 struct Cli {
     /// Path to the script to debug
     program: Option<String>,
@@ -30,9 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_output = server.output.clone();
 
     let mut script_path = String::new();
+    let mut launch_folder: Option<String> = None;
+    let mut launch_port: Option<u16> = None;
+    let mut launch_default_doc: Option<String> = None;
     let mut debugger_state: Option<Arc<Mutex<asperger::vbscript::debugger::DebuggerState>>> = None;
     let mut command_tx: Option<std::sync::mpsc::Sender<DebugCommand>> = None;
     let mut interpreter_handle: Option<std::thread::JoinHandle<()>> = None;
+    let mut pending_breakpoints: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut debugger_instance: Option<Arc<Debugger>> = None;
 
     loop {
         let req = match server.poll_request()? {
@@ -88,12 +97,75 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(program) = extra.get("program").and_then(|v| v.as_str()) {
                         script_path = program.to_string();
                     }
+                    if let Some(folder) = extra.get("folder").and_then(|v| v.as_str()) {
+                        if !folder.is_empty() {
+                            launch_folder = Some(folder.to_string());
+                        }
+                    }
+                    if let Some(port) = extra.get("port").and_then(|v| v.as_u64()) {
+                        launch_port = Some(port as u16);
+                    }
+                    if let Some(doc) = extra.get("defaultDocument").and_then(|v| v.as_str()) {
+                        if !doc.is_empty() {
+                            launch_default_doc = Some(doc.to_string());
+                        }
+                    }
                 }
                 if script_path.is_empty() {
                     if let Some(ref program) = cli.program {
                         script_path = program.to_string();
                     }
                 }
+
+                // Create Debugger early so SetBreakpoints (which arrives before
+                // ConfigurationDone in DAP protocol) can store breakpoints
+                let (debugger, state, event_rx) = Debugger::new();
+                debugger_state = Some(state.clone());
+                command_tx = Some(debugger.command_tx.clone());
+                debugger_instance = Some(Arc::new(debugger));
+
+                // Flush any breakpoints received before Launch
+                if let Some(ref state) = debugger_state {
+                    let mut s = state.lock().unwrap();
+                    for (path, lines) in pending_breakpoints.drain(..) {
+                        s.breakpoints.insert(path, lines);
+                    }
+                }
+
+                // Forward DebugEvents from interpreter thread to VS Code
+                let evt_so = server_output.clone();
+                std::thread::spawn(move || {
+                    while let Ok(event) = event_rx.recv() {
+                        let mut so = match evt_so.lock() {
+                            Ok(s) => s,
+                            Err(_) => break,
+                        };
+                        match event {
+                            DebugEvent::Stopped {
+                                reason, thread_id, ..
+                            } => {
+                                let dap_reason = match reason {
+                                    StoppedReason::Breakpoint => {
+                                        types::StoppedEventReason::Breakpoint
+                                    }
+                                    StoppedReason::Step => types::StoppedEventReason::Step,
+                                    StoppedReason::Pause => types::StoppedEventReason::Pause,
+                                };
+                                let _ = so.send_event(Event::Stopped(events::StoppedEventBody {
+                                    reason: dap_reason,
+                                    description: None,
+                                    thread_id: Some(thread_id as i64),
+                                    preserve_focus_hint: None,
+                                    text: None,
+                                    all_threads_stopped: Some(true),
+                                    hit_breakpoint_ids: None,
+                                }));
+                            }
+                            DebugEvent::Terminated => break,
+                        }
+                    }
+                });
+
                 let rsp = req.success(ResponseBody::Launch);
                 server.respond(rsp)?;
             }
@@ -103,16 +175,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let lines: Vec<usize> = args
                     .breakpoints
                     .as_ref()
-                    .map(|bps| {
-                        bps.iter()
-                            .map(|bp| bp.line as usize)
-                            .collect()
-                    })
+                    .map(|bps| bps.iter().map(|bp| bp.line as usize).collect())
                     .unwrap_or_default();
 
                 if let Some(ref state) = debugger_state {
                     let mut s = state.lock().unwrap();
                     s.breakpoints.insert(path.clone(), lines.clone());
+                } else {
+                    // Buffer breakpoints until Debugger exists (after Launch)
+                    pending_breakpoints.push((path.clone(), lines.clone()));
                 }
 
                 let bps_response: Vec<types::Breakpoint> = lines
@@ -137,8 +208,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         message: None,
                         instruction_reference: None,
                         offset: None,
-                        })
-                        .collect();
+                    })
+                    .collect();
                 let rsp = req.success(ResponseBody::SetBreakpoints(
                     responses::SetBreakpointsResponse {
                         breakpoints: bps_response,
@@ -151,53 +222,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let rsp = req.success(ResponseBody::ConfigurationDone);
                 server.respond(rsp)?;
 
-                let (debugger, state, event_rx) = Debugger::new();
-                debugger_state = Some(state.clone());
-                command_tx = Some(debugger.command_tx.clone());
-
-                // Forward DebugEvents from interpreter thread to VS Code
-                let evt_so = server_output.clone();
-                std::thread::spawn(move || {
-                    while let Ok(event) = event_rx.recv() {
-                        let mut so = match evt_so.lock() {
-                            Ok(s) => s,
-                            Err(_) => break,
-                        };
-                        match event {
-                            DebugEvent::Stopped { reason, thread_id, .. } => {
-                                let dap_reason = match reason {
-                                    StoppedReason::Breakpoint => types::StoppedEventReason::Breakpoint,
-                                    StoppedReason::Step => types::StoppedEventReason::Step,
-                                    StoppedReason::Pause => types::StoppedEventReason::Pause,
-                                };
-                                let _ = so.send_event(Event::Stopped(events::StoppedEventBody {
-                                    reason: dap_reason,
-                                    description: None,
-                                    thread_id: Some(thread_id as i64),
-                                    preserve_focus_hint: None,
-                                    text: None,
-                                    all_threads_stopped: Some(true),
-                                    hit_breakpoint_ids: None,
-                                }));
-                            }
-                            DebugEvent::Terminated => break,
-                        }
-                    }
-                });
-
-                let script = script_path.clone();
                 let so = server_output.clone();
-
-                let handle = std::thread::spawn(move || {
-                    run_debug_session(&script, debugger, so);
-                });
-                interpreter_handle = Some(handle);
+                let debugger = debugger_instance.take().unwrap();
 
                 // Set initial step mode to step-in so we stop at the first line
-                {
+                if let Some(ref state) = debugger_state {
                     let mut s = state.lock().unwrap();
                     s.step_mode = asperger::vbscript::debugger::StepMode::StepIn;
                 }
+
+                // Determine served root folder.
+                let folder = launch_folder.clone().unwrap_or_else(|| {
+                    let p = std::path::Path::new(&script_path);
+                    if p.is_dir() {
+                        p.to_string_lossy().to_string()
+                    } else {
+                        p.parent()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .unwrap_or_else(|| ".".to_string())
+                    }
+                });
+
+                // Build config: start with INI from folder, then apply launch overrides
+                let mut config = asperger::asp::config::AspServerConfig::from_folder(&folder);
+                config.apply_overrides(
+                    None,                           // host — not settable from DAP yet
+                    launch_port,
+                    Some(&folder),                   // folder (always set)
+                    launch_default_doc.as_deref(),
+                );
+
+                let handle = std::thread::spawn(move || {
+                    start_debug_http_server(&config, debugger, so);
+                });
+                interpreter_handle = Some(handle);
             }
 
             Command::Continue(_) => {
@@ -330,11 +388,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let variables: Vec<types::Variable> = if let Some(ref state) = debugger_state {
                     let s = state.lock().unwrap();
                     let frame_idx = (ref_id.saturating_sub(1000)) as usize;
-                    let vars = s
-                        .stack_frames
-                        .get(frame_idx)
-                        .map(|f| &f.variables)
-                        .unwrap();
+                    let vars = s.stack_frames.get(frame_idx).map(|f| &f.variables).unwrap();
                     vars.iter()
                         .map(|(k, v)| types::Variable {
                             name: k.clone(),
@@ -365,19 +419,40 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 server.respond(rsp)?;
             }
 
+            Command::SetExceptionBreakpoints(_) => {
+                let rsp = req.success(ResponseBody::SetExceptionBreakpoints(
+                    responses::SetExceptionBreakpointsResponse { breakpoints: None },
+                ));
+                server.respond(rsp)?;
+            }
+
+            Command::Threads => {
+                let rsp = req.success(ResponseBody::Threads(responses::ThreadsResponse {
+                    threads: vec![types::Thread {
+                        id: 1,
+                        name: "Main Thread".to_string(),
+                    }],
+                }));
+                server.respond(rsp)?;
+            }
+
             Command::Disconnect(_) => {
                 if let Some(ref tx) = command_tx {
                     tx.send(DebugCommand::Disconnect).unwrap_or(());
                 }
                 let rsp = req.success(ResponseBody::Disconnect);
                 server.respond(rsp)?;
+                // Do NOT join the HTTP thread — it loops infinitely
+                // The process exits after break, killing all threads
                 if let Some(handle) = interpreter_handle.take() {
-                    let _ = handle.join();
+                    drop(handle); // detach, don't join
                 }
                 break;
             }
 
             _ => {
+                // Respond with a generic success for unrecognized requests
+                // to keep VS Code happy
                 let rsp = req.success(ResponseBody::ConfigurationDone);
                 server.respond(rsp)?;
             }
@@ -387,43 +462,163 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_debug_session<W: Write + Send + 'static>(
-    script_path: &str,
-    debugger: Debugger,
+fn start_debug_http_server<W: Write + Send + 'static>(
+    config: &asperger::asp::config::AspServerConfig,
+    debugger: Arc<Debugger>,
     server_output: Arc<Mutex<dap::server::ServerOutput<W>>>,
 ) {
-    let script = match std::fs::read_to_string(script_path) {
-        Ok(c) => c,
-        Err(e) => {
-            let mut so = server_output.lock().unwrap();
-            let _ = so.send_event(Event::Output(events::OutputEventBody {
-                output: format!("Cannot read script '{}': {}\n", script_path, e),
-                category: Some(types::OutputEventCategory::Stderr),
-                ..Default::default()
-            }));
-            return;
-        }
+    let bind_addr = format!("{}:{}", config.host, config.port);
+    let folder = config.folder.clone();
+    let default_document = config.default_document.clone();
+
+    let asp_cfg = AspConfig {
+        host: config.host.clone(),
+        port: config.port,
+        folder: folder.clone(),
     };
+    let server = AspServer::new(asp_cfg);
 
-    let mut ctx = ExecutionContext::new();
-    ctx.debugger = Some(debugger);
+    // Use a single-thread Tokio runtime for all async I/O
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_io()
+        .build()
+        .unwrap();
 
-    let interp = VBScriptInterpreter;
-    let result = interp.execute(&script, &mut ctx);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        rt.block_on(async {
+            let listener = match tokio::net::TcpListener::bind(&bind_addr).await {
+                Ok(l) => l,
+                Err(e) => {
+                    let mut so = server_output.lock().unwrap();
+                    let _ = so.send_event(Event::Output(events::OutputEventBody {
+                        output: format!("Failed to bind debug server on {}: {}\n", bind_addr, e),
+                        category: Some(types::OutputEventCategory::Stderr),
+                        ..Default::default()
+                    }));
+                    return;
+                }
+            };
 
-    let is_ok = result.is_ok();
-    {
+            {
+                let mut so = server_output.lock().unwrap();
+                let _ = so.send_event(Event::Output(events::OutputEventBody {
+                    output: format!(
+                        "ASP Debug Server started on http://{}:{}/ (folder={:?}, default={:?})\n",
+                        config.host, config.port, folder, default_document
+                    ),
+                    category: Some(types::OutputEventCategory::Stdout),
+                    ..Default::default()
+                }));
+            }
+
+            loop {
+                let (mut stream, peer) = match listener.accept().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: format!("Accept error on port {}: {}\n", config.port, e),
+                            category: Some(types::OutputEventCategory::Stderr),
+                            ..Default::default()
+                        }));
+                        continue;
+                    }
+                };
+
+                {
+                    let mut so = server_output.lock().unwrap();
+                    let _ = so.send_event(Event::Output(events::OutputEventBody {
+                        output: format!("Debug server: connection accepted from {}\n", peer),
+                        category: Some(types::OutputEventCategory::Stdout),
+                        ..Default::default()
+                    }));
+                }
+
+                let request = match AspServer::read_request(&mut stream).await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: format!("Debug server: read_request error: {}\n", e),
+                            category: Some(types::OutputEventCategory::Stderr),
+                            ..Default::default()
+                        }));
+                        continue;
+                    }
+                };
+
+                {
+                    let mut so = server_output.lock().unwrap();
+                    let _ = so.send_event(Event::Output(events::OutputEventBody {
+                        output: format!("Debug server: calling process_request (path={:?})\n", request.path),
+                        category: Some(types::OutputEventCategory::Stdout),
+                        ..Default::default()
+                    }));
+                }
+
+                let response = AspServer::process_request(
+                    request,
+                    &server.handler_chain,
+                    &folder,
+                    &default_document,
+                    &server.store,
+                    Some(Arc::clone(&debugger)),
+                )
+                .await
+                .unwrap_or_else(|e| {
+                    let mut so = server_output.lock().unwrap();
+                    let _ = so.send_event(Event::Output(events::OutputEventBody {
+                        output: format!("Debug server: process error: {}\n", e),
+                        category: Some(types::OutputEventCategory::Stderr),
+                        ..Default::default()
+                    }));
+                    asperger::asp::server::HttpResponse {
+                        status_line: "500 Internal Server Error".to_string(),
+                        content_type: "text/plain".to_string(),
+                        body: format!("Error: {}", e),
+                        extra_headers: Vec::new(),
+                    }
+                });
+
+                match AspServer::write_response(&mut stream, &response).await {
+                    Ok(()) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: format!(
+                                "Debug server: wrote response ({} bytes, status={:?})\n",
+                                response.body.len(),
+                                response.status_line
+                            ),
+                            category: Some(types::OutputEventCategory::Stdout),
+                            ..Default::default()
+                        }));
+                    }
+                    Err(e) => {
+                        let mut so = server_output.lock().unwrap();
+                        let _ = so.send_event(Event::Output(events::OutputEventBody {
+                            output: format!("Debug server: write_response error: {}\n", e),
+                            category: Some(types::OutputEventCategory::Stderr),
+                            ..Default::default()
+                        }));
+                    }
+                }
+            }
+        });
+    }));
+
+    if let Err(panic_err) = result {
+        let msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_err.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "unknown panic".to_string()
+        };
         let mut so = server_output.lock().unwrap();
-        if let Err(e) = result {
-            let _ = so.send_event(Event::Output(events::OutputEventBody {
-                output: format!("Runtime error: {}\n", e),
-                category: Some(types::OutputEventCategory::Stderr),
-                ..Default::default()
-            }));
-        }
-        let _ = so.send_event(Event::Exited(events::ExitedEventBody {
-            exit_code: if is_ok { 0 } else { 1 },
+        let _ = so.send_event(Event::Output(events::OutputEventBody {
+            output: format!("Debug server: PANIC in HTTP thread: {}\n", msg),
+            category: Some(types::OutputEventCategory::Stderr),
+            ..Default::default()
         }));
-        let _ = so.send_event(Event::Terminated(None));
     }
 }

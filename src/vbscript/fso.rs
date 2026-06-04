@@ -33,13 +33,19 @@ fn resolve_path(path: &str) -> PathBuf {
 }
 
 impl VBScriptObject for FileSystemObject {
-    fn type_name(&self) -> &'static str { "FileSystemObject" }
+    fn type_name(&self) -> &'static str {
+        "FileSystemObject"
+    }
 
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DRIVES" => {
                 #[cfg(unix)]
@@ -62,13 +68,17 @@ impl VBScriptObject for FileSystemObject {
                     Ok(VBValue::Array(std::sync::Arc::new(drives)))
                 }
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Property '{}' not found on FileSystemObject", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on FileSystemObject", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "FILEEXISTS" => {
                 let path = value_utils::to_arg_string(&args[0]);
@@ -84,9 +94,9 @@ impl VBScriptObject for FileSystemObject {
                 let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 if !p.is_file() {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("File not found: {}", path),
-                    ));
+                    return Err(
+                        VBSErrorType::RuntimeError.into_error(format!("File not found: {}", path))
+                    );
                 }
                 let file = FileObject::new(&p);
                 Ok(VBValue::Object(Box::new(file)))
@@ -95,9 +105,8 @@ impl VBScriptObject for FileSystemObject {
                 let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 if !p.is_dir() {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("Folder not found: {}", path),
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Folder not found: {}", path)));
                 }
                 let folder = FolderObject::new(&p);
                 Ok(VBValue::Object(Box::new(folder)))
@@ -111,18 +120,15 @@ impl VBScriptObject for FileSystemObject {
                 };
                 let p = resolve_path(&path);
                 if p.exists() && !overwrite {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("File already exists: {}", path),
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("File already exists: {}", path)));
                 }
                 if let Some(parent) = p.parent() {
                     fs::create_dir_all(parent).unwrap_or(());
                 }
                 let file = fs::File::create(&p).map_err(|e| {
-                    VBSErrorType::RuntimeError.into_error(format!(
-                        "Cannot create file '{}': {}",
-                        path, e
-                    ))
+                    VBSErrorType::RuntimeError
+                        .into_error(format!("Cannot create file '{}': {}", path, e))
                 })?;
                 Ok(VBValue::Object(Box::new(TextStream::new_write(file))))
             }
@@ -145,10 +151,8 @@ impl VBScriptObject for FileSystemObject {
                             fs::create_dir_all(parent).unwrap_or(());
                         }
                         let file = fs::File::create(&p).map_err(|e| {
-                            VBSErrorType::RuntimeError.into_error(format!(
-                                "Cannot create file '{}': {}",
-                                path, e
-                            ))
+                            VBSErrorType::RuntimeError
+                                .into_error(format!("Cannot create file '{}': {}", path, e))
                         })?;
                         if iomode == 1 {
                             // ForReading - reopen for read
@@ -164,10 +168,8 @@ impl VBScriptObject for FileSystemObject {
                             Ok(VBValue::Object(Box::new(TextStream::new_append(file))))
                         }
                     } else {
-                        Err(VBSErrorType::RuntimeError.into_error(format!(
-                            "File not found: {}",
-                            path
-                        )))
+                        Err(VBSErrorType::RuntimeError
+                            .into_error(format!("File not found: {}", path)))
                     }
                 } else {
                     match iomode {
@@ -186,16 +188,15 @@ impl VBScriptObject for FileSystemObject {
                             Ok(VBValue::Object(Box::new(TextStream::new_write(file))))
                         }
                         8 => {
-                            let file = fs::OpenOptions::new().append(true).open(&p).map_err(|_| {
-                                VBSErrorType::RuntimeError
-                                    .into_error(format!("Cannot open file: {}", path))
-                            })?;
+                            let file =
+                                fs::OpenOptions::new().append(true).open(&p).map_err(|_| {
+                                    VBSErrorType::RuntimeError
+                                        .into_error(format!("Cannot open file: {}", path))
+                                })?;
                             Ok(VBValue::Object(Box::new(TextStream::new_append(file))))
                         }
-                        _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                            "Invalid IOMode: {}",
-                            iomode
-                        ))),
+                        _ => Err(VBSErrorType::RuntimeError
+                            .into_error(format!("Invalid IOMode: {}", iomode))),
                     }
                 }
             }
@@ -213,10 +214,9 @@ impl VBScriptObject for FileSystemObject {
                             .into_error(format!("Cannot delete file '{}': {}", path, e))
                     })?;
                 } else if !force {
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "File not found: {}",
-                        path
-                    )));
+                    return Err(
+                        VBSErrorType::RuntimeError.into_error(format!("File not found: {}", path))
+                    );
                 }
                 Ok(VBValue::Empty)
             }
@@ -231,24 +231,18 @@ impl VBScriptObject for FileSystemObject {
                 if p.is_dir() {
                     if force {
                         fs::remove_dir_all(&p).map_err(|e| {
-                            VBSErrorType::RuntimeError.into_error(format!(
-                                "Cannot delete folder '{}': {}",
-                                path, e
-                            ))
+                            VBSErrorType::RuntimeError
+                                .into_error(format!("Cannot delete folder '{}': {}", path, e))
                         })?;
                     } else {
                         fs::remove_dir(&p).map_err(|e| {
-                            VBSErrorType::RuntimeError.into_error(format!(
-                                "Cannot delete folder '{}': {}",
-                                path, e
-                            ))
+                            VBSErrorType::RuntimeError
+                                .into_error(format!("Cannot delete folder '{}': {}", path, e))
                         })?;
                     }
                 } else if !force {
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "Folder not found: {}",
-                        path
-                    )));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Folder not found: {}", path)));
                 }
                 Ok(VBValue::Empty)
             }
@@ -263,10 +257,8 @@ impl VBScriptObject for FileSystemObject {
                 let src = resolve_path(&source);
                 let dst = resolve_path(&dest);
                 if dst.exists() && !overwrite {
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "Destination file already exists: {}",
-                        dest
-                    )));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Destination file already exists: {}", dest)));
                 }
                 if let Some(parent) = dst.parent() {
                     fs::create_dir_all(parent).unwrap_or(());
@@ -290,10 +282,8 @@ impl VBScriptObject for FileSystemObject {
                 let src = resolve_path(&source);
                 let dst = resolve_path(&dest);
                 if dst.exists() && !overwrite {
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "Destination folder already exists: {}",
-                        dest
-                    )));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Destination folder already exists: {}", dest)));
                 }
                 copy_dir_recursive(&src, &dst).map_err(|e| {
                     VBSErrorType::RuntimeError.into_error(format!(
@@ -349,7 +339,11 @@ impl VBScriptObject for FileSystemObject {
                 let p = Path::new(&path);
                 let parent = p.parent().and_then(|p| {
                     let s = p.to_str()?;
-                    if s.is_empty() { None } else { Some(s.to_string()) }
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
                 });
                 match parent {
                     Some(name) => Ok(VBValue::String(name)),
@@ -416,19 +410,14 @@ impl VBScriptObject for FileSystemObject {
                     2 => Ok(VBValue::String(
                         std::env::temp_dir().to_str().unwrap_or("/tmp").to_string(),
                     )),
-                    _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "Invalid SpecialFolder constant: {}",
-                        folder_type
-                    ))),
+                    _ => Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Invalid SpecialFolder constant: {}", folder_type))),
                 }
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Method '{}' not found on FileSystemObject",
-                name
-            ))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on FileSystemObject", name))),
         }
     }
-
 }
 
 // ---- FileObject ----
@@ -557,14 +546,21 @@ fn infer_type(path: &Path) -> String {
             if path.is_dir() {
                 "File Folder".to_string()
             } else {
-                format!("{} File", path.extension().and_then(|e| e.to_str()).unwrap_or("Unknown"))
+                format!(
+                    "{} File",
+                    path.extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("Unknown")
+                )
             }
         }
     }
 }
 
 impl VBScriptObject for FileObject {
-    fn type_name(&self) -> &'static str { "File" }
+    fn type_name(&self) -> &'static str {
+        "File"
+    }
 
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(FileObject {
@@ -580,12 +576,16 @@ impl VBScriptObject for FileObject {
         })
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => Ok(VBValue::String(self.name.clone())),
-            "SHORTPATH" | "PATH" => {
-                Ok(VBValue::String(self.path.to_str().unwrap_or("").to_string()))
-            }
+            "SHORTPATH" | "PATH" => Ok(VBValue::String(
+                self.path.to_str().unwrap_or("").to_string(),
+            )),
             "SHORTNAME" => Ok(VBValue::String(self.short_name.clone())),
             "SIZE" => Ok(VBValue::Number(self.size as f64)),
             "TYPE" => Ok(VBValue::String(self.file_type.clone())),
@@ -608,32 +608,39 @@ impl VBScriptObject for FileObject {
                     .unwrap_or(0);
                 Ok(VBValue::Number(attrs as f64))
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Property '{}' not found on File object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on File object", name))),
         }
     }
 
-    fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn set_property(
+        &mut self,
+        name: &str,
+        value: VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => {
                 let new_name = value_utils::to_arg_string(&value);
                 let new_path = self.path.with_file_name(&new_name);
                 fs::rename(&self.path, &new_path).map_err(|e| {
-                    VBSErrorType::RuntimeError
-                        .into_error(format!("Cannot rename file: {}", e))
+                    VBSErrorType::RuntimeError.into_error(format!("Cannot rename file: {}", e))
                 })?;
                 self.path = new_path;
                 self.name = new_name;
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Cannot set property '{}' on File object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Cannot set property '{}' on File object", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {
@@ -643,13 +650,11 @@ impl VBScriptObject for FileObject {
                 };
                 if force {
                     fs::remove_file(&self.path).map_err(|e| {
-                        VBSErrorType::RuntimeError
-                            .into_error(format!("Cannot delete file: {}", e))
+                        VBSErrorType::RuntimeError.into_error(format!("Cannot delete file: {}", e))
                     })?;
                 } else {
                     fs::remove_file(&self.path).map_err(|e| {
-                        VBSErrorType::RuntimeError
-                            .into_error(format!("Cannot delete file: {}", e))
+                        VBSErrorType::RuntimeError.into_error(format!("Cannot delete file: {}", e))
                     })?;
                 }
                 Ok(VBValue::Empty)
@@ -670,8 +675,7 @@ impl VBScriptObject for FileObject {
                     }
                 }
                 .map_err(|e| {
-                    VBSErrorType::RuntimeError
-                        .into_error(format!("Cannot open file: {}", e))
+                    VBSErrorType::RuntimeError.into_error(format!("Cannot open file: {}", e))
                 })?;
                 let ts = match iomode {
                     1 => TextStream::new_read(file),
@@ -680,12 +684,10 @@ impl VBScriptObject for FileObject {
                 };
                 Ok(VBValue::Object(Box::new(ts)))
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Method '{}' not found on File object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on File object", name))),
         }
     }
-
 }
 
 // ---- FolderObject ----
@@ -734,7 +736,9 @@ impl FolderObject {
 }
 
 impl VBScriptObject for FolderObject {
-    fn type_name(&self) -> &'static str { "Folder" }
+    fn type_name(&self) -> &'static str {
+        "Folder"
+    }
 
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(FolderObject {
@@ -749,12 +753,16 @@ impl VBScriptObject for FolderObject {
         })
     }
 
-    fn get_property(&self, name: &str, _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => Ok(VBValue::String(self.name.clone())),
-            "SHORTPATH" | "PATH" => {
-                Ok(VBValue::String(self.path.to_str().unwrap_or("").to_string()))
-            }
+            "SHORTPATH" | "PATH" => Ok(VBValue::String(
+                self.path.to_str().unwrap_or("").to_string(),
+            )),
             "SHORTNAME" => Ok(VBValue::String(self.name.clone())),
             "SIZE" => Ok(VBValue::Number(self.size as f64)),
             "TYPE" => Ok(VBValue::String("File Folder".to_string())),
@@ -789,32 +797,39 @@ impl VBScriptObject for FolderObject {
                 let a = 16i32;
                 Ok(VBValue::Number(a as f64))
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Property '{}' not found on Folder object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Folder object", name))),
         }
     }
 
-    fn set_property(&mut self, name: &str, value: VBValue, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+    fn set_property(
+        &mut self,
+        name: &str,
+        value: VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "NAME" => {
                 let new_name = value_utils::to_arg_string(&value);
                 let new_path = self.path.with_file_name(&new_name);
                 fs::rename(&self.path, &new_path).map_err(|e| {
-                    VBSErrorType::RuntimeError
-                        .into_error(format!("Cannot rename folder: {}", e))
+                    VBSErrorType::RuntimeError.into_error(format!("Cannot rename folder: {}", e))
                 })?;
                 self.path = new_path;
                 self.name = new_name;
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Cannot set property '{}' on Folder object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Cannot set property '{}' on Folder object", name))),
         }
     }
 
-    fn call_method(&mut self, name: &str, args: &[VBValue], _context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
+    fn call_method(
+        &mut self,
+        name: &str,
+        args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
                 let force = if args.len() > 0 {
@@ -844,23 +859,18 @@ impl VBScriptObject for FolderObject {
                 };
                 let file_path = self.path.join(&path);
                 if file_path.exists() && !overwrite {
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "File already exists: {}",
-                        file_path.display()
-                    )));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("File already exists: {}", file_path.display())));
                 }
                 let file = fs::File::create(&file_path).map_err(|e| {
-                    VBSErrorType::RuntimeError
-                        .into_error(format!("Cannot create file: {}", e))
+                    VBSErrorType::RuntimeError.into_error(format!("Cannot create file: {}", e))
                 })?;
                 Ok(VBValue::Object(Box::new(TextStream::new_write(file))))
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(
-                format!("Method '{}' not found on Folder object", name),
-            )),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Method '{}' not found on Folder object", name))),
         }
     }
-
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
@@ -879,5 +889,3 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-
-

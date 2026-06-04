@@ -9,7 +9,11 @@ pub struct VBSError {
 
 impl VBSError {
     pub fn new(code: u16, message: String, error_type: VBSErrorType) -> Self {
-        VBSError { code, message, error_type }
+        VBSError {
+            code,
+            message,
+            error_type,
+        }
     }
 
     pub fn is_exit_for(&self) -> bool {

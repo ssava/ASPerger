@@ -8,32 +8,69 @@ use super::{ExecutionContext, Token, TokenType, VBValue};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
-    Add, Sub, Mul, Div, IntDiv, Pow, Mod, Concat,
-    Eq, Ne, Lt, Gt, Le, Ge,
-    And, Or, Xor, Eqv, Imp,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    IntDiv,
+    Pow,
+    Mod,
+    Concat,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    And,
+    Or,
+    Xor,
+    Eqv,
+    Imp,
     Is,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
-    Neg, Not,
+    Neg,
+    Not,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(VBValue),
     Variable(String),
-    BinaryOp { left: Box<Expr>, op: BinOp, right: Box<Expr> },
-    UnaryOp { op: UnaryOp, expr: Box<Expr> },
-    FunctionCall { name: String, args: Vec<Expr> },
-    PropertyAccess { object: Box<Expr>, property: String },
-    MethodCall { object: Box<Expr>, method: String, args: Vec<Expr> },
+    BinaryOp {
+        left: Box<Expr>,
+        op: BinOp,
+        right: Box<Expr>,
+    },
+    UnaryOp {
+        op: UnaryOp,
+        expr: Box<Expr>,
+    },
+    FunctionCall {
+        name: String,
+        args: Vec<Expr>,
+    },
+    PropertyAccess {
+        object: Box<Expr>,
+        property: String,
+    },
+    MethodCall {
+        object: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+    },
     NewObject(String),
     WithObject,
 }
 
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
-    let filtered: Vec<&Token> = tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).collect();
+    let filtered: Vec<&Token> = tokens
+        .iter()
+        .filter(|t| t.token_type != TokenType::WhiteSpace)
+        .collect();
     let mut pos = 0;
     let result = parse_binary(&filtered, &mut pos, 0)?;
     Ok(result)
@@ -56,8 +93,13 @@ fn precedence(token_type: &TokenType) -> (u8, bool) {
         TokenType::IntDivide => (55, false),
         TokenType::Plus | TokenType::Minus => (40, false),
         TokenType::Concat => (35, false),
-        TokenType::Assign | TokenType::Equal | TokenType::NotEqual | TokenType::LessThan
-        | TokenType::GreaterThan | TokenType::LessEqual | TokenType::GreaterEqual => (30, false),
+        TokenType::Assign
+        | TokenType::Equal
+        | TokenType::NotEqual
+        | TokenType::LessThan
+        | TokenType::GreaterThan
+        | TokenType::LessEqual
+        | TokenType::GreaterEqual => (30, false),
         TokenType::And => (20, false),
         TokenType::Or => (15, false),
         _ => (0, false),
@@ -85,23 +127,31 @@ fn token_to_binop(token: &Token) -> Option<BinOp> {
         TokenType::Is => Some(BinOp::Is),
         TokenType::Eqv => Some(BinOp::Eqv),
         TokenType::Imp => Some(BinOp::Imp),
-        _ => {
-            match token.token_type {
-                TokenType::Identifier => {
-                    let v = &token.value;
-                    if v.eq_ignore_ascii_case("AND") { Some(BinOp::And) }
-                    else if v.eq_ignore_ascii_case("OR") { Some(BinOp::Or) }
-                    else if v.eq_ignore_ascii_case("MOD") { Some(BinOp::Mod) }
-                    else if v.eq_ignore_ascii_case("IS") { Some(BinOp::Is) }
-                    else if v.eq_ignore_ascii_case("EQV") { Some(BinOp::Eqv) }
-                    else if v.eq_ignore_ascii_case("IMP") { Some(BinOp::Imp) }
-                    else if v.eq_ignore_ascii_case("XOR") { Some(BinOp::Xor) }
-                    else if v.eq_ignore_ascii_case("NOT") { None }
-                    else { None }
-                },
-                _ => None,
+        _ => match token.token_type {
+            TokenType::Identifier => {
+                let v = &token.value;
+                if v.eq_ignore_ascii_case("AND") {
+                    Some(BinOp::And)
+                } else if v.eq_ignore_ascii_case("OR") {
+                    Some(BinOp::Or)
+                } else if v.eq_ignore_ascii_case("MOD") {
+                    Some(BinOp::Mod)
+                } else if v.eq_ignore_ascii_case("IS") {
+                    Some(BinOp::Is)
+                } else if v.eq_ignore_ascii_case("EQV") {
+                    Some(BinOp::Eqv)
+                } else if v.eq_ignore_ascii_case("IMP") {
+                    Some(BinOp::Imp)
+                } else if v.eq_ignore_ascii_case("XOR") {
+                    Some(BinOp::Xor)
+                } else if v.eq_ignore_ascii_case("NOT") {
+                    None
+                } else {
+                    None
+                }
             }
-        }
+            _ => None,
+        },
     }
 }
 
@@ -129,7 +179,10 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             }
         };
         let expr = parse_primary(tokens, pos)?;
-        return Ok(Expr::UnaryOp { op, expr: Box::new(expr) });
+        return Ok(Expr::UnaryOp {
+            op,
+            expr: Box::new(expr),
+        });
     }
 
     if matches!(token.token_type, TokenType::LeftParen) {
@@ -138,9 +191,8 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             VBSErrorType::SyntaxError.into_error("Expected closing parenthesis".to_string())
         })?;
         if !matches!(close.token_type, TokenType::RightParen) {
-            return Err(VBSErrorType::SyntaxError.into_error(
-                format!("Expected ')' found '{}'", close.value)
-            ));
+            return Err(VBSErrorType::SyntaxError
+                .into_error(format!("Expected ')' found '{}'", close.value)));
         }
         return Ok(expr);
     }
@@ -150,9 +202,10 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             VBSErrorType::SyntaxError.into_error("Expected property name after '.'".to_string())
         })?;
         if prop.token_type != TokenType::Identifier {
-            return Err(VBSErrorType::SyntaxError.into_error(
-                format!("Expected property name after '.', got '{}'", prop.value)
-            ));
+            return Err(VBSErrorType::SyntaxError.into_error(format!(
+                "Expected property name after '.', got '{}'",
+                prop.value
+            )));
         }
         let prop_name = prop.value.clone();
 
@@ -167,9 +220,8 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                             break;
                         }
                     } else {
-                        return Err(VBSErrorType::SyntaxError.into_error(
-                            "Unclosed parentheses in method call".to_string()
-                        ));
+                        return Err(VBSErrorType::SyntaxError
+                            .into_error("Unclosed parentheses in method call".to_string()));
                     }
                     let arg = parse_binary(tokens, pos, 0)?;
                     args.push(arg);
@@ -181,12 +233,16 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                             advance(tokens, pos);
                             break;
                         }
-                        Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
-                            format!("Expected ',' or ')' after argument, got '{}'", t.value)
-                        )),
-                        None => return Err(VBSErrorType::SyntaxError.into_error(
-                            "Unclosed parentheses in method call".to_string()
-                        )),
+                        Some(t) => {
+                            return Err(VBSErrorType::SyntaxError.into_error(format!(
+                                "Expected ',' or ')' after argument, got '{}'",
+                                t.value
+                            )))
+                        }
+                        None => {
+                            return Err(VBSErrorType::SyntaxError
+                                .into_error("Unclosed parentheses in method call".to_string()))
+                        }
                     }
                 }
                 return Ok(Expr::MethodCall {
@@ -214,9 +270,7 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             })?;
             Ok(Expr::Literal(VBValue::Number(num)))
         }
-        TokenType::StringLiteral => {
-            Ok(Expr::Literal(VBValue::String(token.value.clone())))
-        }
+        TokenType::StringLiteral => Ok(Expr::Literal(VBValue::String(token.value.clone()))),
         TokenType::True => Ok(Expr::Literal(VBValue::Boolean(true))),
         TokenType::False => Ok(Expr::Literal(VBValue::Boolean(false))),
         TokenType::Null => Ok(Expr::Literal(VBValue::Null)),
@@ -227,9 +281,10 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                 VBSErrorType::SyntaxError.into_error("Expected class name after New".to_string())
             })?;
             if class_name.token_type != TokenType::Identifier {
-                return Err(VBSErrorType::SyntaxError.into_error(
-                    format!("Expected class name after New, found: {}", class_name.value)
-                ));
+                return Err(VBSErrorType::SyntaxError.into_error(format!(
+                    "Expected class name after New, found: {}",
+                    class_name.value
+                )));
             }
             Ok(Expr::NewObject(class_name.value.clone()))
         }
@@ -246,9 +301,8 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                                 break;
                             }
                         } else {
-                            return Err(VBSErrorType::SyntaxError.into_error(
-                                "Unclosed parentheses in function call".to_string()
-                            ));
+                            return Err(VBSErrorType::SyntaxError
+                                .into_error("Unclosed parentheses in function call".to_string()));
                         }
                         let arg = parse_binary(tokens, pos, 0)?;
                         args.push(arg);
@@ -260,12 +314,17 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                                 advance(tokens, pos);
                                 break;
                             }
-                            Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
-                                format!("Expected ',' or ')' after argument, got '{}'", t.value)
-                            )),
-                            None => return Err(VBSErrorType::SyntaxError.into_error(
-                                "Unclosed parentheses in function call".to_string()
-                            )),
+                            Some(t) => {
+                                return Err(VBSErrorType::SyntaxError.into_error(format!(
+                                    "Expected ',' or ')' after argument, got '{}'",
+                                    t.value
+                                )))
+                            }
+                            None => {
+                                return Err(VBSErrorType::SyntaxError.into_error(
+                                    "Unclosed parentheses in function call".to_string(),
+                                ))
+                            }
                         }
                     }
                     Ok(Expr::FunctionCall { name, args })
@@ -273,16 +332,20 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                 _ => Ok(Expr::Variable(name)),
             }
         }
-        _ => Err(VBSErrorType::SyntaxError.into_error(
-            format!("Unexpected token in expression: '{}' ({:?})", token.value, token.token_type)
-        )),
+        _ => Err(VBSErrorType::SyntaxError.into_error(format!(
+            "Unexpected token in expression: '{}' ({:?})",
+            token.value, token.token_type
+        ))),
     }
 }
 
 fn parse_numeric_literal(token: &Token) -> Result<f64, VBSError> {
     match token.token_type {
         TokenType::HexLiteral => {
-            let hex = token.value.trim_start_matches("&H").trim_start_matches("&h");
+            let hex = token
+                .value
+                .trim_start_matches("&H")
+                .trim_start_matches("&h");
             i64::from_str_radix(hex, 16).map(|n| n as f64).map_err(|_| {
                 VBSErrorType::ValueError.into_error(format!("Invalid hex: {}", token.value))
             })
@@ -319,8 +382,14 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
             }
         } else {
             match token.token_type {
-                TokenType::RightParen | TokenType::NewLine | TokenType::Then | TokenType::Else
-                | TokenType::ElseIf | TokenType::To | TokenType::Step | TokenType::Comma
+                TokenType::RightParen
+                | TokenType::NewLine
+                | TokenType::Then
+                | TokenType::Else
+                | TokenType::ElseIf
+                | TokenType::To
+                | TokenType::Step
+                | TokenType::Comma
                 | TokenType::EOF => break,
                 _ => 0,
             }
@@ -364,9 +433,10 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
                 VBSErrorType::SyntaxError.into_error("Expected property name after '.'".to_string())
             })?;
             if prop.token_type != TokenType::Identifier {
-                return Err(VBSErrorType::SyntaxError.into_error(
-                    format!("Expected property name after '.', got '{}'", prop.value)
-                ));
+                return Err(VBSErrorType::SyntaxError.into_error(format!(
+                    "Expected property name after '.', got '{}'",
+                    prop.value
+                )));
             }
             let prop_name = prop.value.clone();
 
@@ -381,9 +451,8 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
                                 break;
                             }
                         } else {
-                            return Err(VBSErrorType::SyntaxError.into_error(
-                                "Unclosed parentheses in method call".to_string()
-                            ));
+                            return Err(VBSErrorType::SyntaxError
+                                .into_error("Unclosed parentheses in method call".to_string()));
                         }
                         let arg = parse_binary(tokens, pos, 0)?;
                         args.push(arg);
@@ -395,12 +464,16 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
                                 advance(tokens, pos);
                                 break;
                             }
-                            Some(t) => return Err(VBSErrorType::SyntaxError.into_error(
-                                format!("Expected ',' or ')' after argument, got '{}'", t.value)
-                            )),
-                            None => return Err(VBSErrorType::SyntaxError.into_error(
-                                "Unclosed parentheses in method call".to_string()
-                            )),
+                            Some(t) => {
+                                return Err(VBSErrorType::SyntaxError.into_error(format!(
+                                    "Expected ',' or ')' after argument, got '{}'",
+                                    t.value
+                                )))
+                            }
+                            None => {
+                                return Err(VBSErrorType::SyntaxError
+                                    .into_error("Unclosed parentheses in method call".to_string()))
+                            }
                         }
                     }
                     lhs = Expr::MethodCall {
@@ -449,11 +522,9 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                 VBSErrorType::RuntimeError.into_error(format!("Variable '{}' is not defined", name))
             })
         }
-        Expr::WithObject => {
-            context.scope.with_object.clone().ok_or_else(|| {
-                VBSErrorType::RuntimeError.into_error("With object not set".to_string())
-            })
-        }
+        Expr::WithObject => context.scope.with_object.clone().ok_or_else(|| {
+            VBSErrorType::RuntimeError.into_error("With object not set".to_string())
+        }),
         Expr::UnaryOp { op, expr } => {
             let val = evaluate(expr, context)?;
             match op {
@@ -467,13 +538,14 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             eval_binary(&lv, op, &rv)
         }
         Expr::FunctionCall { name, args } => {
-            let evaluated_args: Result<Vec<VBValue>, VBSError> = args.iter()
-                .map(|arg| evaluate(arg, context))
-                .collect();
+            let evaluated_args: Result<Vec<VBValue>, VBSError> =
+                args.iter().map(|arg| evaluate(arg, context)).collect();
             let evaluated_args = evaluated_args?;
 
             // Check if it's an object with a single arg (indexed get)
-            if evaluated_args.len() == 1 && matches!(context.get_variable(name), Some(VBValue::Object(_))) {
+            if evaluated_args.len() == 1
+                && matches!(context.get_variable(name), Some(VBValue::Object(_)))
+            {
                 let mut obj_val = {
                     let slot = context.get_variable_mut(name).unwrap();
                     let mut replacement = VBValue::Empty;
@@ -495,18 +567,23 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     if idx < items.len() {
                         return Ok(items[idx].clone());
                     }
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("Subscript out of range: index {} exceeds array size {}", idx, items.len())
-                    ));
+                    return Err(VBSErrorType::RuntimeError.into_error(format!(
+                        "Subscript out of range: index {} exceeds array size {}",
+                        idx,
+                        items.len()
+                    )));
                 }
             }
             if let Some(func) = context.get_function(name).cloned() {
                 if func.is_function {
-                    return super::block::execute_user_defined_function(&func, &evaluated_args, context);
+                    return super::block::execute_user_defined_function(
+                        &func,
+                        &evaluated_args,
+                        context,
+                    );
                 } else {
-                    return Err(VBSErrorType::RuntimeError.into_error(
-                        format!("Sub '{}' cannot be used as a function", name)
-                    ));
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error(format!("Sub '{}' cannot be used as a function", name)));
                 }
             }
             crate::vbscript::builtins::call_builtin(name, evaluated_args)
@@ -515,12 +592,17 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             let obj_val = evaluate(object, context)?;
             match obj_val {
                 VBValue::Object(obj) => obj.get_property(property, context),
-                _ => Err(VBSErrorType::RuntimeError.into_error(
-                    format!("Object doesn't support this property or method: '{}'", property)
-                )),
+                _ => Err(VBSErrorType::RuntimeError.into_error(format!(
+                    "Object doesn't support this property or method: '{}'",
+                    property
+                ))),
             }
         }
-        Expr::MethodCall { object, method, args } => {
+        Expr::MethodCall {
+            object,
+            method,
+            args,
+        } => {
             let obj_val = evaluate(object, context)?;
             let is_object = matches!(&obj_val, VBValue::Object(_));
             if is_object && !args.is_empty() {
@@ -541,22 +623,20 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             let mut obj_mut = obj_val;
             match &mut obj_mut {
                 VBValue::Object(ref mut obj) => {
-                    let evaluated_args: Result<Vec<VBValue>, VBSError> = args.iter()
-                        .map(|arg| evaluate(arg, context))
-                        .collect();
+                    let evaluated_args: Result<Vec<VBValue>, VBSError> =
+                        args.iter().map(|arg| evaluate(arg, context)).collect();
                     let evaluated_args = evaluated_args?;
                     obj.call_method(method, &evaluated_args, context)
                 }
-                _ => Err(VBSErrorType::RuntimeError.into_error(
-                    format!("Object doesn't support this property or method: '{}'", method)
-                )),
+                _ => Err(VBSErrorType::RuntimeError.into_error(format!(
+                    "Object doesn't support this property or method: '{}'",
+                    method
+                ))),
             }
         }
         Expr::NewObject(class_name) => {
             let class_def = context.get_class(class_name).ok_or_else(|| {
-                VBSErrorType::RuntimeError.into_error(
-                    format!("Class '{}' not defined", class_name)
-                )
+                VBSErrorType::RuntimeError.into_error(format!("Class '{}' not defined", class_name))
             })?;
             let instance = super::vbobject::ClassInstance::new(&class_def.name);
             Ok(VBValue::Object(Box::new(instance)))
@@ -630,20 +710,24 @@ fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
 }
 
 fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
-    if matches!(left, VBValue::Array(_) | VBValue::Object(_)) || matches!(right, VBValue::Array(_) | VBValue::Object(_)) {
+    if matches!(left, VBValue::Array(_) | VBValue::Object(_))
+        || matches!(right, VBValue::Array(_) | VBValue::Object(_))
+    {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match op {
-        BinOp::Add => {
-            match (left, right) {
-                (VBValue::String(_), _) | (_, VBValue::String(_))
-                    if !matches!(left, VBValue::Number(_)) || !matches!(right, VBValue::Number(_)) =>
-                {
-                    Ok(VBValue::String(format!("{}{}", to_string_val(left), to_string_val(right))))
-                }
-                _ => Ok(VBValue::Number(to_number(left) + to_number(right))),
+        BinOp::Add => match (left, right) {
+            (VBValue::String(_), _) | (_, VBValue::String(_))
+                if !matches!(left, VBValue::Number(_)) || !matches!(right, VBValue::Number(_)) =>
+            {
+                Ok(VBValue::String(format!(
+                    "{}{}",
+                    to_string_val(left),
+                    to_string_val(right)
+                )))
             }
-        }
+            _ => Ok(VBValue::Number(to_number(left) + to_number(right))),
+        },
         BinOp::Sub => Ok(VBValue::Number(to_number(left) - to_number(right))),
         BinOp::Mul => Ok(VBValue::Number(to_number(left) * to_number(right))),
         BinOp::Div => {
@@ -664,49 +748,57 @@ fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, V
         }
         BinOp::Pow => Ok(VBValue::Number(to_number(left).powf(to_number(right)))),
         BinOp::Mod => Ok(VBValue::Number(to_number(left) % to_number(right))),
-        BinOp::Concat => Ok(VBValue::String(format!("{}{}", to_string_val(left), to_string_val(right)))),
+        BinOp::Concat => Ok(VBValue::String(format!(
+            "{}{}",
+            to_string_val(left),
+            to_string_val(right)
+        ))),
         BinOp::Eq => Ok(VBValue::Boolean(values_equal(left, right))),
         BinOp::Ne => Ok(VBValue::Boolean(!values_equal(left, right))),
-        BinOp::Lt => Ok(VBValue::Boolean(compare_values(left, right) == std::cmp::Ordering::Less)),
-        BinOp::Gt => Ok(VBValue::Boolean(compare_values(left, right) == std::cmp::Ordering::Greater)),
-        BinOp::Le => Ok(VBValue::Boolean(compare_values(left, right) != std::cmp::Ordering::Greater)),
-        BinOp::Ge => Ok(VBValue::Boolean(compare_values(left, right) != std::cmp::Ordering::Less)),
+        BinOp::Lt => Ok(VBValue::Boolean(
+            compare_values(left, right) == std::cmp::Ordering::Less,
+        )),
+        BinOp::Gt => Ok(VBValue::Boolean(
+            compare_values(left, right) == std::cmp::Ordering::Greater,
+        )),
+        BinOp::Le => Ok(VBValue::Boolean(
+            compare_values(left, right) != std::cmp::Ordering::Greater,
+        )),
+        BinOp::Ge => Ok(VBValue::Boolean(
+            compare_values(left, right) != std::cmp::Ordering::Less,
+        )),
         BinOp::Is => Ok(VBValue::Boolean(values_equal(left, right))),
-        BinOp::And => {
-            match (left, right) {
-                (VBValue::Boolean(_), VBValue::Boolean(_)) =>
-                    Ok(VBValue::Boolean(to_bool(left) && to_bool(right))),
-                _ => Ok(VBValue::Number(
-                    (to_number(left) as i64 & to_number(right) as i64) as f64
-                )),
+        BinOp::And => match (left, right) {
+            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
+                Ok(VBValue::Boolean(to_bool(left) && to_bool(right)))
             }
-        }
-        BinOp::Or => {
-            match (left, right) {
-                (VBValue::Boolean(_), VBValue::Boolean(_)) =>
-                    Ok(VBValue::Boolean(to_bool(left) || to_bool(right))),
-                _ => Ok(VBValue::Number(
-                    (to_number(left) as i64 | to_number(right) as i64) as f64
-                )),
+            _ => Ok(VBValue::Number(
+                (to_number(left) as i64 & to_number(right) as i64) as f64,
+            )),
+        },
+        BinOp::Or => match (left, right) {
+            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
+                Ok(VBValue::Boolean(to_bool(left) || to_bool(right)))
             }
-        }
-        BinOp::Xor => {
-            match (left, right) {
-                (VBValue::Boolean(_), VBValue::Boolean(_)) =>
-                    Ok(VBValue::Boolean(to_bool(left) ^ to_bool(right))),
-                _ => Ok(VBValue::Number(
-                    (to_number(left) as i64 ^ to_number(right) as i64) as f64
-                )),
+            _ => Ok(VBValue::Number(
+                (to_number(left) as i64 | to_number(right) as i64) as f64,
+            )),
+        },
+        BinOp::Xor => match (left, right) {
+            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
+                Ok(VBValue::Boolean(to_bool(left) ^ to_bool(right)))
             }
-        }
+            _ => Ok(VBValue::Number(
+                (to_number(left) as i64 ^ to_number(right) as i64) as f64,
+            )),
+        },
         BinOp::Eqv => {
-            let result = if matches!(left, VBValue::Boolean(_)) && matches!(right, VBValue::Boolean(_)) {
-                VBValue::Boolean(to_bool(left) == to_bool(right))
-            } else {
-                VBValue::Number(
-                    !(to_number(left) as i64 ^ to_number(right) as i64) as f64
-                )
-            };
+            let result =
+                if matches!(left, VBValue::Boolean(_)) && matches!(right, VBValue::Boolean(_)) {
+                    VBValue::Boolean(to_bool(left) == to_bool(right))
+                } else {
+                    VBValue::Number(!(to_number(left) as i64 ^ to_number(right) as i64) as f64)
+                };
             Ok(result)
         }
         BinOp::Imp => {

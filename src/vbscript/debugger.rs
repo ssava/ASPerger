@@ -63,7 +63,7 @@ pub struct DebuggerState {
 pub struct Debugger {
     pub state: Arc<Mutex<DebuggerState>>,
     pub command_tx: Sender<DebugCommand>,
-    pub command_rx: Receiver<DebugCommand>,
+    pub command_rx: Mutex<Receiver<DebugCommand>>,
     pub event_tx: Sender<DebugEvent>,
 }
 
@@ -75,7 +75,7 @@ impl Debugger {
         let d = Debugger {
             state: state.clone(),
             command_tx: cmd_tx,
-            command_rx: cmd_rx,
+            command_rx: Mutex::new(cmd_rx),
             event_tx: evt_tx,
         };
         (d, state, evt_rx)
@@ -94,22 +94,24 @@ impl Debugger {
         state.step_mode = mode;
     }
 
-    pub fn check(&self, file: &str, line: usize, frame_depth: usize) -> Result<(), crate::vbscript::vbs_error::VBSError> {
+    pub fn check(
+        &self,
+        file: &str,
+        line: usize,
+        frame_depth: usize,
+    ) -> Result<(), crate::vbscript::vbs_error::VBSError> {
         use crate::vbscript::vbs_error::VBSErrorType;
 
         let should_stop = {
             let s = self.state.lock().unwrap();
             match s.step_mode {
-                StepMode::Continue => {
-                    s.breakpoints.get(file).map_or(false, |lines| lines.contains(&line))
-                }
-                StepMode::StepOver => {
-                    frame_depth <= s.step_frame_depth && line != s.current_line
-                }
+                StepMode::Continue => s
+                    .breakpoints
+                    .get(file)
+                    .map_or(false, |lines| lines.contains(&line)),
+                StepMode::StepOver => frame_depth <= s.step_frame_depth && line != s.current_line,
                 StepMode::StepIn => true,
-                StepMode::StepOut => {
-                    frame_depth < s.step_frame_depth
-                }
+                StepMode::StepOut => frame_depth < s.step_frame_depth,
             }
         };
 
@@ -126,15 +128,17 @@ impl Debugger {
                 _ => StoppedReason::Step,
             };
 
-            self.event_tx.send(DebugEvent::Stopped {
-                reason,
-                file: file.to_string(),
-                line,
-                thread_id: 1,
-            }).unwrap_or(());
+            self.event_tx
+                .send(DebugEvent::Stopped {
+                    reason,
+                    file: file.to_string(),
+                    line,
+                    thread_id: 1,
+                })
+                .unwrap_or(());
 
             // Wait for a debugger command (blocks until received)
-            match self.command_rx.recv() {
+            match self.command_rx.lock().unwrap().recv() {
                 Ok(DebugCommand::Continue) => {
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::Continue;
@@ -161,7 +165,9 @@ impl Debugger {
                     s.paused = false;
                 }
                 Ok(DebugCommand::Disconnect) => {
-                    return Err(VBSErrorType::RuntimeError.into_error("Debugger disconnected".to_string()));
+                    return Err(
+                        VBSErrorType::RuntimeError.into_error("Debugger disconnected".to_string())
+                    );
                 }
                 Err(_) => {}
             }
