@@ -4,6 +4,7 @@ use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
 use super::VBSyntax;
 
+#[derive(Clone)]
 pub struct PropertySet {
     object_name: String,
     property: String,
@@ -67,5 +68,9 @@ impl VBSyntax for PropertySet {
         // Put the object back
         context.set_variable(&obj_key, obj_val);
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

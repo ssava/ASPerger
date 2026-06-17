@@ -1,6 +1,7 @@
 use super::VBSyntax;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
+#[derive(Clone)]
 pub struct Dim {
     var_names: Vec<(String, bool)>,
 }
@@ -21,5 +22,9 @@ impl VBSyntax for Dim {
             }
         }
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

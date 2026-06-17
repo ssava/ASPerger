@@ -4,6 +4,7 @@
 
 pub trait VBSyntax {
     fn execute(&self, context: &mut crate::vbscript::ExecutionContext) -> Result<(), VBSError>;
+    fn clone_box(&self) -> Box<dyn VBSyntax>;
 }
 
 // Re-export all syntax constructs

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::execution_context::ExecutionContext;
 use super::value::VBValue;
 use super::value_utils;
@@ -70,6 +72,21 @@ impl Dictionary {
     }
 }
 
+/// Like `to_arg_string` but returns `Cow<str>` to avoid allocation
+/// when the value is already a `String`.
+fn key_to_cow(val: &VBValue) -> Cow<'_, str> {
+    match val {
+        VBValue::String(s) => Cow::Borrowed(s.as_str()),
+        VBValue::Null => Cow::Owned("Null".to_string()),
+        VBValue::Empty => Cow::Owned(String::new()),
+        VBValue::Number(n) => Cow::Owned(n.to_string()),
+        VBValue::Boolean(true) => Cow::Owned("True".to_string()),
+        VBValue::Boolean(false) => Cow::Owned("False".to_string()),
+        VBValue::Array(_) => Cow::Owned("Array".to_string()),
+        VBValue::Object(_) => Cow::Owned("Object".to_string()),
+    }
+}
+
 impl VBScriptObject for Dictionary {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
@@ -109,7 +126,7 @@ impl VBScriptObject for Dictionary {
                         "Dictionary.Add requires 2 arguments (key, value)".to_string(),
                     ));
                 }
-                let key = value_utils::to_arg_string(&args[0]);
+                let key = key_to_cow(&args[0]).into_owned();
                 let value = args[1].clone();
                 self.items.insert(key, value);
                 Ok(VBValue::Empty)
@@ -119,8 +136,8 @@ impl VBScriptObject for Dictionary {
                     return Err(VBSErrorType::ValueError
                         .into_error("Dictionary.Remove requires 1 argument (key)".to_string()));
                 }
-                let key = value_utils::to_arg_string(&args[0]);
-                self.items.remove(&key);
+                let key = key_to_cow(&args[0]);
+                self.items.remove(key.as_ref());
                 Ok(VBValue::Empty)
             }
             "EXISTS" => {
@@ -128,8 +145,8 @@ impl VBScriptObject for Dictionary {
                     return Err(VBSErrorType::ValueError
                         .into_error("Dictionary.Exists requires 1 argument (key)".to_string()));
                 }
-                let key = value_utils::to_arg_string(&args[0]);
-                Ok(VBValue::Boolean(self.items.contains_key(&key)))
+                let key = key_to_cow(&args[0]);
+                Ok(VBValue::Boolean(self.items.contains_key(key.as_ref())))
             }
             "REMOVEALL" => {
                 self.items.clear();
@@ -145,9 +162,10 @@ impl VBScriptObject for Dictionary {
         index: &VBValue,
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        let key = value_utils::to_arg_string(index);
-        self.items.get(&key).cloned().ok_or_else(|| {
-            VBSErrorType::RuntimeError.into_error(format!("Key '{}' not found in Dictionary", key))
+        let key = key_to_cow(index);
+        self.items.get(key.as_ref()).cloned().ok_or_else(|| {
+            VBSErrorType::RuntimeError
+                .into_error(format!("Key '{}' not found in Dictionary", key))
         })
     }
 
@@ -157,7 +175,7 @@ impl VBScriptObject for Dictionary {
         value: VBValue,
         _context: &mut ExecutionContext,
     ) -> Result<(), VBSError> {
-        let key = value_utils::to_arg_string(index);
+        let key = key_to_cow(index).into_owned();
         self.items.insert(key, value);
         Ok(())
     }

@@ -2,6 +2,7 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+#[derive(Clone)]
 pub struct ResponseWrite {
     expr: Expr,
 }
@@ -17,5 +18,9 @@ impl VBSyntax for ResponseWrite {
         let value = evaluate(&self.expr, context)?;
         context.write(&value.to_string());
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

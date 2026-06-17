@@ -4,7 +4,7 @@
 //! and top-level statement dispatch.
 
 use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
-use super::expr::{evaluate, parse_expression, Expr};
+use super::expr::{evaluate, parse_expression, BinOp, Expr};
 use super::syntax::{
     ArrayAssignment, Assignment, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext, PropertySet,
     ReDim, ResponseCookiesSet, ResponseWrite, VBSyntax,
@@ -83,11 +83,107 @@ pub enum BlockStatement {
     ExitSub(usize),
 }
 
+impl Clone for BlockStatement {
+    fn clone(&self) -> Self {
+        match self {
+            BlockStatement::Syntax(s, line) => BlockStatement::Syntax(s.clone_box(), *line),
+            BlockStatement::Unrecognized(s, line) => BlockStatement::Unrecognized(s.clone(), *line),
+            BlockStatement::If { line, condition, then_body, else_if_blocks, else_body } => {
+                BlockStatement::If {
+                    line: *line,
+                    condition: condition.clone(),
+                    then_body: then_body.clone(),
+                    else_if_blocks: else_if_blocks.clone(),
+                    else_body: else_body.clone(),
+                }
+            }
+            BlockStatement::For { line, counter, start, end, step, body } => {
+                BlockStatement::For {
+                    line: *line,
+                    counter: counter.clone(),
+                    start: start.clone(),
+                    end: end.clone(),
+                    step: step.clone(),
+                    body: body.clone(),
+                }
+            }
+            BlockStatement::While { line, condition, body } => {
+                BlockStatement::While {
+                    line: *line,
+                    condition: condition.clone(),
+                    body: body.clone(),
+                }
+            }
+            BlockStatement::Do { line, body, condition, is_until, is_post_test } => {
+                BlockStatement::Do {
+                    line: *line,
+                    body: body.clone(),
+                    condition: condition.clone(),
+                    is_until: *is_until,
+                    is_post_test: *is_post_test,
+                }
+            }
+            BlockStatement::ForEach { line, element, group, body } => {
+                BlockStatement::ForEach {
+                    line: *line,
+                    element: element.clone(),
+                    group: group.clone(),
+                    body: body.clone(),
+                }
+            }
+            BlockStatement::FunctionDef { line, name, params, body_lines } => {
+                BlockStatement::FunctionDef {
+                    line: *line,
+                    name: name.clone(),
+                    params: params.clone(),
+                    body_lines: body_lines.clone(),
+                }
+            }
+            BlockStatement::SubDef { line, name, params, body_lines } => {
+                BlockStatement::SubDef {
+                    line: *line,
+                    name: name.clone(),
+                    params: params.clone(),
+                    body_lines: body_lines.clone(),
+                }
+            }
+            BlockStatement::SelectCase { line, expression, cases, else_body } => {
+                BlockStatement::SelectCase {
+                    line: *line,
+                    expression: expression.clone(),
+                    cases: cases.clone(),
+                    else_body: else_body.clone(),
+                }
+            }
+            BlockStatement::ClassDef { line, name, body_lines } => {
+                BlockStatement::ClassDef {
+                    line: *line,
+                    name: name.clone(),
+                    body_lines: body_lines.clone(),
+                }
+            }
+            BlockStatement::With { line, object, body } => {
+                BlockStatement::With {
+                    line: *line,
+                    object: object.clone(),
+                    body: body.clone(),
+                }
+            }
+            BlockStatement::ExitFor(l) => BlockStatement::ExitFor(*l),
+            BlockStatement::ExitDo(l) => BlockStatement::ExitDo(*l),
+            BlockStatement::ExitFunction(l) => BlockStatement::ExitFunction(*l),
+            BlockStatement::ExitSub(l) => BlockStatement::ExitSub(*l),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct ElseIfBlock {
     pub condition: Expr,
     pub body: Vec<BlockStatement>,
 }
 
+#[derive(Clone)]
 pub struct CaseClause {
     pub values: Vec<Expr>,
     pub body: Vec<BlockStatement>,
@@ -1507,7 +1603,65 @@ fn parse_exit_statement(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockSt
 
 // ===== Execution =====
 
+/// Fast-path: evaluate a simple `Variable <op> Literal` condition using native f64 ops.
+/// Returns `None` if the condition doesn't match the simple pattern.
+fn try_fast_condition(expr: &Expr, context: &mut ExecutionContext) -> Option<Result<bool, VBSError>> {
+    use std::cmp::Ordering;
+    let (var_name, lit_val, op, swap) = match expr {
+        Expr::BinaryOp { left, op, right } => {
+            match (left.as_ref(), right.as_ref()) {
+                (Expr::Variable(v), Expr::Literal(VBValue::Number(n))) => {
+                    (v.clone(), *n, op, false)
+                }
+                (Expr::Literal(VBValue::Number(n)), Expr::Variable(v)) => {
+                    (v.clone(), *n, op, true)
+                }
+                _ => return None,
+            }
+        }
+        _ => return None,
+    };
+    let var_val = match context.get_variable(&var_name) {
+        Some(VBValue::Number(n)) => *n,
+        Some(VBValue::Empty | VBValue::Null) => 0.0,
+        _ => return None,
+    };
+    let cmp = if var_val < lit_val {
+        Ordering::Less
+    } else if var_val > lit_val {
+        Ordering::Greater
+    } else {
+        Ordering::Equal
+    };
+    let result = if swap {
+        match op {
+            BinOp::Eq => cmp == Ordering::Equal,
+            BinOp::Ne => cmp != Ordering::Equal,
+            BinOp::Le => cmp != Ordering::Less,
+            BinOp::Ge => cmp != Ordering::Greater,
+            BinOp::Lt => cmp == Ordering::Greater,
+            BinOp::Gt => cmp == Ordering::Less,
+            _ => return None,
+        }
+    } else {
+        match op {
+            BinOp::Eq => cmp == Ordering::Equal,
+            BinOp::Ne => cmp != Ordering::Equal,
+            BinOp::Le => cmp != Ordering::Greater,
+            BinOp::Ge => cmp != Ordering::Less,
+            BinOp::Lt => cmp == Ordering::Less,
+            BinOp::Gt => cmp == Ordering::Greater,
+            _ => return None,
+        }
+    };
+    Some(Ok(result))
+}
+
 fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<bool, VBSError> {
+    // Try fast path for simple variable <op> literal comparisons
+    if let Some(result) = try_fast_condition(expr, context) {
+        return result;
+    }
     let val = evaluate(expr, context)?;
     if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
@@ -1538,11 +1692,15 @@ fn evaluate_numeric(expr: &Expr, context: &mut ExecutionContext) -> Result<f64, 
     })
 }
 
+#[derive(Clone)]
 struct ErrorSyntax {
     message: String,
 }
 
 impl VBSyntax for ErrorSyntax {
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
+    }
     fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(VBSErrorType::NotImplementedError
             .into_error(format!("Unrecognized command: {}", self.message)))
@@ -1553,12 +1711,17 @@ fn create_error_syntax(message: String) -> ErrorSyntax {
     ErrorSyntax { message }
 }
 
+#[derive(Clone)]
 struct ExitSyntax {
     exit_type: VBSErrorType,
     label: String,
 }
 
 impl VBSyntax for ExitSyntax {
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
+    }
+
     fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(self.exit_type.into_error(self.label.clone()))
     }
@@ -1592,6 +1755,7 @@ fn parse_exit_line(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct CallStatement {
     name: String,
     args: Vec<Expr>,
@@ -1604,6 +1768,10 @@ impl CallStatement {
 }
 
 impl VBSyntax for CallStatement {
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
+    }
+
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let args: Result<Vec<VBValue>, VBSError> =
             self.args.iter().map(|arg| evaluate(arg, context)).collect();
@@ -1697,7 +1865,15 @@ pub(crate) fn execute_user_defined_function(
     let saved_code_start_line = context.code_start_line;
     context.code_start_line = 0;
 
-    let body_blocks = parse_blocks(&func.body_lines)?;
+    let body_blocks = match context.get_function_body(&func.name) {
+        Some(cached) => cached.clone(),
+        None => {
+            let blocks = parse_blocks(&func.body_lines)?;
+            let name = func.name.clone();
+            context.set_function_body(&name, blocks.clone());
+            blocks
+        }
+    };
     match execute_blocks(&body_blocks, context) {
         Ok(()) => {}
         Err(e) if e.is_exit_function() || e.is_exit_sub() => {}
@@ -1882,6 +2058,10 @@ pub fn execute_blocks(
                 body_lines,
                 ..
             } => {
+                if context.get_function_body(name).is_none() {
+                    let bodies = parse_blocks(body_lines)?;
+                    context.set_function_body(name, bodies);
+                }
                 context.define_function(UserDefinedFunction {
                     name: name.clone(),
                     params: params.clone(),
@@ -1895,6 +2075,10 @@ pub fn execute_blocks(
                 body_lines,
                 ..
             } => {
+                if context.get_function_body(name).is_none() {
+                    let bodies = parse_blocks(body_lines)?;
+                    context.set_function_body(name, bodies);
+                }
                 context.define_function(UserDefinedFunction {
                     name: name.clone(),
                     params: params.clone(),

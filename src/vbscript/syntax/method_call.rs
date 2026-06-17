@@ -5,6 +5,7 @@ use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
 use super::VBSyntax;
 
+#[derive(Clone)]
 pub struct MethodCall {
     object_name: String,
     method_name: String,
@@ -175,5 +176,9 @@ impl VBSyntax for MethodCall {
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Object variable '{}' is not set", self.object_name))),
         }
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

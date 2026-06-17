@@ -2,6 +2,7 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+#[derive(Clone)]
 pub struct ResponseCookiesSet {
     key: Expr,
     value: Expr,
@@ -25,5 +26,9 @@ impl VBSyntax for ResponseCookiesSet {
             format!("{}={}; path=/", name, val),
         ));
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

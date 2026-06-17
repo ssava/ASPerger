@@ -3,6 +3,7 @@ use crate::vbscript::expr::{evaluate, to_number, Expr};
 use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+#[derive(Clone)]
 pub struct ReDim {
     var_name: String,
     size_expr: Expr,
@@ -49,5 +50,9 @@ impl VBSyntax for ReDim {
         }
 
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

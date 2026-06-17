@@ -2,6 +2,7 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+#[derive(Clone)]
 pub struct Assignment {
     var_name: String,
     expr: Expr,
@@ -18,5 +19,9 @@ impl VBSyntax for Assignment {
         let value = evaluate(&self.expr, context)?;
         context.set_variable(&self.var_name, value);
         Ok(())
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

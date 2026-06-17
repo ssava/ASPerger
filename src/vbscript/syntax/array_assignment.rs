@@ -4,6 +4,7 @@ use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, vbs_error::VBSErrorType, ExecutionContext};
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct ArrayAssignment {
     var_name: String,
     index_expr: Expr,
@@ -80,5 +81,9 @@ impl VBSyntax for ArrayAssignment {
                     .into_error(format!("Variable '{}' is not defined", self.var_name))),
             }
         }
+    }
+
+    fn clone_box(&self) -> Box<dyn VBSyntax> {
+        Box::new(self.clone())
     }
 }

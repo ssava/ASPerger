@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use ahash::AHashMap;
 
-use super::block::UserDefinedFunction;
+use super::block::{BlockStatement, UserDefinedFunction};
 use super::debugger::Debugger;
 use super::store::Store;
 use super::tokenizer::Token;
@@ -41,6 +41,8 @@ pub struct ClassDefinition {
 pub struct Scope {
     variables: AHashMap<String, VBValue>,
     functions: AHashMap<String, UserDefinedFunction>,
+    /// Cached parsed function bodies — parsed once at definition time, reused on every call.
+    function_bodies: AHashMap<String, Vec<BlockStatement>>,
     classes: AHashMap<String, ClassDefinition>,
     error_mode: ErrorMode,
     pub err_number: f64,
@@ -53,6 +55,7 @@ impl Scope {
         Scope {
             variables: AHashMap::new(),
             functions: AHashMap::new(),
+            function_bodies: AHashMap::new(),
             classes: AHashMap::new(),
             error_mode: ErrorMode::Normal,
             err_number: 0.0,
@@ -79,6 +82,14 @@ impl Scope {
 
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
         self.functions.get(&name.to_uppercase())
+    }
+
+    pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
+        self.function_bodies.get(&name.to_uppercase())
+    }
+
+    pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
+        self.function_bodies.insert(name.to_uppercase(), body);
     }
 
     pub fn define_class(&mut self, class: ClassDefinition) {
@@ -247,6 +258,16 @@ impl ExecutionContext {
     /// Look up a user-defined function by name.
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
         self.scope.get_function(name)
+    }
+
+    /// Look up a cached function body by function name.
+    pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
+        self.scope.get_function_body(name)
+    }
+
+    /// Store a cached function body.
+    pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
+        self.scope.set_function_body(name, body);
     }
 
     /// Define a class in the current scope.
