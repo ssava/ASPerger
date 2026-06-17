@@ -10,6 +10,15 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+use axum::{
+    body::Body,
+    extract::{Extension, Request},
+    http::StatusCode,
+    response::Response,
+    routing::any,
+    Router,
+};
+
 /// Parsed HTTP request received by the server.
 #[derive(Debug, Clone)]
 pub struct HttpRequest {
@@ -614,4 +623,148 @@ impl AspServer {
         let response = Self::process_request(request, handler_chain, folder, default_document, store, None).await?;
         Self::write_response(stream, &response).await
     }
+
+    /// Start the HTTP server using axum (production path).
+    /// Supports graceful shutdown on Ctrl+C.
+    pub async fn start_axum(&self, asp_cfg: &AspServerConfig) -> std::io::Result<()> {
+        let host = if asp_cfg.host.is_empty() { &self.config.host } else { &asp_cfg.host };
+        let port = if asp_cfg.port == 0 { self.config.port } else { asp_cfg.port };
+        let folder = if asp_cfg.folder.is_empty() || asp_cfg.folder == "." {
+            self.config.folder.clone()
+        } else {
+            asp_cfg.folder.clone()
+        };
+        let default_doc = asp_cfg.default_document.clone();
+
+        let state = Arc::new(AxumServerState {
+            handler_chain: Arc::clone(&self.handler_chain),
+            store: Arc::clone(&self.store),
+            folder: folder.clone(),
+            default_document: default_doc.clone(),
+        });
+
+        let app = Router::new()
+            .fallback(any(axum_handler))
+            .layer(Extension(state));
+
+        let addr: std::net::SocketAddr = format!("{}:{}", host, port)
+            .parse()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+        println!(
+            "Server listening on {} serving files from {} (default document: {})",
+            addr, folder, default_doc
+        );
+
+        let listener = tokio::net::TcpListener::bind(addr).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c().await.ok();
+            })
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    }
+}
+
+/// Shared state injected into all axum handlers.
+struct AxumServerState {
+    handler_chain: Arc<dyn Handler + Send + Sync>,
+    store: Arc<Store>,
+    folder: String,
+    default_document: String,
+}
+
+/// Axum request handler: converts axum Request → internal HttpRequest,
+/// calls process_request, then converts internal HttpResponse → axum Response.
+async fn axum_handler(
+    Extension(state): Extension<Arc<AxumServerState>>,
+    req: Request,
+) -> Response<Body> {
+    let (parts, body) = req.into_parts();
+    let body_bytes = axum::body::to_bytes(body, 10 * 1024 * 1024)
+        .await
+        .unwrap_or_default();
+
+    let headers: AHashMap<String, String> = parts
+        .headers
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.as_str().to_lowercase(),
+                v.to_str().unwrap_or("").to_string(),
+            )
+        })
+        .collect();
+
+    let http_request = crate::asp::server::HttpRequest {
+        method: parts.method.to_string(),
+        path: parts
+            .uri
+            .path()
+            .trim_start_matches('/')
+            .to_string(),
+        query_string: parts.uri.query().unwrap_or("").to_string(),
+        cookies: headers
+            .get("cookie")
+            .map(|c| AspServer::parse_cookies(c))
+            .unwrap_or_default(),
+        headers,
+        body: body_bytes.to_vec(),
+    };
+
+    match AspServer::process_request(
+        http_request,
+        &state.handler_chain,
+        &state.folder,
+        &state.default_document,
+        &state.store,
+        None,
+    )
+    .await
+    {
+        Ok(http_resp) => convert_response(http_resp),
+        Err(e) => Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(format!("Internal error: {}", e)))
+            .unwrap(),
+    }
+}
+
+/// Convert our internal HttpResponse to an axum Response<Body>.
+fn convert_response(resp: crate::asp::server::HttpResponse) -> Response<Body> {
+    let status_code = parse_status_code(&resp.status_line);
+    let has_content_type = resp
+        .extra_headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
+
+    let mut builder = Response::builder()
+        .status(status_code)
+        .header("Content-Length", resp.body.len().to_string());
+    if !has_content_type {
+        builder = builder.header(
+            "Content-Type",
+            format!("{}; charset=utf-8", resp.content_type),
+        );
+    }
+    for (key, value) in &resp.extra_headers {
+        builder = builder.header(key.as_str(), value.as_str());
+    }
+    builder
+        .body(Body::from(resp.body))
+        .unwrap_or_else(|_| {
+            Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from("Response build error"))
+                .unwrap()
+        })
+}
+
+/// Parse a status line string like "200 OK" into a StatusCode.
+fn parse_status_code(status_line: &str) -> StatusCode {
+    let code = status_line
+        .split_whitespace()
+        .next()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(500);
+    StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
 }

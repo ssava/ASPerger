@@ -19,7 +19,7 @@ async fn main() {
 
     // Start the server with the specified configuration.
     let server = AspServer::new(cli);
-    if let Err(e) = server.start_with_config(&cfg).await {
+    if let Err(e) = server.start_axum(&cfg).await {
         eprintln!("Server error: {}", e);
     }
 }
