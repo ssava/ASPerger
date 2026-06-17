@@ -3,6 +3,17 @@ name = "asperger"
 version = "0.1.0"
 edition = "2021"
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "level1_vbscript"
+harness = false
+
+[[bench]]
+name = "level2_http"
+harness = false
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 clap = { version = "4.0", features = ["derive"] }
