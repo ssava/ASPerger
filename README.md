@@ -65,8 +65,11 @@ See [`DEBUG.md`](DEBUG.md) for setup instructions.
 # Build
 cargo build --release
 
-# Run
-cargo run -- --port 9090 --folder ./asp_files
+# Run (serve ASP files from ./asp_files)
+cargo run -- --port 9090 ./asp_files
+
+# Run with directory listing enabled
+cargo run -- --port 9090 --enable-directory-listing ./asp_files
 ```
 
 Then open `http://localhost:9090` in your browser.
@@ -78,10 +81,13 @@ Then open `http://localhost:9090` in your browser.
 | `--host` | `127.0.0.1` | Bind address |
 | `-p`, `--port` | `8080` | Port number |
 | `-f`, `--folder` | `./` | Directory containing ASP files |
+| `--enable-directory-listing` | `false` | Show a directory listing when no default document exists |
+| `<path>` (positional) | — | Path to an `.asp` file or directory (shortcut for `--folder`) |
 
 Example:
 ```bash
-cargo run -- --host 0.0.0.0 --port 3000 --folder ./www
+cargo run -- --host 0.0.0.0 --port 3000 ./www
+cargo run -- --enable-directory-listing ./www
 ```
 
 ## Configuration (`asp.ini`)
@@ -93,6 +99,7 @@ Place an `asp.ini` file in the served folder to configure the server. Settings a
 ; host = 127.0.0.1
 ; port = 9090
 ; default_document = index.asp
+; enable_directory_listing = false
 ```
 
 | Key | Default | Description |
@@ -100,6 +107,7 @@ Place an `asp.ini` file in the served folder to configure the server. Settings a
 | `host` | `127.0.0.1` | Bind address |
 | `port` | `9090` | HTTP server port |
 | `default_document` | `index.asp` | File served when requesting the root path (`/`) |
+| `enable_directory_listing` | `false` | Show a directory listing when no default document exists |
 
 ### VS Code launch config
 
@@ -111,6 +119,7 @@ In the debug adapter the same settings are available as launch configuration att
 | `program` | `string` | Path to an `.asp` file (parent used as served root if `folder` unset) |
 | `port` | `number` | HTTP server port (default `9090`) |
 | `defaultDocument` | `string` | Default file served for root path (default `"index.asp"`) |
+| `directoryListing` | `boolean` | Enable directory listing when no default document is found (default `false`) |
 
 Example `.vscode/launch.json`:
 
