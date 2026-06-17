@@ -37,6 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut launch_folder: Option<String> = None;
     let mut launch_port: Option<u16> = None;
     let mut launch_default_doc: Option<String> = None;
+    let mut launch_directory_listing: Option<bool> = None;
     let mut debugger_state: Option<Arc<Mutex<asperger::vbscript::debugger::DebuggerState>>> = None;
     let mut command_tx: Option<std::sync::mpsc::Sender<DebugCommand>> = None;
     let mut interpreter_handle: Option<std::thread::JoinHandle<()>> = None;
@@ -109,6 +110,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         if !doc.is_empty() {
                             launch_default_doc = Some(doc.to_string());
                         }
+                    }
+                    if let Some(dl) = extra.get("directoryListing").and_then(|v| v.as_bool()) {
+                        launch_directory_listing = Some(dl);
                     }
                 }
                 if script_path.is_empty() {
@@ -250,6 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     launch_port,
                     Some(&folder),                   // folder (always set)
                     launch_default_doc.as_deref(),
+                    launch_directory_listing,
                 );
 
                 let handle = std::thread::spawn(move || {
@@ -530,6 +535,8 @@ fn start_debug_http_server<W: Write + Send + 'static>(
         host: config.host.clone(),
         port: config.port,
         folder: folder.clone(),
+        program: None,
+        enable_directory_listing: config.directory_listing,
     };
     let server = AspServer::new(asp_cfg);
 
@@ -621,6 +628,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                         &default_document,
                         &server.store,
                         Some(Arc::clone(&debugger)),
+                        config.directory_listing,
                     ),
                 )
                 .await
@@ -636,7 +644,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                         asperger::asp::server::HttpResponse {
                             status_line: "500 Internal Server Error".to_string(),
                             content_type: "text/plain".to_string(),
-                            body: format!("Error: {}", e),
+                            body: format!("Error: {}", e).into_bytes(),
                             extra_headers: Vec::new(),
                         }
                     }
@@ -650,7 +658,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                         asperger::asp::server::HttpResponse {
                             status_line: "504 Gateway Timeout".to_string(),
                             content_type: "text/plain".to_string(),
-                            body: "Debug server timeout — debugger blocked indefinitely".to_string(),
+                            body: "Debug server timeout — debugger blocked indefinitely".to_string().into_bytes(),
                             extra_headers: Vec::new(),
                         }
                     }

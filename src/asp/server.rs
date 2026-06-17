@@ -43,8 +43,8 @@ pub struct HttpResponse {
     pub status_line: String,
     /// Content-Type header value.
     pub content_type: String,
-    /// Response body string.
-    pub body: String,
+    /// Response body bytes.
+    pub body: Vec<u8>,
     /// Additional headers to include in the response.
     pub extra_headers: Vec<(String, String)>,
 }
@@ -88,12 +88,13 @@ impl AspServer {
     pub async fn start_with_config(&self, asp_cfg: &AspServerConfig) -> std::io::Result<()> {
         let host = if asp_cfg.host.is_empty() { &self.config.host } else { &asp_cfg.host };
         let port = if asp_cfg.port == 0 { self.config.port } else { asp_cfg.port };
-        let folder = if asp_cfg.folder.is_empty() || asp_cfg.folder == "." {
-            self.config.folder.clone()
+        let folder = if asp_cfg.folder.is_empty() || asp_cfg.folder.trim_end_matches('/').is_empty() {
+            self.config.folder.trim_end_matches('/').to_string()
         } else {
-            asp_cfg.folder.clone()
+            asp_cfg.folder.trim_end_matches('/').to_string()
         };
         let default_doc = asp_cfg.default_document.clone();
+        let dir_listing = asp_cfg.directory_listing;
 
         let bind_addr = format!("{}:{}", host, port);
         let listener = TcpListener::bind(&bind_addr).await?;
@@ -111,7 +112,7 @@ impl AspServer {
 
             tokio::spawn(async move {
                 if let Err(e) =
-                    Self::handle_connection(&handler_chain, &mut stream, &folder, &default_doc, &store).await
+                    Self::handle_connection(&handler_chain, &mut stream, &folder, &default_doc, &store, dir_listing).await
                 {
                     eprintln!("Connection handling error: {}", e);
                 }
@@ -137,6 +138,20 @@ impl AspServer {
                     result.push((hi * 16 + lo) as u8 as char);
                 }
                 _ => result.push(b as char),
+            }
+        }
+        result
+    }
+
+    /// Minimal percent-encoding for filenames in directory listing links.
+    fn url_encode(s: &str) -> String {
+        let mut result = String::with_capacity(s.len());
+        for b in s.bytes() {
+            match b {
+                b'-' | b'_' | b'.' | b'~' | b'/' => result.push(b as char),
+                b if b.is_ascii_alphanumeric() => result.push(b as char),
+                b' ' => result.push_str("%20"),
+                _ => result.push_str(&format!("%{:02X}", b)),
             }
         }
         result
@@ -237,25 +252,30 @@ impl AspServer {
             .extra_headers
             .iter()
             .any(|(k, _)| k.eq_ignore_ascii_case("content-type"));
-        let mut buf = format!(
+        let header = format!(
             "HTTP/1.1 {}\r\nContent-Length: {}\r\n",
             response.status_line,
             response.body.len(),
         );
+        let mut buf = Vec::new();
+        buf.extend_from_slice(header.as_bytes());
         if !has_content_type {
-            buf.push_str(&format!(
-                "Content-Type: {}; charset=utf-8\r\n",
-                response.content_type
-            ));
+            buf.extend_from_slice(
+                format!(
+                    "Content-Type: {}; charset=utf-8\r\n",
+                    response.content_type
+                )
+                .as_bytes(),
+            );
         }
         for (key, value) in &response.extra_headers {
-            buf.push_str(&format!("{}: {}\r\n", key, value));
+            buf.extend_from_slice(format!("{}: {}\r\n", key, value).as_bytes());
         }
-        buf.push_str("\r\n");
-        buf.push_str(&response.body);
+        buf.extend_from_slice(b"\r\n");
+        buf.extend_from_slice(&response.body);
 
         stream
-            .write_all(buf.as_bytes())
+            .write_all(&buf)
             .await
             .map_err(|e| ASPError::new(500, format!("Error writing response: {}", e)))?;
         stream
@@ -367,26 +387,19 @@ impl AspServer {
         default_document: &str,
         store: &Arc<Store>,
         debugger: Option<Arc<Debugger>>,
+        directory_listing: bool,
     ) -> Result<HttpResponse, ASPError> {
-        let file_path = format!(
-            "{}/{}",
-            folder,
-            if request.path.is_empty() {
-                default_document.to_string()
-            } else {
-                request.path.clone()
-            }
-        );
-        let path_obj = Path::new(&file_path);
+        // Build raw path — no default document substitution yet
+        let raw_path = format!("{}/{}", folder, request.path);
 
-        let canonical_path = match path_obj.canonicalize() {
+        let canonical_path = match Path::new(&raw_path).canonicalize() {
             Ok(p) => p,
             Err(e) => {
-                let err = ASPError::new(404, &format!("File not found: {} (folder={}, path={}, error={})", file_path, folder, request.path, e));
+                let err = ASPError::new(404, &format!("File not found: {} (folder={}, path={}, error={})", raw_path, folder, request.path, e));
                 return Ok(HttpResponse {
                     status_line: "404 Not Found".to_string(),
                     content_type: "text/html".to_string(),
-                    body: err.render_html(),
+                    body: err.render_html().into_bytes(),
                     extra_headers: Vec::new(),
                 });
             }
@@ -396,23 +409,61 @@ impl AspServer {
             .canonicalize()
             .map_err(|_| ASPError::new(500, "Server configuration error".to_string()))?;
 
-        if !canonical_path.starts_with(canonical_folder) {
+        if !canonical_path.starts_with(&canonical_folder) {
             let err = ASPError::new(403, "Forbidden: access denied");
             return Ok(HttpResponse {
                 status_line: "403 Forbidden".to_string(),
                 content_type: "text/html".to_string(),
-                body: err.render_html(),
+                body: err.render_html().into_bytes(),
                 extra_headers: Vec::new(),
             });
         }
 
-        let content = match std::fs::read_to_string(&file_path) {
+        // Determine the actual file path:
+        // - If it's a directory, try default document, then directory listing, else 404
+        // - If it's a file, use raw_path directly
+        let file_path = if canonical_path.is_dir() {
+            let default_path = canonical_path.join(default_document);
+            if default_path.is_file() {
+                default_path.to_string_lossy().to_string()
+            } else if directory_listing {
+                return Ok(Self::generate_directory_listing(&canonical_path, &canonical_folder, &request.path));
+            } else {
+            return Ok(HttpResponse {
+                status_line: "404 Not Found".to_string(),
+                content_type: "text/html".to_string(),
+                body: format!(
+                    "<html><head><title>404 Not Found</title>\
+                     <style>body{{font-family:monospace;background:#f8f8f8;padding:2em}}\
+                     h1{{color:#c00;font-size:1.5em}}\
+                     .code{{color:#666}}\
+                     .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\
+                     </style></head><body>\
+                     <h1>404 Not Found</h1>\
+                     <p class=\"code\">{}</p>\
+                     <div class=\"msg\">{}</div>\
+                     </body></html>",
+                    Self::html_escape(&request.path),
+                    Self::html_escape(&format!(
+                        "No default document ({}) found",
+                        default_document
+                    ))
+                ).into_bytes(),
+                extra_headers: Vec::new(),
+            });
+            }
+        } else {
+            raw_path
+        };
+        let path_obj = Path::new(&file_path);
+
+        let content = match std::fs::read(&file_path) {
             Ok(content) => content,
             Err(_) => {
                 return Ok(HttpResponse {
                     status_line: "404 Not Found".to_string(),
                     content_type: "text/plain".to_string(),
-                    body: format!("Page not found: {}", file_path),
+                    body: format!("Page not found: {}", file_path).into_bytes(),
                     extra_headers: Vec::new(),
                 });
             }
@@ -434,6 +485,9 @@ impl AspServer {
             });
         }
 
+        let content = String::from_utf8(content)
+            .map_err(|e| ASPError::new(500, format!("Non-UTF8 content in ASP file: {}", e)))?;
+
         // ASP file processing
         let file_dir = Path::new(&file_path).parent().unwrap_or(Path::new(folder));
         let root_dir = Path::new(folder);
@@ -446,7 +500,7 @@ impl AspServer {
                 return Ok(HttpResponse {
                     status_line: "500 Internal Server Error".to_string(),
                     content_type: "text/html".to_string(),
-                    body: ASPError::new(500, e).render_html(),
+                    body: ASPError::new(500, e).render_html().into_bytes(),
                     extra_headers: Vec::new(),
                 });
             }
@@ -598,14 +652,14 @@ impl AspServer {
             Ok(HttpResponse {
                 status_line: "302 Found".to_string(),
                 content_type: "text/html".to_string(),
-                body: String::new(),
+                body: Vec::new(),
                 extra_headers: context.response.extra_headers,
             })
         } else {
             Ok(HttpResponse {
                 status_line: context.response.status,
                 content_type: "text/html".to_string(),
-                body: response_content,
+                body: response_content.into_bytes(),
                 extra_headers: context.response.extra_headers,
             })
         }
@@ -618,9 +672,10 @@ impl AspServer {
         folder: &str,
         default_document: &str,
         store: &Arc<Store>,
+        directory_listing: bool,
     ) -> Result<(), ASPError> {
         let request = Self::read_request(stream).await?;
-        let response = Self::process_request(request, handler_chain, folder, default_document, store, None).await?;
+        let response = Self::process_request(request, handler_chain, folder, default_document, store, None, directory_listing).await?;
         Self::write_response(stream, &response).await
     }
 
@@ -629,10 +684,10 @@ impl AspServer {
     pub async fn start_axum(&self, asp_cfg: &AspServerConfig) -> std::io::Result<()> {
         let host = if asp_cfg.host.is_empty() { &self.config.host } else { &asp_cfg.host };
         let port = if asp_cfg.port == 0 { self.config.port } else { asp_cfg.port };
-        let folder = if asp_cfg.folder.is_empty() || asp_cfg.folder == "." {
-            self.config.folder.clone()
+        let folder = if asp_cfg.folder.is_empty() || asp_cfg.folder.trim_end_matches('/').is_empty() {
+            self.config.folder.trim_end_matches('/').to_string()
         } else {
-            asp_cfg.folder.clone()
+            asp_cfg.folder.trim_end_matches('/').to_string()
         };
         let default_doc = asp_cfg.default_document.clone();
 
@@ -641,6 +696,7 @@ impl AspServer {
             store: Arc::clone(&self.store),
             folder: folder.clone(),
             default_document: default_doc.clone(),
+            directory_listing: asp_cfg.directory_listing,
         });
 
         let app = Router::new()
@@ -663,6 +719,199 @@ impl AspServer {
             .await
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
     }
+
+    /// Generate an HTML directory listing for the given canonical directory path.
+    fn generate_directory_listing(
+        dir_path: &std::path::Path,
+        root_path: &std::path::Path,
+        request_path: &str,
+    ) -> HttpResponse {
+        let mut rows = String::new();
+
+        // Parent directory link (only if within served root)
+        if dir_path != root_path {
+            let parent = if request_path.is_empty() || request_path == "/" {
+                "".to_string()
+            } else {
+                let trimmed = request_path.trim_end_matches('/');
+                if let Some(pos) = trimmed.rfind('/') {
+                    format!("{}/", &trimmed[..=pos])
+                } else {
+                    "".to_string()
+                }
+            };
+            rows.push_str(&format!(
+                "<tr><td><a href=\"{}\">../</a></td><td></td><td></td></tr>\n",
+                Self::html_escape(&parent)
+            ));
+        }
+
+        let read_dir = match std::fs::read_dir(dir_path) {
+            Ok(r) => r,
+            Err(_) => {
+                return HttpResponse {
+                    status_line: "500 Internal Server Error".to_string(),
+                    content_type: "text/html".to_string(),
+                    body: "Unable to read directory".to_string().into_bytes(),
+                    extra_headers: vec![(
+                        "Content-Security-Policy".to_string(),
+                        "default-src 'self'".to_string(),
+                    )],
+                };
+            }
+        };
+
+        struct ListEntry {
+            name: String,
+            is_dir: bool,
+            size: u64,
+            modified: String,
+        }
+
+        let mut entries: Vec<ListEntry> = Vec::new();
+
+        for entry in read_dir.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy().to_string();
+
+            // Security: skip hidden files and config
+            if name_str.starts_with('.') || name_str.eq_ignore_ascii_case("asp.ini") {
+                continue;
+            }
+
+            let meta = match std::fs::symlink_metadata(entry.path()) {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+
+            // Skip symlinks — they could point outside the served tree
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+
+            let is_dir = meta.is_dir();
+            let size = meta.len();
+            let modified = meta
+                .modified()
+                .ok()
+                .map(|t| {
+                    let duration = t
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default();
+                    // Format as YYYY-MM-DD HH:MM:SS
+                    let secs = duration.as_secs();
+                    let days = secs / 86400;
+                    let time_secs = secs % 86400;
+                    let hours = time_secs / 3600;
+                    let minutes = (time_secs % 3600) / 60;
+                    let seconds = time_secs % 60;
+                    // Approximate year (1970 + days/365.25)
+                    let year = 1970 + (days as f64 / 365.25) as u64;
+                    let month = 1 + ((days % 365) / 30).min(11);
+                    let day = 1 + (days % 30).min(30);
+                    format!(
+                        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+                        year, month, day, hours, minutes, seconds
+                    )
+                })
+                .unwrap_or_default();
+
+            entries.push(ListEntry {
+                name: name_str,
+                is_dir,
+                size,
+                modified,
+            });
+        }
+
+        // Sort: directories first, then files; alphabetically within each group
+        entries.sort_by(|a, b| {
+            b.is_dir
+                .cmp(&a.is_dir)
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+
+        for e in &entries {
+            let href = if e.is_dir {
+                format!("{}/", Self::url_encode(&e.name))
+            } else {
+                Self::url_encode(&e.name)
+            };
+            let size_str = if e.is_dir {
+                String::new()
+            } else if e.size < 1024 {
+                format!("{} B", e.size)
+            } else if e.size < 1024 * 1024 {
+                format!("{:.1} KB", e.size as f64 / 1024.0)
+            } else {
+                format!("{:.1} MB", e.size as f64 / (1024.0 * 1024.0))
+            };
+            rows.push_str(&format!(
+                "<tr><td><a href=\"{}\">{}</a></td><td>{}</td><td>{}</td></tr>\n",
+                Self::html_escape(&href),
+                Self::html_escape(&e.name),
+                Self::html_escape(&size_str),
+                Self::html_escape(&e.modified),
+            ));
+        }
+
+        let path_display = format!("/{}", request_path);
+        let body = format!(
+            "<!DOCTYPE html>\n\
+             <html>\n<head>\n\
+             <meta charset=\"UTF-8\">\n\
+             <title>Index of {}</title>\n\
+             <style>\n\
+             body{{font-family:monospace;background:#f8f8f8;padding:2em}}\n\
+             h1{{color:#c00;font-size:1.5em}}\n\
+             .code{{color:#666}}\n\
+             .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\n\
+             table{{width:100%;border-collapse:collapse}}\n\
+             th,td{{text-align:left;padding:4px 8px;border-bottom:1px solid #ddd}}\n\
+             th{{background:#f5f5f5}}\n\
+             tr:hover{{background:#eee}}\n\
+             a{{color:#06c;text-decoration:none}}\n\
+             a:hover{{text-decoration:underline}}\n\
+             </style>\n\
+             </head>\n<body>\n\
+             <h1>Index of {}</h1>\n\
+             <div class=\"msg\">\n\
+             <table>\n\
+             <tr><th>Name</th><th>Size</th><th>Last Modified</th></tr>\n\
+             {} \
+             </table>\n\
+             </div>\n</body>\n</html>",
+            Self::html_escape(&path_display),
+            Self::html_escape(&path_display),
+            rows,
+        );
+
+        HttpResponse {
+            status_line: "200 OK".to_string(),
+            content_type: "text/html".to_string(),
+            body: body.into_bytes(),
+            extra_headers: vec![(
+                "Content-Security-Policy".to_string(),
+                "default-src 'self'".to_string(),
+            )],
+        }
+    }
+
+    /// Minimal HTML-entity escaping for text content.
+    fn html_escape(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '&' => out.push_str("&amp;"),
+                '<' => out.push_str("&lt;"),
+                '>' => out.push_str("&gt;"),
+                '"' => out.push_str("&quot;"),
+                '\'' => out.push_str("&#x27;"),
+                _ => out.push(c),
+            }
+        }
+        out
+    }
 }
 
 /// Shared state injected into all axum handlers.
@@ -671,6 +920,7 @@ struct AxumServerState {
     store: Arc<Store>,
     folder: String,
     default_document: String,
+    directory_listing: bool,
 }
 
 /// Axum request handler: converts axum Request → internal HttpRequest,
@@ -718,6 +968,7 @@ async fn axum_handler(
         &state.default_document,
         &state.store,
         None,
+        state.directory_listing,
     )
     .await
     {

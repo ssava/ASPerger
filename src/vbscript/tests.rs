@@ -4910,6 +4910,8 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port: 0,
             folder: asp_dir.to_string(),
+            program: None,
+            enable_directory_listing: false,
         };
         let server = crate::asp::server::AspServer::new(config);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -4932,7 +4934,7 @@ mod tests {
                             let mut stream = stream;
                             let default_doc = "index.asp".to_string();
                             let _ = crate::asp::server::AspServer::handle_connection(
-                                &handler, &mut stream, &folder, &default_doc, &store,
+                                &handler, &mut stream, &folder, &default_doc, &store, false,
                             ).await;
                         });
                     }

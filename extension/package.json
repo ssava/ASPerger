@@ -72,6 +72,11 @@
                                 "type": "string",
                                 "default": "index.asp",
                                 "description": "Default file served when requesting the root path"
+                            },
+                            "directoryListing": {
+                                "type": "boolean",
+                                "default": false,
+                                "description": "Enable directory listing when no default document is found"
                             }
                         }
                     }

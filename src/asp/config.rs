@@ -15,8 +15,15 @@ pub struct Config {
     pub port: u16,
 
     /// Directory containing ASP files to serve.
-    #[clap(short, long, default_value = "./")]
+    #[clap(short, long, default_value = ".")]
     pub folder: String,
+
+    /// Path to an .asp file or directory (positional shortcut for --folder).
+    pub program: Option<String>,
+
+    /// Enable directory listing when no default document is found.
+    #[clap(long)]
+    pub enable_directory_listing: bool,
 }
 
 /// Runtime server configuration with all overrides applied in order:
@@ -27,6 +34,7 @@ pub struct AspServerConfig {
     pub port: u16,
     pub folder: String,
     pub default_document: String,
+    pub directory_listing: bool,
 }
 
 impl Default for AspServerConfig {
@@ -36,6 +44,7 @@ impl Default for AspServerConfig {
             port: 9090,
             folder: ".".to_string(),
             default_document: "index.asp".to_string(),
+            directory_listing: false,
         }
     }
 }
@@ -69,6 +78,9 @@ impl AspServerConfig {
                             }
                         }
                         "default_document" => cfg.default_document = value.to_string(),
+                        "enable_directory_listing" => {
+                            cfg.directory_listing = value.eq_ignore_ascii_case("true");
+                        }
                         _ => {}
                     }
                 }
@@ -80,7 +92,7 @@ impl AspServerConfig {
 
     /// Apply overrides from a map (e.g. DAP launch args or CLI args).
     /// Empty/Never values are ignored so INI/defaults are preserved.
-    pub fn apply_overrides(&mut self, host: Option<&str>, port: Option<u16>, folder: Option<&str>, default_document: Option<&str>) {
+    pub fn apply_overrides(&mut self, host: Option<&str>, port: Option<u16>, folder: Option<&str>, default_document: Option<&str>, directory_listing: Option<bool>) {
         if let Some(h) = host {
             if !h.is_empty() {
                 self.host = h.to_string();
@@ -98,6 +110,9 @@ impl AspServerConfig {
             if !d.is_empty() {
                 self.default_document = d.to_string();
             }
+        }
+        if let Some(dl) = directory_listing {
+            self.directory_listing = dl;
         }
     }
 }

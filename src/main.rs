@@ -8,13 +8,17 @@ async fn main() {
     // Parse command-line arguments.
     let cli = Config::parse();
 
+    // If a positional argument is provided, use it as the served folder
+    let folder = cli.program.as_deref().unwrap_or(&cli.folder);
+
     // Build runtime config: start with INI from folder, then apply CLI overrides
-    let mut cfg = AspServerConfig::from_folder(&cli.folder);
+    let mut cfg = AspServerConfig::from_folder(folder);
     cfg.apply_overrides(
         Some(&cli.host),
         Some(cli.port),
-        Some(&cli.folder),
+        Some(folder),
         None, // default_document not settable from CLI yet
+        Some(cli.enable_directory_listing),
     );
 
     // Start the server with the specified configuration.
