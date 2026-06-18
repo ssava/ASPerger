@@ -51,7 +51,7 @@ impl VBScriptObject for FileSystemObject {
                 #[cfg(unix)]
                 {
                     let drives = vec![VBValue::String("/".to_string())];
-                    Ok(VBValue::Array(std::sync::Arc::new(drives)))
+                    Ok(VBValue::Array(std::sync::Arc::new(drives), vec![]))
                 }
                 #[cfg(windows)]
                 {
@@ -65,7 +65,7 @@ impl VBScriptObject for FileSystemObject {
                             }
                         })
                         .collect();
-                    Ok(VBValue::Array(std::sync::Arc::new(drives)))
+                    Ok(VBValue::Array(std::sync::Arc::new(drives), vec![]))
                 }
             }
             _ => Err(VBSErrorType::RuntimeError
@@ -374,7 +374,7 @@ impl VBScriptObject for FileSystemObject {
                 let name = p.file_stem().and_then(|n| n.to_str());
                 match name {
                     Some(n) => Ok(VBValue::String(n.to_string())),
-                    None => Ok(VBValue::Empty),
+                    None => Ok(VBValue::String("".to_string())),
                 }
             }
             "GETABSOLUTEPATHNAME" => {
@@ -780,7 +780,7 @@ impl VBScriptObject for FolderObject {
                         .collect(),
                     Err(_) => vec![],
                 };
-                Ok(VBValue::Array(std::sync::Arc::new(entries)))
+                Ok(VBValue::Array(std::sync::Arc::new(entries), vec![]))
             }
             "SUBFOLDERS" => {
                 let entries: Vec<VBValue> = match fs::read_dir(&self.path) {
@@ -791,7 +791,7 @@ impl VBScriptObject for FolderObject {
                         .collect(),
                     Err(_) => vec![],
                 };
-                Ok(VBValue::Array(std::sync::Arc::new(entries)))
+                Ok(VBValue::Array(std::sync::Arc::new(entries), vec![]))
             }
             "ATTRIBUTES" => {
                 let a = 16i32;

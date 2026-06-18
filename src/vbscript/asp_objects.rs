@@ -1,6 +1,6 @@
 use ahash::AHashMap;
 
-use super::execution_context::ExecutionContext;
+use super::execution_context::{CookieEntry, ExecutionContext};
 use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
@@ -276,6 +276,11 @@ impl VBScriptObject for ResponseObject {
                 context.response.status = value_utils::to_arg_string(&value);
                 Ok(())
             }
+            "BUFFER" => {
+                context.response.buffer = value_utils::to_arg_string(&value);
+                Ok(())
+            }
+            "EXPIRES" => Ok(()),
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Property '{}' not found on Response", name))),
         }
@@ -310,15 +315,126 @@ impl VBScriptObject for ResponseObject {
 // ===== ResponseCookies =====
 
 #[derive(Debug, Clone)]
-pub struct ResponseCookies {
-    cookies: AHashMap<String, String>,
-}
+pub struct ResponseCookies;
 
 impl ResponseCookies {
     pub fn new() -> Self {
-        ResponseCookies {
-            cookies: AHashMap::new(),
+        ResponseCookies
+    }
+}
+
+fn get_or_create_entry<'a>(context: &'a mut ExecutionContext, name: &str) -> &'a mut CookieEntry {
+    context.response.cookies.entry(name.to_string()).or_default()
+}
+
+/// A single cookie with its attributes and subkeys.
+/// Stateless — reads/writes through `context.response.cookies[cookie_name]`.
+#[derive(Debug, Clone)]
+pub struct CookieObject {
+    cookie_name: String,
+}
+
+impl CookieObject {
+    pub fn new(cookie_name: String) -> Self {
+        CookieObject { cookie_name }
+    }
+}
+
+pub(crate) fn to_cookie_string(name: &str, entry: &CookieEntry) -> String {
+    let mut s = format!("{}={}", name, entry.value);
+    if !entry.expires.is_empty() {
+        s.push_str(&format!("; expires={}", entry.expires));
+    }
+    if !entry.domain.is_empty() {
+        s.push_str(&format!("; domain={}", entry.domain));
+    }
+    if !entry.path.is_empty() {
+        s.push_str(&format!("; path={}", entry.path));
+    } else {
+        s.push_str("; path=/");
+    }
+    if entry.secure {
+        s.push_str("; secure");
+    }
+    s
+}
+
+impl VBScriptObject for CookieObject {
+    fn type_name(&self) -> &'static str {
+        "Cookie"
+    }
+    fn clone_box(&self) -> Box<dyn VBScriptObject> {
+        Box::new(self.clone())
+    }
+    fn get_property(
+        &self,
+        name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        let entry = match context.response.cookies.get(&self.cookie_name) {
+            Some(e) => e,
+            None => return Ok(VBValue::Empty),
+        };
+        match name.to_uppercase().as_str() {
+            "EXPIRES" => Ok(VBValue::String(entry.expires.clone())),
+            "DOMAIN" => Ok(VBValue::String(entry.domain.clone())),
+            "PATH" => Ok(VBValue::String(entry.path.clone())),
+            "SECURE" => Ok(VBValue::Boolean(entry.secure)),
+            "HASKEYS" => Ok(VBValue::Boolean(!entry.subkeys.is_empty())),
+            _ => Ok(VBValue::String(entry.value.clone())),
         }
+    }
+    fn set_property(
+        &mut self,
+        name: &str,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
+        let entry = get_or_create_entry(context, &self.cookie_name);
+        match name.to_uppercase().as_str() {
+            "EXPIRES" => entry.expires = value_utils::to_arg_string(&value),
+            "DOMAIN" => entry.domain = value_utils::to_arg_string(&value),
+            "PATH" => entry.path = value_utils::to_arg_string(&value),
+            "SECURE" => entry.secure = value_utils::to_boolean(&value),
+            _ => entry.value = value_utils::to_arg_string(&value),
+        }
+        Ok(())
+    }
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        let key = value_utils::to_arg_string(index);
+        match context.response.cookies.get(&self.cookie_name) {
+            Some(entry) => Ok(entry
+                .subkeys
+                .get(&key.to_uppercase())
+                .cloned()
+                .map(VBValue::String)
+                .unwrap_or(VBValue::Empty)),
+            None => Ok(VBValue::Empty),
+        }
+    }
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
+        let key = value_utils::to_arg_string(index);
+        let val = value_utils::to_arg_string(&value);
+        let entry = get_or_create_entry(context, &self.cookie_name);
+        entry.subkeys.insert(key.to_uppercase(), val);
+        Ok(())
+    }
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        Ok(VBValue::Empty)
     }
 }
 
@@ -332,20 +448,34 @@ impl VBScriptObject for ResponseCookies {
     fn get_property(
         &self,
         name: &str,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        match name.to_uppercase().as_str() {
+            "COUNT" => Ok(VBValue::Number(context.response.cookies.len() as f64)),
+            _ => match context.response.cookies.get(name) {
+                Some(entry) => Ok(VBValue::String(entry.value.clone())),
+                None => Ok(VBValue::Empty),
+            },
+        }
+    }
+    fn indexed_get(
+        &self,
+        index: &VBValue,
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        let val = self.cookies.get(name).cloned().unwrap_or_default();
-        Ok(VBValue::String(val))
+        let name = value_utils::to_arg_string(index);
+        Ok(VBValue::Object(Box::new(CookieObject::new(name))))
     }
     fn indexed_set(
         &mut self,
         index: &VBValue,
         value: VBValue,
-        _context: &mut ExecutionContext,
+        context: &mut ExecutionContext,
     ) -> Result<(), VBSError> {
         let name = value_utils::to_arg_string(index);
         let val = value_utils::to_arg_string(&value);
-        self.cookies.insert(name, val);
+        let entry = get_or_create_entry(context, &name);
+        entry.value = val;
         Ok(())
     }
     fn call_method(
@@ -523,6 +653,11 @@ impl VBScriptObject for SessionContents {
                 }
                 Ok(VBValue::Number(0.0))
             }
+            "KEY" | "ITEM" | "REMOVE" | "REMOVEALL" => {
+                Err(VBSErrorType::RuntimeError.into_error(format!(
+                    "Property '{}' not found on SessionContents", name
+                )))
+            }
             _ => {
                 if let Some(ref store) = context.store {
                     let sessions = store.lock_sessions();
@@ -537,13 +672,114 @@ impl VBScriptObject for SessionContents {
             }
         }
     }
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        let key = value_utils::to_arg_string(index);
+        if let Some(ref store) = context.store {
+            let sessions = store.lock_sessions();
+            if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                return Ok(data
+                    .get(&key.to_uppercase())
+                    .cloned()
+                    .unwrap_or(VBValue::Empty));
+            }
+        }
+        Ok(VBValue::Empty)
+    }
+    fn indexed_set(
+        &mut self,
+        index: &VBValue,
+        value: VBValue,
+        context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
+        let key = value_utils::to_arg_string(index);
+        if let Some(ref store) = context.store {
+            let mut sessions = store.lock_sessions();
+            sessions
+                .entry(self.session_id.to_uppercase())
+                .or_default()
+                .insert(key.to_uppercase(), value);
+        }
+        Ok(())
+    }
     fn call_method(
         &mut self,
-        _name: &str,
-        _args: &[VBValue],
-        _context: &mut ExecutionContext,
+        name: &str,
+        args: &[VBValue],
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        Ok(VBValue::Empty)
+        if let Some(ref store) = context.store {
+            match name.to_uppercase().as_str() {
+                "KEY" => {
+                    let sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                        if args.is_empty() {
+                            return Err(VBSErrorType::RuntimeError.into_error(
+                                "Session.Contents.Key requires 1 argument (index)".to_string(),
+                            ));
+                        }
+                        let index = value_utils::to_arg_f64(&args[0]) as usize;
+                        let keys: Vec<&String> = data.keys().collect();
+                        if index < 1 || index > keys.len() {
+                            return Err(VBSErrorType::RuntimeError.into_error(format!(
+                                "Key index out of range: {} (valid: 1-{})",
+                                index,
+                                keys.len()
+                            )));
+                        }
+                        Ok(VBValue::String(keys[index - 1].clone()))
+                    } else {
+                        Ok(VBValue::Empty)
+                    }
+                }
+                "ITEM" => {
+                    let sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get(&self.session_id.to_uppercase()) {
+                        if args.is_empty() {
+                            return Err(VBSErrorType::RuntimeError.into_error(
+                                "Session.Contents.Item requires 1 argument (index)".to_string(),
+                            ));
+                        }
+                        let index = value_utils::to_arg_f64(&args[0]) as usize;
+                        let values: Vec<VBValue> = data.values().cloned().collect();
+                        if index < 1 || index > values.len() {
+                            return Err(VBSErrorType::RuntimeError.into_error(format!(
+                                "Item index out of range: {} (valid: 1-{})",
+                                index,
+                                values.len()
+                            )));
+                        }
+                        Ok(values[index - 1].clone())
+                    } else {
+                        Ok(VBValue::Empty)
+                    }
+                }
+                "REMOVE" => {
+                    if args.is_empty() {
+                        return Err(VBSErrorType::RuntimeError.into_error(
+                            "Session.Contents.Remove requires 1 argument (key)".to_string(),
+                        ));
+                    }
+                    let key = value_utils::to_arg_string(&args[0]);
+                    let mut sessions = store.lock_sessions();
+                    if let Some(data) = sessions.get_mut(&self.session_id.to_uppercase()) {
+                        data.remove(&key.to_uppercase());
+                    }
+                    Ok(VBValue::Empty)
+                }
+                "REMOVEALL" => {
+                    let mut sessions = store.lock_sessions();
+                    sessions.remove(&self.session_id.to_uppercase());
+                    Ok(VBValue::Empty)
+                }
+                _ => Ok(VBValue::Empty),
+            }
+        } else {
+            Ok(VBValue::Empty)
+        }
     }
 }
 
@@ -563,11 +799,24 @@ impl VBScriptObject for ServerObject {
     fn get_property(
         &self,
         name: &str,
-        _context: &mut ExecutionContext,
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "SCRIPTPATH" => Ok(VBValue::String("".to_string())),
+            "SCRIPTPATH" => Ok(VBValue::String(context.script_path.clone())),
             "SCRIPTTIMEOUT" => Ok(VBValue::Number(90.0)),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Server", name))),
+        }
+    }
+
+    fn set_property(
+        &mut self,
+        name: &str,
+        _value: VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<(), VBSError> {
+        match name.to_uppercase().as_str() {
+            "SCRIPTTIMEOUT" => Ok(()),
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Property '{}' not found on Server", name))),
         }

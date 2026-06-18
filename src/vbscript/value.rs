@@ -13,7 +13,7 @@ pub enum VBValue {
     Null,
     Empty,
     #[allow(dead_code)]
-    Array(Arc<Vec<VBValue>>),
+    Array(Arc<Vec<VBValue>>, Vec<usize>),
     Object(Box<dyn VBScriptObject>),
 }
 
@@ -25,7 +25,7 @@ impl Clone for VBValue {
             VBValue::Boolean(b) => VBValue::Boolean(*b),
             VBValue::Null => VBValue::Null,
             VBValue::Empty => VBValue::Empty,
-            VBValue::Array(v) => VBValue::Array(Arc::clone(v)),
+            VBValue::Array(v, dims) => VBValue::Array(Arc::clone(v), dims.clone()),
             VBValue::Object(obj) => VBValue::Object(obj.clone_box()),
         }
     }
@@ -39,7 +39,7 @@ impl PartialEq for VBValue {
             (VBValue::Boolean(a), VBValue::Boolean(b)) => a == b,
             (VBValue::Null, VBValue::Null) => true,
             (VBValue::Empty, VBValue::Empty) => true,
-            (VBValue::Array(a), VBValue::Array(b)) => a == b,
+            (VBValue::Array(a, _), VBValue::Array(b, _)) => a == b,
             (VBValue::Object(_), VBValue::Object(_)) => false,
             _ => false,
         }
@@ -60,7 +60,7 @@ impl fmt::Display for VBValue {
             }
             VBValue::Null => write!(f, "null"),
             VBValue::Empty => write!(f, "Empty"),
-            VBValue::Array(v) => write!(f, "Array({})", v.len()),
+            VBValue::Array(v, _) => write!(f, "Array({})", v.len()),
             VBValue::Object(_) => write!(f, "Object"),
         }
     }

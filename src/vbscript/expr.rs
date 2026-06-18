@@ -3,6 +3,7 @@
 //! `evaluate` / `parse_expression` / `to_number` functions used throughout
 //! the interpreter.
 
+use super::builtins;
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 
@@ -64,6 +65,8 @@ pub enum Expr {
     },
     NewObject(String),
     WithObject,
+    /// Used internally for `Case Is <op> <value>` in Select Case.
+    CaseComparison { op: BinOp, rhs: Box<Expr> },
 }
 
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
@@ -106,7 +109,7 @@ fn precedence(token_type: &TokenType) -> (u8, bool) {
     }
 }
 
-fn token_to_binop(token: &Token) -> Option<BinOp> {
+pub(crate) fn token_to_binop(token: &Token) -> Option<BinOp> {
     match token.token_type {
         TokenType::Plus => Some(BinOp::Add),
         TokenType::Minus => Some(BinOp::Sub),
@@ -276,6 +279,12 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
         TokenType::Null => Ok(Expr::Literal(VBValue::Null)),
         TokenType::Empty => Ok(Expr::Literal(VBValue::Empty)),
         TokenType::Nothing => Ok(Expr::Literal(VBValue::Empty)),
+        TokenType::DateLiteral => {
+            let dt = builtins::try_parse_date(&token.value).ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error(format!("Invalid date: {}", token.value))
+            })?;
+            Ok(Expr::Literal(VBValue::Number(builtins::datetime_to_ole_auto(dt))))
+        }
         TokenType::New => {
             let class_name = advance(tokens, pos).ok_or_else(|| {
                 VBSErrorType::SyntaxError.into_error("Expected class name after New".to_string())
@@ -518,13 +527,26 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     VBSErrorType::RuntimeError.into_error("With object not set".to_string())
                 });
             }
-            context.get_variable(name).cloned().ok_or_else(|| {
-                VBSErrorType::RuntimeError.into_error(format!("Variable '{}' is not defined", name))
-            })
+            if let Some(val) = context.get_variable(name).cloned() {
+                return Ok(val);
+            }
+            // Fallback: try as a built-in function with no args (e.g. Rnd, Now, Timer)
+            match crate::vbscript::builtins::call_builtin(name, Vec::new()) {
+                Ok(val) => Ok(val),
+                Err(_) => Err(VBSErrorType::RuntimeError
+                    .into_error(format!("Variable '{}' is not defined", name))),
+            }
         }
         Expr::WithObject => context.scope.with_object.clone().ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error("With object not set".to_string())
         }),
+        Expr::CaseComparison { op, rhs } => {
+            let select_val = context.scope.select_value.clone().ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error("Select value not set".to_string())
+            })?;
+            let rhs_val = evaluate(rhs, context)?;
+            eval_binary(&select_val, op, &rhs_val)
+        }
         Expr::UnaryOp { op, expr } => {
             let val = evaluate(expr, context)?;
             match op {
@@ -561,17 +583,43 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     _ => unreachable!(),
                 }
             }
-            if evaluated_args.len() == 1 {
-                if let Some(VBValue::Array(ref items)) = context.get_variable(name) {
-                    let idx = to_number(&evaluated_args[0]) as usize;
-                    if idx < items.len() {
-                        return Ok(items[idx].clone());
-                    }
-                    return Err(VBSErrorType::RuntimeError.into_error(format!(
-                        "Subscript out of range: index {} exceeds array size {}",
-                        idx,
-                        items.len()
-                    )));
+            if !evaluated_args.is_empty() {
+                if let Some(VBValue::Array(ref items, ref dims)) = context.get_variable(name) {
+                    let flat_idx = if dims.is_empty() && evaluated_args.len() == 1 {
+                        // Dynamic array — use first index directly
+                        let idx = to_number(&evaluated_args[0]) as usize;
+                        if idx >= items.len() {
+                            return Err(VBSErrorType::RuntimeError.into_error(format!(
+                                "Subscript out of range: index {} exceeds array size {}",
+                                idx,
+                                items.len()
+                            )));
+                        }
+                        idx
+                    } else if evaluated_args.len() == dims.len() {
+                        let mut idx = 0usize;
+                        let mut out_of_range = false;
+                        for (i, dim) in dims.iter().enumerate() {
+                            let d = to_number(&evaluated_args[i]) as usize;
+                            if d > *dim {
+                                out_of_range = true;
+                                break;
+                            }
+                            idx = idx * (dim + 1) + d;
+                        }
+                        if out_of_range || idx >= items.len() {
+                            return Err(VBSErrorType::RuntimeError
+                                .into_error("Subscript out of range".to_string()));
+                        }
+                        idx
+                    } else {
+                        return Err(VBSErrorType::RuntimeError.into_error(format!(
+                            "Array has {} dimensions but {} indices provided",
+                            dims.len(),
+                            evaluated_args.len()
+                        )));
+                    };
+                    return Ok(items[flat_idx].clone());
                 }
             }
             if let Some(func) = context.get_function(name).cloned() {
@@ -635,11 +683,20 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             }
         }
         Expr::NewObject(class_name) => {
-            let class_def = context.get_class(class_name).ok_or_else(|| {
-                VBSErrorType::RuntimeError.into_error(format!("Class '{}' not defined", class_name))
-            })?;
-            let instance = super::vbobject::ClassInstance::new(&class_def.name);
-            Ok(VBValue::Object(Box::new(instance)))
+            // First try user-defined classes (Class...End Class)
+            if let Some(class_def) = context.get_class(class_name) {
+                let instance = super::vbobject::ClassInstance::new(&class_def.name);
+                return Ok(VBValue::Object(Box::new(instance)));
+            }
+            // Then try built-in COM classes (New RegExp, New Dictionary, etc.)
+            match class_name.to_uppercase().as_str() {
+                "REGEXP" => Ok(VBValue::Object(Box::new(super::regexp::RegExpObject::new()))),
+                "DICTIONARY" => Ok(VBValue::Object(Box::new(super::vbobject::Dictionary::new()))),
+                "FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(super::fso::FileSystemObject::new()))),
+                _ => Err(VBSErrorType::RuntimeError.into_error(format!(
+                    "Class '{}' not defined", class_name
+                ))),
+            }
         }
     }
 }
@@ -651,7 +708,7 @@ pub(crate) fn to_number(val: &VBValue) -> f64 {
         VBValue::Boolean(true) => -1.0,
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
-        VBValue::Array(_) => 0.0,
+        VBValue::Array(..) => 0.0,
         VBValue::Object(_) => 0.0,
     }
 }
@@ -662,7 +719,7 @@ fn to_bool(val: &VBValue) -> bool {
         VBValue::Number(n) => *n != 0.0,
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
-        VBValue::Array(v) => !v.is_empty(),
+        VBValue::Array(v, _) => !v.is_empty(),
         VBValue::Object(_) => true,
     }
 }
@@ -675,13 +732,13 @@ fn to_string_val(val: &VBValue) -> String {
         VBValue::Boolean(false) => "False".to_string(),
         VBValue::Null => "Null".to_string(),
         VBValue::Empty => "".to_string(),
-        VBValue::Array(_) => "Array".to_string(),
+        VBValue::Array(..) => "Array".to_string(),
         VBValue::Object(_) => "Object".to_string(),
     }
 }
 
 fn negate(val: VBValue) -> Result<VBValue, VBSError> {
-    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
+    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match val {
@@ -690,7 +747,7 @@ fn negate(val: VBValue) -> Result<VBValue, VBSError> {
         VBValue::Boolean(true) => Ok(VBValue::Number(1.0)),
         VBValue::Boolean(false) => Ok(VBValue::Number(0.0)),
         VBValue::Null => Ok(VBValue::Null),
-        VBValue::Array(_) => unreachable!(),
+        VBValue::Array(..) => unreachable!(),
         VBValue::Object(_) => unreachable!(),
         VBValue::String(s) => {
             if let Ok(n) = s.parse::<f64>() {
@@ -703,28 +760,39 @@ fn negate(val: VBValue) -> Result<VBValue, VBSError> {
 }
 
 fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
-    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
+    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(VBValue::Boolean(!to_bool(&val)))
 }
 
 fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
-    if matches!(left, VBValue::Array(_) | VBValue::Object(_))
-        || matches!(right, VBValue::Array(_) | VBValue::Object(_))
+    if matches!(left, VBValue::Array(..) | VBValue::Object(_))
+        || matches!(right, VBValue::Array(..) | VBValue::Object(_))
     {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match op {
         BinOp::Add => match (left, right) {
-            (VBValue::String(_), _) | (_, VBValue::String(_))
-                if !matches!(left, VBValue::Number(_)) || !matches!(right, VBValue::Number(_)) =>
-            {
-                Ok(VBValue::String(format!(
-                    "{}{}",
-                    to_string_val(left),
-                    to_string_val(right)
-                )))
+            (VBValue::String(l), VBValue::String(r)) => {
+                let mut s = String::with_capacity(l.len() + r.len());
+                s.push_str(l.as_str());
+                s.push_str(r.as_str());
+                Ok(VBValue::String(s))
+            }
+            (VBValue::String(l), _) => {
+                let r_str = to_string_val(right);
+                let mut s = String::with_capacity(l.len() + r_str.len());
+                s.push_str(l.as_str());
+                s.push_str(&r_str);
+                Ok(VBValue::String(s))
+            }
+            (_, VBValue::String(r)) => {
+                let l_str = to_string_val(left);
+                let mut s = String::with_capacity(l_str.len() + r.len());
+                s.push_str(&l_str);
+                s.push_str(r.as_str());
+                Ok(VBValue::String(s))
             }
             _ => Ok(VBValue::Number(to_number(left) + to_number(right))),
         },
@@ -748,11 +816,25 @@ fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, V
         }
         BinOp::Pow => Ok(VBValue::Number(to_number(left).powf(to_number(right)))),
         BinOp::Mod => Ok(VBValue::Number(to_number(left) % to_number(right))),
-        BinOp::Concat => Ok(VBValue::String(format!(
-            "{}{}",
-            to_string_val(left),
-            to_string_val(right)
-        ))),
+        BinOp::Concat => {
+            let result = match (left, right) {
+                (VBValue::String(l), VBValue::String(r)) => {
+                    let mut s = String::with_capacity(l.len() + r.len());
+                    s.push_str(l.as_str());
+                    s.push_str(r.as_str());
+                    s
+                }
+                (left, right) => {
+                    let l = to_string_val(left);
+                    let r = to_string_val(right);
+                    let mut s = String::with_capacity(l.len() + r.len());
+                    s.push_str(&l);
+                    s.push_str(&r);
+                    s
+                }
+            };
+            Ok(VBValue::String(result))
+        }
         BinOp::Eq => Ok(VBValue::Boolean(values_equal(left, right))),
         BinOp::Ne => Ok(VBValue::Boolean(!values_equal(left, right))),
         BinOp::Lt => Ok(VBValue::Boolean(
@@ -816,7 +898,7 @@ fn values_equal(left: &VBValue, right: &VBValue) -> bool {
         (VBValue::Boolean(a), VBValue::Boolean(b)) => a == b,
         (VBValue::Null, VBValue::Null) => true,
         (VBValue::Empty, VBValue::Empty) => true,
-        (VBValue::Array(_), _) | (_, VBValue::Array(_)) => false,
+        (VBValue::Array(..), _) | (_, VBValue::Array(..)) => false,
         (VBValue::Object(_), _) | (_, VBValue::Object(_)) => false,
         _ => to_string_val(left) == to_string_val(right),
     }

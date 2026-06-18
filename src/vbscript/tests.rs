@@ -950,7 +950,7 @@ mod tests {
     fn test_dim_initializes_to_empty() {
         let mut context = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
-        let dim = Dim::new(vec![("x".into(), false)]);
+        let dim = Dim::new(vec![("x".into(), None)]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("x"), Some(&VBValue::Empty));
     }
@@ -960,14 +960,91 @@ mod tests {
         let mut context = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let dim = Dim::new(vec![
-            ("a".into(), false),
-            ("b".into(), false),
-            ("c".into(), false),
+            ("a".into(), None),
+            ("b".into(), None),
+            ("c".into(), None),
         ]);
         dim.execute(&mut context).unwrap();
         assert_eq!(context.get_variable("a"), Some(&VBValue::Empty));
         assert_eq!(context.get_variable("b"), Some(&VBValue::Empty));
         assert_eq!(context.get_variable("c"), Some(&VBValue::Empty));
+    }
+
+    // ===== REDIM =====
+
+    #[test]
+    fn test_redim_basic() {
+        let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter
+            .execute("Dim arr\nReDim arr(4)\narr(0) = \"a\"\narr(4) = \"e\"", &mut context)
+            .unwrap();
+        assert_eq!(context.get_variable("arr"), Some(&VBValue::Array(
+            std::sync::Arc::new(vec![
+                VBValue::String("a".into()),
+                VBValue::Empty,
+                VBValue::Empty,
+                VBValue::Empty,
+                VBValue::String("e".into()),
+            ]),
+            vec![4],
+        )));
+    }
+
+    #[test]
+    fn test_redim_multi_dim() {
+        let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter
+            .execute("Dim grid\nReDim grid(2, 3)", &mut context)
+            .unwrap();
+        // 3 rows (0..2) × 4 cols (0..3) = 12 elements
+        assert_eq!(context.get_variable("grid"), Some(&VBValue::Array(
+            std::sync::Arc::new(vec![VBValue::Empty; 12]),
+            vec![2, 3],
+        )));
+    }
+
+    #[test]
+    fn test_redim_multi_dim_access() {
+        let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter
+            .execute("Dim grid\nReDim grid(2, 3)\ngrid(1, 2) = \"hello\"", &mut context)
+            .unwrap();
+        // flat index: 1 * (3+1) + 2 = 6
+        let expected = VBValue::Array(
+            std::sync::Arc::new({
+                let mut v = vec![VBValue::Empty; 12];
+                v[6] = VBValue::String("hello".into());
+                v
+            }),
+            vec![2, 3],
+        );
+        assert_eq!(context.get_variable("grid"), Some(&expected));
+    }
+
+    #[test]
+    fn test_redim_multi_dim_expression_access() {
+        let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        interpreter
+            .execute("Dim grid\nReDim grid(2, 3)\ngrid(1, 2) = \"hello\"\nresult = grid(1, 2)", &mut context)
+            .unwrap();
+        assert_eq!(context.get_variable("result"), Some(&VBValue::String("hello".into())));
+    }
+
+    #[test]
+    fn test_redim_preserve_multi_dim_error() {
+        let mut context = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
+        let interpreter = crate::vbscript::VBScriptInterpreter;
+        let result = interpreter.execute("Dim arr\nReDim arr(2, 3)\nReDim Preserve arr(4, 5)", &mut context);
+        assert!(result.is_err());
     }
 
     // ===== BLOCK STATEMENTS — IF =====
@@ -1504,7 +1581,7 @@ mod tests {
                 VBValue::Number(10.0),
                 VBValue::Number(20.0),
                 VBValue::Number(30.0),
-            ])),
+            ]), vec![]),
         );
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter
@@ -1518,7 +1595,7 @@ mod tests {
         let mut context = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let interpreter = crate::vbscript::VBScriptInterpreter;
-        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![])));
+        context.set_variable("items", VBValue::Array(std::sync::Arc::new(vec![]), vec![]));
         context.set_variable("flag", VBValue::Boolean(false));
         interpreter
             .execute("For Each x In items\n    flag = True\nNext", &mut context)
@@ -1537,7 +1614,7 @@ mod tests {
                 VBValue::String("a".to_string()),
                 VBValue::String("b".to_string()),
                 VBValue::String("c".to_string()),
-            ])),
+            ]), vec![]),
         );
         context.set_variable("result", VBValue::String("".to_string()));
         interpreter
@@ -1571,15 +1648,15 @@ mod tests {
         context.set_variable(
             "outer",
             VBValue::Array(std::sync::Arc::new(vec![
-                VBValue::Array(std::sync::Arc::new(vec![
-                    VBValue::Number(1.0),
-                    VBValue::Number(2.0),
-                ])),
-                VBValue::Array(std::sync::Arc::new(vec![
-                    VBValue::Number(3.0),
-                    VBValue::Number(4.0),
-                ])),
-            ])),
+            VBValue::Array(std::sync::Arc::new(vec![
+                VBValue::Number(1.0),
+                VBValue::Number(2.0),
+            ]), vec![]),
+            VBValue::Array(std::sync::Arc::new(vec![
+                VBValue::Number(3.0),
+                VBValue::Number(4.0),
+            ]), vec![]),
+            ]), vec![]),
         );
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter.execute(
@@ -1600,7 +1677,7 @@ mod tests {
                 VBValue::Number(1.0),
                 VBValue::Number(2.0),
                 VBValue::Number(3.0),
-            ])),
+            ]), vec![]),
         );
         context.set_variable("sum", VBValue::Number(0.0));
         interpreter
@@ -1625,7 +1702,7 @@ mod tests {
                 VBValue::Number(2.0),
                 VBValue::Number(3.0),
                 VBValue::Number(4.0),
-            ])),
+            ]), vec![]),
         );
         context.set_variable("total", VBValue::Number(0.0));
         interpreter.execute(
@@ -1653,7 +1730,7 @@ mod tests {
                 VBValue::Number(10.0),
                 VBValue::Number(20.0),
                 VBValue::Number(30.0),
-            ])))
+            ]), vec![]))
         );
     }
 
@@ -1730,7 +1807,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             context.get_variable("result"),
-            Some(&VBValue::Array(std::sync::Arc::new(vec![])))
+            Some(&VBValue::Array(std::sync::Arc::new(vec![]), vec![]))
         );
     }
 
@@ -1757,8 +1834,8 @@ mod tests {
             .execute("result = Split(\"a b c\")", &mut ctx)
             .unwrap();
         let arr = ctx.get_variable("result");
-        assert!(matches!(arr, Some(VBValue::Array(_))));
-        if let Some(VBValue::Array(a)) = arr {
+        assert!(matches!(arr, Some(VBValue::Array(..))));
+        if let Some(VBValue::Array(a, _)) = arr {
             assert_eq!(a.len(), 3);
             assert_eq!(a[0], VBValue::String("a".to_string()));
             assert_eq!(a[1], VBValue::String("b".to_string()));
@@ -1774,7 +1851,7 @@ mod tests {
         interp
             .execute("result = Split(\"x,y,z\", \",\")", &mut ctx)
             .unwrap();
-        if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
+        if let Some(VBValue::Array(a, _)) = ctx.get_variable("result") {
             assert_eq!(a.len(), 3);
             assert_eq!(a[0], VBValue::String("x".to_string()));
             assert_eq!(a[1], VBValue::String("y".to_string()));
@@ -1792,7 +1869,7 @@ mod tests {
         interp
             .execute("result = Split(\"a,b,c,d\", \",\", 2)", &mut ctx)
             .unwrap();
-        if let Some(VBValue::Array(a)) = ctx.get_variable("result") {
+        if let Some(VBValue::Array(a, _)) = ctx.get_variable("result") {
             assert_eq!(a.len(), 2);
             assert_eq!(a[0], VBValue::String("a".to_string()));
             assert_eq!(a[1], VBValue::String("b,c,d".to_string()));
@@ -2101,8 +2178,8 @@ mod tests {
             .execute("keys = dict.Keys", &mut context)
             .unwrap();
         let keys = context.get_variable("keys");
-        assert!(matches!(keys, Some(VBValue::Array(_))));
-        if let Some(VBValue::Array(items)) = keys {
+        assert!(matches!(keys, Some(VBValue::Array(_, _))));
+        if let Some(VBValue::Array(items, _)) = keys {
             assert_eq!(items.len(), 2);
         }
     }
@@ -3711,7 +3788,7 @@ mod tests {
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("a = Array(\"apple\", \"banana\", \"apricot\", \"cherry\")\nresult = Filter(a, \"ap\")", &mut ctx).unwrap();
-        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+        if let Some(VBValue::Array(arr, _)) = ctx.get_variable("result") {
             assert_eq!(arr.len(), 2);
             assert_eq!(arr[0], VBValue::String("apple".to_string()));
             assert_eq!(arr[1], VBValue::String("apricot".to_string()));
@@ -3731,7 +3808,7 @@ mod tests {
                 &mut ctx,
             )
             .unwrap();
-        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+        if let Some(VBValue::Array(arr, _)) = ctx.get_variable("result") {
             assert_eq!(arr.len(), 1);
             assert_eq!(arr[0], VBValue::String("banana".to_string()));
         } else {
@@ -3776,7 +3853,7 @@ mod tests {
                 VBValue::Number(3.0),
                 VBValue::Number(4.0),
                 VBValue::Number(5.0),
-            ])),
+            ]), vec![]),
         );
         interp.execute("Dim x, sum\nsum = 0\nFor Each x In items\n    If x = 3 Then Exit For\n    sum = sum + 1\nNext", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("sum"), Some(&VBValue::Number(2.0)));
@@ -4061,10 +4138,19 @@ mod tests {
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"\\d+\"\nre.Global = True\nresult = re.Execute(\"abc 123 def 456\")", &mut ctx).unwrap();
-        if let Some(VBValue::Array(arr)) = ctx.get_variable("result") {
+        let result_val = ctx.get_variable("result").cloned();
+        if let Some(VBValue::Array(arr, _)) = result_val {
             assert_eq!(arr.len(), 2);
-            assert_eq!(arr[0], VBValue::String("123".to_string()));
-            assert_eq!(arr[1], VBValue::String("456".to_string()));
+            let match0_value = match &arr[0] {
+                VBValue::Object(m) => m.get_property("Value", &mut ExecutionContext::new()).unwrap(),
+                _ => panic!("Expected Match object at [0]"),
+            };
+            let match1_value = match &arr[1] {
+                VBValue::Object(m) => m.get_property("Value", &mut ExecutionContext::new()).unwrap(),
+                _ => panic!("Expected Match object at [1]"),
+            };
+            assert_eq!(match0_value, VBValue::String("123".to_string()));
+            assert_eq!(match1_value, VBValue::String("456".to_string()));
         } else {
             panic!("Expected Array");
         }
@@ -4624,6 +4710,72 @@ mod tests {
     }
 
     #[test]
+    fn test_asp_session_contents_key_item() {
+        let store = crate::vbscript::store::Store::new();
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(Arc::clone(&store));
+        ctx.session.id = "test-contents-key-item".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Session(\"k1\") = \"v1\"\nSession(\"k2\") = \"v2\"",
+                &mut ctx,
+            )
+            .unwrap();
+        interp
+            .execute("Dim k1, k2, v1, v2\nk1 = Session.Contents.Key(1)\nk2 = Session.Contents.Key(2)\nv1 = Session.Contents.Item(1)\nv2 = Session.Contents.Item(2)", &mut ctx)
+            .unwrap();
+        let k1 = ctx.get_variable("k1").unwrap().clone();
+        let k2 = ctx.get_variable("k2").unwrap().clone();
+        let v1 = ctx.get_variable("v1").unwrap().clone();
+        let v2 = ctx.get_variable("v2").unwrap().clone();
+        assert_ne!(k1, k2, "keys should be distinct");
+        assert_ne!(v1, v2, "values should be distinct");
+        match (&k1, &k2) {
+            (VBValue::String(a), VBValue::String(b)) => {
+                let expected = ["K1", "K2"];
+                assert!(expected.contains(&a.as_str()), "k1={:?} not in [K1,K2]", a);
+                assert!(expected.contains(&b.as_str()), "k2={:?} not in [K1,K2]", b);
+            }
+            _ => panic!("Expected String keys, got {:?} {:?}", k1, k2),
+        }
+        assert!(
+            v1 == VBValue::String("v1".to_string()) || v1 == VBValue::String("v2".to_string()),
+            "v1={:?} not in [v1,v2]",
+            v1
+        );
+        assert!(
+            v2 == VBValue::String("v1".to_string()) || v2 == VBValue::String("v2".to_string()),
+            "v2={:?} not in [v1,v2]",
+            v2
+        );
+    }
+
+    #[test]
+    fn test_asp_session_contents_indexed_get() {
+        let store = crate::vbscript::store::Store::new();
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(Arc::clone(&store));
+        ctx.session.id = "test-contents-indexed".to_string();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Session(\"k1\") = \"v1\"\nSession(\"k2\") = \"v2\"",
+                &mut ctx,
+            )
+            .unwrap();
+        interp
+            .execute("Dim v\nv = Session.Contents(\"k1\")", &mut ctx)
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("v"),
+            Some(&VBValue::String("v1".to_string()))
+        );
+    }
+
+    #[test]
     fn test_asp_session_abandon() {
         let store = crate::vbscript::store::Store::new();
         let mut ctx = ExecutionContext::new();
@@ -4714,6 +4866,7 @@ mod tests {
     #[test]
     fn test_asp_server_scriptpath() {
         let mut ctx = ExecutionContext::new();
+        ctx.script_path = "/home/site/index.asp".to_string();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
         let interp = VBScriptInterpreter;
         interp
@@ -4721,7 +4874,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             ctx.get_variable("p"),
-            Some(&VBValue::String("".to_string()))
+            Some(&VBValue::String("/home/site/index.asp".to_string()))
         );
     }
 
@@ -4847,6 +5000,91 @@ mod tests {
     }
 
     #[test]
+    fn test_asp_response_cookies_set_prop() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Response.Cookies(\"demo\") = \"testval\"\nResponse.Cookies(\"demo\").Expires = \"2026-01-01\"",
+                &mut ctx,
+            )
+            .unwrap();
+        let entry = ctx.response.cookies.get("demo").unwrap();
+        assert_eq!(entry.value, "testval");
+        assert_eq!(entry.expires, "2026-01-01");
+    }
+
+    #[test]
+    fn test_asp_response_cookies_set_path() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Response.Cookies(\"x\") = \"y\"\nResponse.Cookies(\"x\").Path = \"/app\"",
+                &mut ctx,
+            )
+            .unwrap();
+        let entry = ctx.response.cookies.get("x").unwrap();
+        assert_eq!(entry.value, "y");
+        assert_eq!(entry.path, "/app");
+    }
+
+    #[test]
+    fn test_asp_response_cookies_indexed_get_returns_object() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Response.Cookies(\"pref\") = \"dark\"\nResponse.Cookies(\"pref\").Expires = \"2026-06-01\"",
+                &mut ctx,
+            )
+            .unwrap();
+        // Read back .Expires as an R-value
+        interp
+            .execute("Dim e\ne = Response.Cookies(\"pref\").Expires", &mut ctx)
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("e"),
+            Some(&VBValue::String("2026-06-01".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_response_cookies_read_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Response.Cookies(\"greeting\") = \"hello\"", &mut ctx)
+            .unwrap();
+        interp
+            .execute("Dim v\nv = Response.Cookies(\"greeting\").Value", &mut ctx)
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("v"),
+            Some(&VBValue::String("hello".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_asp_response_cookies_secure_flag() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Response.Cookies(\"s\") = \"v\"\nResponse.Cookies(\"s\").Secure = True",
+                &mut ctx,
+            )
+            .unwrap();
+        let entry = ctx.response.cookies.get("s").unwrap();
+        assert!(entry.secure);
+    }
+
+    #[test]
     fn test_asp_objects_injected_globally() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
@@ -4854,19 +5092,19 @@ mod tests {
         interp.execute("Dim rType, sType, svType, aType\nrType = TypeName(Request)\nsType = TypeName(Response)\nsvType = TypeName(Server)\naType = TypeName(Application)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("rType"),
-            Some(&VBValue::String("Object".to_string()))
+            Some(&VBValue::String("Request".to_string()))
         );
         assert_eq!(
             ctx.get_variable("sType"),
-            Some(&VBValue::String("Object".to_string()))
+            Some(&VBValue::String("Response".to_string()))
         );
         assert_eq!(
             ctx.get_variable("svType"),
-            Some(&VBValue::String("Object".to_string()))
+            Some(&VBValue::String("Server".to_string()))
         );
         assert_eq!(
             ctx.get_variable("aType"),
-            Some(&VBValue::String("Object".to_string()))
+            Some(&VBValue::String("Application".to_string()))
         );
     }
 

@@ -6,8 +6,8 @@
 use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
 use super::expr::{evaluate, parse_expression, BinOp, Expr};
 use super::syntax::{
-    ArrayAssignment, Assignment, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext, PropertySet,
-    ReDim, ResponseCookiesSet, ResponseWrite, VBSyntax,
+    ArrayAssignment, Assignment, Const, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext,
+    PropertySet, ReDim, ResponseCookiesSet, ResponseCookiesSetProp, ResponseWrite, VBSyntax,
 };
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
@@ -247,7 +247,7 @@ fn tokens_to_string(tokens: &[Token]) -> String {
         .join(" ")
 }
 
-fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, bool)>, VBSError> {
+fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>>)>, VBSError> {
     let mut var_names = Vec::new();
     let mut i = 1;
 
@@ -265,25 +265,57 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, bool)>, VBSError
         let name = tokens[i].value.clone();
         i += 1;
 
-        // Check for array declaration: arr()
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
         }
-        let is_array = if i < tokens.len() && tokens[i].token_type == TokenType::LeftParen {
+        let dims = if i < tokens.len() && tokens[i].token_type == TokenType::LeftParen {
             i += 1;
-            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
-                i += 1;
+            // Collect tokens until matching RightParen
+            let paren_start = i;
+            let mut depth = 1;
+            while i < tokens.len() && depth > 0 {
+                if tokens[i].token_type == TokenType::LeftParen {
+                    depth += 1;
+                } else if tokens[i].token_type == TokenType::RightParen {
+                    depth -= 1;
+                }
+                if depth > 0 {
+                    i += 1;
+                }
             }
-            if i >= tokens.len() || tokens[i].token_type != TokenType::RightParen {
+            if depth != 0 {
                 return Err(VBSErrorType::SyntaxError
-                    .into_error("Expected ')' after '(' in array declaration".to_string()));
+                    .into_error("Unmatched parentheses in array declaration".to_string()));
             }
-            i += 1;
-            true
+            let inner_tokens: Vec<Token> = tokens[paren_start..i]
+                .iter()
+                .filter(|t| t.token_type != TokenType::WhiteSpace)
+                .cloned()
+                .collect();
+            i += 1; // skip RightParen
+
+            if inner_tokens.is_empty() {
+                Some(Vec::new())
+            } else {
+                let mut dim_exprs = Vec::new();
+                let mut expr_start = 0;
+                for (j, tok) in inner_tokens.iter().enumerate() {
+                    if tok.token_type == TokenType::Comma {
+                        if j > expr_start {
+                            dim_exprs.push(parse_expression(&inner_tokens[expr_start..j])?);
+                        }
+                        expr_start = j + 1;
+                    }
+                }
+                if expr_start < inner_tokens.len() {
+                    dim_exprs.push(parse_expression(&inner_tokens[expr_start..])?);
+                }
+                Some(dim_exprs)
+            }
         } else {
-            false
+            None
         };
-        var_names.push((name, is_array));
+        var_names.push((name, dims));
 
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
@@ -300,6 +332,45 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, bool)>, VBSError
             .into_error("No variable names found in 'Dim' statement".to_string()));
     }
     Ok(var_names)
+}
+
+fn parse_const_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let mut const_pairs = Vec::new();
+    let mut i = 1;
+
+    while i < tokens.len() {
+        if tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+            continue;
+        }
+        if tokens[i].token_type != TokenType::Identifier {
+            return Err(VBSErrorType::SyntaxError.into_error(format!(
+                "Expected constant name, found: {}",
+                tokens[i].value
+            )));
+        }
+        let name = tokens[i].value.clone();
+        i += 1;
+
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
+        if i >= tokens.len() || tokens[i].token_type != TokenType::Assign {
+            return Err(VBSErrorType::SyntaxError
+                .into_error("Expected '=' in Const statement".to_string()));
+        }
+        i += 1;
+
+        let expr = parse_expression(&tokens[i..])?;
+        const_pairs.push((name, expr));
+        break;
+    }
+
+    if const_pairs.is_empty() {
+        return Err(VBSErrorType::SyntaxError
+            .into_error("No constants defined in 'Const' statement".to_string()));
+    }
+    Ok(Box::new(Const::new(const_pairs)))
 }
 
 fn parse_assignment_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
@@ -391,8 +462,30 @@ fn parse_redim_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError
         );
     }
 
-    let size_expr = parse_expression(&tokens[paren_start..i])?;
-    Ok(Box::new(ReDim::new(var_name, size_expr, preserve)))
+    let inner_tokens: Vec<Token> = tokens[paren_start..i]
+        .iter()
+        .filter(|t| t.token_type != TokenType::WhiteSpace)
+        .cloned()
+        .collect();
+    let size_exprs = if inner_tokens.is_empty() {
+        vec![Expr::Literal(VBValue::Empty)]
+    } else {
+        let mut exprs = Vec::new();
+        let mut expr_start = 0;
+        for (j, tok) in inner_tokens.iter().enumerate() {
+            if tok.token_type == TokenType::Comma {
+                if j > expr_start {
+                    exprs.push(parse_expression(&inner_tokens[expr_start..j])?);
+                }
+                expr_start = j + 1;
+            }
+        }
+        if expr_start < inner_tokens.len() {
+            exprs.push(parse_expression(&inner_tokens[expr_start..])?);
+        }
+        exprs
+    };
+    Ok(Box::new(ReDim::new(var_name, size_exprs, preserve)))
 }
 
 fn find_method_token(tokens: &[Token], method_name: &str) -> Option<usize> {
@@ -472,7 +565,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(ResponseWrite::new(expr)));
     }
 
-    // 2. Response.Cookies("key") = value
+    // 2. Response.Cookies("key") = value  OR  Response.Cookies("key").Property = value
     if non_ws.len() >= 7
         && non_ws[0].value.eq_ignore_ascii_case("response")
         && non_ws[1].token_type == TokenType::Dot
@@ -506,12 +599,32 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
         }
+        // Check for Response.Cookies("key").Property = value
+        if i < tokens.len() && tokens[i].token_type == TokenType::Dot {
+            i += 1;
+            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+                i += 1;
+            }
+            if i < tokens.len() && tokens[i].token_type == TokenType::Identifier {
+                let property_name = tokens[i].value.clone();
+                i += 1;
+                while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+                    i += 1;
+                }
+                if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
+                    i += 1;
+                    let value_expr = parse_expression(&tokens[i..])?;
+                    return Ok(Box::new(ResponseCookiesSetProp::new(key_expr, property_name, value_expr)));
+                }
+            }
+            // If we don't see .Property =, fall through to error
+        }
         if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
             i += 1;
             let value_expr = parse_expression(&tokens[i..])?;
             return Ok(Box::new(ResponseCookiesSet::new(key_expr, value_expr)));
         }
-        // if no =, treat as method call (fall through)
+        // if no = or .Property =, treat as method call (fall through)
     }
 
     // 3. var = expr (bare assignment, no Set keyword)
@@ -557,7 +670,29 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
             return Err(VBSErrorType::SyntaxError
                 .into_error("Unmatched parentheses in array assignment".to_string()));
         }
-        let index_expr = parse_expression(&tokens[paren_start..i])?;
+        let inner_tokens: Vec<Token> = tokens[paren_start..i]
+            .iter()
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .cloned()
+            .collect();
+        let index_exprs = if inner_tokens.is_empty() {
+            vec![Expr::Literal(VBValue::Empty)]
+        } else {
+            let mut exprs = Vec::new();
+            let mut expr_start = 0;
+            for (j, tok) in inner_tokens.iter().enumerate() {
+                if tok.token_type == TokenType::Comma {
+                    if j > expr_start {
+                        exprs.push(parse_expression(&inner_tokens[expr_start..j])?);
+                    }
+                    expr_start = j + 1;
+                }
+            }
+            if expr_start < inner_tokens.len() {
+                exprs.push(parse_expression(&inner_tokens[expr_start..])?);
+            }
+            exprs
+        };
         i += 1;
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
             i += 1;
@@ -570,7 +705,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         i += 1;
         let value_expr = parse_expression(&tokens[i..])?;
         return Ok(Box::new(ArrayAssignment::new(
-            var_name, index_expr, value_expr,
+            var_name, index_exprs, value_expr,
         )));
     }
 
@@ -657,6 +792,74 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         )));
     }
 
+    // Identifier args... (Sub/Function call without Call keyword, no parens)
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type != TokenType::Assign
+        && non_ws[1].token_type != TokenType::Dot
+    {
+        let name = non_ws[0].value.clone();
+        let mut assign_pos = None;
+        for (i, tok) in tokens.iter().enumerate() {
+            if tok.token_type == TokenType::Assign {
+                assign_pos = Some(i);
+                break;
+            }
+        }
+        if assign_pos.is_none() {
+            let name_pos = tokens.iter().position(|t| {
+                t.token_type == TokenType::Identifier && t.value == name
+            }).unwrap_or(0);
+            let arg_tokens = &tokens[name_pos + 1..];
+            let filtered: Vec<Token> = arg_tokens.iter()
+                .filter(|t| t.token_type != TokenType::WhiteSpace)
+                .cloned()
+                .collect();
+            let args = if filtered.is_empty() {
+                Vec::new()
+            } else {
+                parse_comma_args(&filtered)?
+            };
+            return Ok(Box::new(CallStatement::new(name, args)));
+        }
+    }
+
+    // Identifier(args) — Function/Sub call without Call keyword (with parens)
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::LeftParen
+    {
+        let name = non_ws[0].value.clone();
+        let mut i = 0;
+        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
+            i += 1;
+        }
+        if i < tokens.len() {
+            i += 1;
+            let paren_start = i;
+            let mut depth = 1;
+            while i < tokens.len() && depth > 0 {
+                if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
+                else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
+                if depth > 0 { i += 1; }
+            }
+            let arg_expr = parse_expression(&tokens[paren_start..i])?;
+            match arg_expr {
+                Expr::FunctionCall { ref name, ref args } => {
+                    return Ok(Box::new(CallStatement::new(name.clone(), args.clone())));
+                }
+                _ => {
+                    let args = if paren_start < i {
+                        parse_comma_args(&tokens[paren_start..i])?
+                    } else {
+                        Vec::new()
+                    };
+                    return Ok(Box::new(CallStatement::new(name, args)));
+                }
+            }
+        }
+    }
+
     Err(VBSErrorType::NotImplementedError.into_error(format!(
         "Unrecognized command: {}",
         tokens_to_string(tokens)
@@ -676,6 +879,7 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Set => parse_assignment_statement(tokens),
         TokenType::ReDim => parse_redim_statement(tokens),
+        TokenType::Const => parse_const_statement(tokens),
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("call") => {
             parse_call_statement(tokens)
         }
@@ -684,6 +888,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("exit") => {
             parse_exit_line(tokens)
+        }
+        TokenType::Identifier if first_token.value.eq_ignore_ascii_case("randomize") => {
+            Ok(Box::new(CallStatement::new("Randomize".to_string(), Vec::new())))
         }
         _ => parse_expression_or_assignment(tokens),
     }
@@ -787,6 +994,28 @@ fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStat
 
 // ===== Select Case parsing =====
 
+/// Parse a single Case value expression, handling `Is <op> expr` syntax.
+fn parse_case_value(tokens: &[Token]) -> Result<Expr, VBSError> {
+    if tokens.len() >= 3
+        && tokens[0].token_type == TokenType::Is
+    {
+        let op_token = &tokens[1];
+        if let Some(op) = super::expr::token_to_binop(op_token) {
+            if matches!(
+                op,
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge
+            ) {
+                let rhs = parse_expression(&tokens[2..])?;
+                return Ok(Expr::CaseComparison {
+                    op,
+                    rhs: Box::new(rhs),
+                });
+            }
+        }
+    }
+    parse_expression(tokens)
+}
+
 fn parse_select_case_block(
     lines: &[Vec<Token>],
     pos: &mut usize,
@@ -842,13 +1071,13 @@ fn parse_select_case_block(
                         for (j, tok) in after_case.iter().enumerate() {
                             if tok.token_type == TokenType::Comma {
                                 if j > val_start {
-                                    values.push(parse_expression(&after_case[val_start..j])?);
+                                    values.push(parse_case_value(&after_case[val_start..j])?);
                                 }
                                 val_start = j + 1;
                             }
                         }
                         if val_start < after_case.len() {
-                            values.push(parse_expression(&after_case[val_start..])?);
+                            values.push(parse_case_value(&after_case[val_start..])?);
                         }
                     }
 
@@ -1663,7 +1892,7 @@ fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<boo
         return result;
     }
     let val = evaluate(expr, context)?;
-    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
+    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(match val {
@@ -1671,14 +1900,14 @@ fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<boo
         VBValue::Number(n) => n != 0.0,
         VBValue::String(s) => !s.is_empty(),
         VBValue::Null | VBValue::Empty => false,
-        VBValue::Array(_) => unreachable!(),
+        VBValue::Array(..) => unreachable!(),
         VBValue::Object(_) => unreachable!(),
     })
 }
 
 fn evaluate_numeric(expr: &Expr, context: &mut ExecutionContext) -> Result<f64, VBSError> {
     let val = evaluate(expr, context)?;
-    if matches!(val, VBValue::Array(_) | VBValue::Object(_)) {
+    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
         return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     Ok(match val {
@@ -1687,7 +1916,7 @@ fn evaluate_numeric(expr: &Expr, context: &mut ExecutionContext) -> Result<f64, 
         VBValue::Boolean(true) => -1.0,
         VBValue::Boolean(false) => 0.0,
         VBValue::Null | VBValue::Empty => 0.0,
-        VBValue::Array(_) => unreachable!(),
+        VBValue::Array(..) => unreachable!(),
         VBValue::Object(_) => unreachable!(),
     })
 }
@@ -1789,6 +2018,17 @@ impl VBSyntax for CallStatement {
     }
 }
 
+fn expr_to_object_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Variable(name) => Some(name.clone()),
+        Expr::PropertyAccess { object, property } => {
+            let base = expr_to_object_name(object)?;
+            Some(format!("{}.{}", base, property))
+        }
+        _ => None,
+    }
+}
+
 fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
     let rest: Vec<Token> = tokens
         .iter()
@@ -1802,6 +2042,13 @@ fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError>
     let expr = parse_expression(&rest)?;
     match expr {
         Expr::FunctionCall { name, args } => Ok(Box::new(CallStatement::new(name, args))),
+        Expr::MethodCall { ref object, ref method, ref args } => {
+            let object_name = expr_to_object_name(object).ok_or_else(|| {
+                VBSErrorType::SyntaxError
+                    .into_error("Invalid Call statement: unsupported object expression".to_string())
+            })?;
+            Ok(Box::new(MethodCall::new(object_name, method.clone(), args.clone())))
+        }
         _ => Err(VBSErrorType::SyntaxError
             .into_error("Invalid Call statement: expected function call".to_string())),
     }
@@ -2178,7 +2425,7 @@ pub fn execute_blocks(
             } => {
                 let group_val = evaluate(group, context)?;
                 match group_val {
-                    VBValue::Array(ref items) => {
+                    VBValue::Array(ref items, _) => {
                         for item in items.iter() {
                             context.set_variable(element, item.clone());
                             match execute_blocks(body, context) {
@@ -2267,12 +2514,19 @@ pub fn execute_blocks(
                 ..
             } => {
                 let expr_val = evaluate(expression, context)?;
+                context.scope.select_value = Some(expr_val.clone());
                 let mut matched = false;
 
                 for case in cases {
                     for val_expr in &case.values {
                         let case_val = evaluate(val_expr, context)?;
-                        if val_equal(&expr_val, &case_val) {
+                        let is_match = match val_expr {
+                            Expr::CaseComparison { .. } => {
+                                matches!(case_val, VBValue::Boolean(true))
+                            }
+                            _ => val_equal(&expr_val, &case_val),
+                        };
+                        if is_match {
                             execute_blocks(&case.body, context)?;
                             matched = true;
                             break;
@@ -2282,6 +2536,7 @@ pub fn execute_blocks(
                         break;
                     }
                 }
+                context.scope.select_value = None;
 
                 if !matched {
                     if let Some(body) = else_body {

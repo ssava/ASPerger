@@ -669,10 +669,10 @@ impl AspServer {
         }
 
         // Transfer response cookies to headers
-        for (name, val) in &context.response.cookies {
+        for (name, entry) in &context.response.cookies {
             context.response.extra_headers.push((
                 "Set-Cookie".to_string(),
-                format!("{}={}; path=/", name, val),
+                crate::vbscript::asp_objects::to_cookie_string(name, entry),
             ));
         }
 

@@ -58,16 +58,16 @@ impl VBSyntax for PropertySet {
         };
 
         // Now the borrow on slot is dropped. obj_val owns the VBValue::Object.
-        match &mut obj_val {
+        let result = match &mut obj_val {
             VBValue::Object(ref mut obj) => {
-                obj.set_property(&self.property, value, context)?;
+                obj.set_property(&self.property, value, context)
             }
             _ => unreachable!(),
-        }
+        };
 
-        // Put the object back
+        // Put the object back (even on error, to avoid corrupting state)
         context.set_variable(&obj_key, obj_val);
-        Ok(())
+        result
     }
 
     fn clone_box(&self) -> Box<dyn VBSyntax> {

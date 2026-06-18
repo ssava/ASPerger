@@ -7,6 +7,7 @@ use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
 use regex::Regex;
+use regex::Match as RegexMatch;
 
 #[derive(Debug, Clone)]
 pub struct RegExpObject {
@@ -106,15 +107,27 @@ impl VBScriptObject for RegExpObject {
                 let input = value_utils::to_arg_string(&args[0]);
                 let re = self.compile()?;
                 let matches: Vec<VBValue> = if self.global {
-                    re.find_iter(&input)
-                        .map(|m| VBValue::String(m.as_str().to_string()))
+                    re.captures_iter(&input)
+                        .map(|c| {
+                            let m = c.get(0).unwrap();
+                            let subs: Vec<String> = c.iter().skip(1)
+                                .map(|opt| opt.map(|m| m.as_str().to_string()).unwrap_or_default())
+                                .collect();
+                            VBValue::Object(Box::new(MatchObject::with_submatches(m, &input, subs)))
+                        })
                         .collect()
                 } else {
-                    re.find(&input)
-                        .map(|m| vec![VBValue::String(m.as_str().to_string())])
+                    re.captures(&input)
+                        .map(|c| {
+                            let m = c.get(0).unwrap();
+                            let subs: Vec<String> = c.iter().skip(1)
+                                .map(|opt| opt.map(|m| m.as_str().to_string()).unwrap_or_default())
+                                .collect();
+                            vec![VBValue::Object(Box::new(MatchObject::with_submatches(m, &input, subs)))]
+                        })
                         .unwrap_or_default()
                 };
-                Ok(VBValue::Array(std::sync::Arc::new(matches)))
+                Ok(VBValue::Array(std::sync::Arc::new(matches), vec![]))
             }
             "REPLACE" => {
                 if args.len() < 2 {
@@ -134,5 +147,137 @@ impl VBScriptObject for RegExpObject {
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Method '{}' not found on RegExp object", name))),
         }
+    }
+}
+
+// ===== MatchObject =====
+
+#[derive(Debug, Clone)]
+pub struct MatchObject {
+    value: String,
+    first_index: usize,
+    length: usize,
+    sub_matches: Vec<String>,
+}
+
+impl MatchObject {
+    pub fn new(m: RegexMatch, _input: &str) -> Self {
+        MatchObject {
+            value: m.as_str().to_string(),
+            first_index: m.start(),
+            length: m.len(),
+            sub_matches: Vec::new(),
+        }
+    }
+
+    pub fn with_submatches(m: RegexMatch, _input: &str, sub_matches: Vec<String>) -> Self {
+        MatchObject {
+            value: m.as_str().to_string(),
+            first_index: m.start(),
+            length: m.len(),
+            sub_matches,
+        }
+    }
+}
+
+impl VBScriptObject for MatchObject {
+    fn type_name(&self) -> &'static str {
+        "Match"
+    }
+
+    fn clone_box(&self) -> Box<dyn VBScriptObject> {
+        Box::new(self.clone())
+    }
+
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        match name.to_uppercase().as_str() {
+            "VALUE" => Ok(VBValue::String(self.value.clone())),
+            "FIRSTINDEX" => Ok(VBValue::Number(self.first_index as f64)),
+            "LENGTH" => Ok(VBValue::Number(self.length as f64)),
+            "SUBMATCHES" => Ok(VBValue::Object(Box::new(SubMatchesObject::new(self.sub_matches.clone())))),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on Match object", name))),
+        }
+    }
+
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        let i = value_utils::to_arg_f64(index) as usize;
+        self.sub_matches.get(i).cloned()
+            .map(VBValue::String)
+            .ok_or_else(|| VBSErrorType::RuntimeError
+                .into_error(format!("SubMatch index {} out of range", i)))
+    }
+
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        Ok(VBValue::Empty)
+    }
+}
+
+// ===== SubMatchesObject =====
+
+#[derive(Debug, Clone)]
+pub struct SubMatchesObject {
+    items: Vec<String>,
+}
+
+impl SubMatchesObject {
+    pub fn new(items: Vec<String>) -> Self {
+        SubMatchesObject { items }
+    }
+}
+
+impl VBScriptObject for SubMatchesObject {
+    fn type_name(&self) -> &'static str {
+        "SubMatches"
+    }
+
+    fn clone_box(&self) -> Box<dyn VBScriptObject> {
+        Box::new(self.clone())
+    }
+
+    fn get_property(
+        &self,
+        name: &str,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        match name.to_uppercase().as_str() {
+            "COUNT" => Ok(VBValue::Number(self.items.len() as f64)),
+            _ => Err(VBSErrorType::RuntimeError
+                .into_error(format!("Property '{}' not found on SubMatches", name))),
+        }
+    }
+
+    fn indexed_get(
+        &self,
+        index: &VBValue,
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        let i = value_utils::to_arg_f64(index) as usize;
+        self.items.get(i).cloned()
+            .map(VBValue::String)
+            .ok_or_else(|| VBSErrorType::RuntimeError
+                .into_error(format!("SubMatches index {} out of range", i)))
+    }
+
+    fn call_method(
+        &mut self,
+        _name: &str,
+        _args: &[VBValue],
+        _context: &mut ExecutionContext,
+    ) -> Result<VBValue, VBSError> {
+        Ok(VBValue::Empty)
     }
 }

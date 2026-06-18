@@ -33,30 +33,51 @@ fn try_property_indexed_access(
     if args.is_empty() {
         return Ok(None);
     }
-    let obj_val = if object_name == "__with_obj__" {
-        context.scope.with_object.clone().ok_or_else(|| {
-            VBSErrorType::RuntimeError.into_error("With object not set".to_string())
-        })?
+    let obj_ref = if object_name == "__with_obj__" {
+        context
+            .scope
+            .with_object
+            .take()
+            .ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error("With object not set".to_string())
+            })?
     } else {
-        match context.get_variable(object_name) {
-            Some(VBValue::Object(_)) => context.get_variable(object_name).unwrap().clone(),
-            _ => return Ok(None),
+        let slot = context
+            .get_variable_mut(object_name)
+            .and_then(|v| match v {
+                VBValue::Object(_) => Some(v),
+                _ => None,
+            });
+        match slot {
+            Some(slot) => {
+                let mut replacement = VBValue::Empty;
+                std::mem::swap(slot, &mut replacement);
+                replacement
+            }
+            None => return Ok(None),
         }
     };
-    match &obj_val {
-        VBValue::Object(obj) => {
-            if let Ok(prop_val) = obj.get_property(property, context) {
-                match &prop_val {
-                    VBValue::Object(sub_obj) => {
-                        if let Ok(result) = sub_obj.indexed_get(&args[0], context) {
-                            return Ok(Some(result));
+    if let VBValue::Object(ref obj) = obj_ref {
+        if let Ok(prop_val) = obj.get_property(property, context) {
+            match &prop_val {
+                VBValue::Object(sub_obj) => {
+                    if let Ok(result) = sub_obj.indexed_get(&args[0], context) {
+                        if object_name == "__with_obj__" {
+                            context.scope.with_object = Some(obj_ref);
+                        } else {
+                            context.set_variable(object_name, obj_ref);
                         }
+                        return Ok(Some(result));
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
-        _ => {}
+    }
+    if object_name == "__with_obj__" {
+        context.scope.with_object = Some(obj_ref);
+    } else {
+        context.set_variable(object_name, obj_ref);
     }
     Ok(None)
 }

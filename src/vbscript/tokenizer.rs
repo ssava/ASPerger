@@ -48,6 +48,7 @@ pub enum TokenType {
     Let,
     Public,
     Private,
+    Const,
 
     // Operators
     Plus,
@@ -437,6 +438,9 @@ impl<'a> Tokenizer<'a> {
         }
         if word.eq_ignore_ascii_case("PRIVATE") {
             return TokenType::Private;
+        }
+        if word.eq_ignore_ascii_case("CONST") {
+            return TokenType::Const;
         }
         TokenType::Identifier
     }

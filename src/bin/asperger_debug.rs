@@ -406,7 +406,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
                                     asperger::vbscript::VBValue::Null => "Null".to_string(),
                                     asperger::vbscript::VBValue::Empty => "Empty".to_string(),
-                                    asperger::vbscript::VBValue::Array(_) => "Array".to_string(),
+                                    asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
                                     asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
                                 }),
                                 variables_reference: 0,
@@ -451,8 +451,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
                             asperger::vbscript::VBValue::Null => "Null".to_string(),
                             asperger::vbscript::VBValue::Empty => "Empty".to_string(),
-                            asperger::vbscript::VBValue::Array(_) => "Array".to_string(),
-                            asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
+                             asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
+                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
                         })),
                         None => {
                             // Try to interpret as a literal

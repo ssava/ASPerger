@@ -48,6 +48,7 @@ pub struct Scope {
     pub err_number: f64,
     pub err_description: String,
     pub with_object: Option<VBValue>,
+    pub(crate) select_value: Option<VBValue>,
 }
 
 impl Scope {
@@ -61,6 +62,7 @@ impl Scope {
             err_number: 0.0,
             err_description: String::new(),
             with_object: None,
+            select_value: None,
         }
     }
 
@@ -142,6 +144,17 @@ pub struct RequestContext {
     pub lcid: u32,
 }
 
+/// Per-cookie data stored during Response.Cookies set operations.
+#[derive(Debug, Clone, Default)]
+pub struct CookieEntry {
+    pub value: String,
+    pub subkeys: AHashMap<String, String>,
+    pub expires: String,
+    pub domain: String,
+    pub path: String,
+    pub secure: bool,
+}
+
 /// Response state accumulated during script execution.
 #[derive(Default)]
 pub struct ResponseContext {
@@ -151,7 +164,7 @@ pub struct ResponseContext {
     pub ended: bool,
     pub redirect_url: String,
     pub flushed: String,
-    pub cookies: AHashMap<String, String>,
+    pub cookies: AHashMap<String, CookieEntry>,
 }
 
 impl ResponseContext {

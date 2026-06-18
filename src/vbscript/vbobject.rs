@@ -82,7 +82,7 @@ fn key_to_cow(val: &VBValue) -> Cow<'_, str> {
         VBValue::Number(n) => Cow::Owned(n.to_string()),
         VBValue::Boolean(true) => Cow::Owned("True".to_string()),
         VBValue::Boolean(false) => Cow::Owned("False".to_string()),
-        VBValue::Array(_) => Cow::Owned("Array".to_string()),
+        VBValue::Array(..) => Cow::Owned("Array".to_string()),
         VBValue::Object(_) => Cow::Owned("Object".to_string()),
     }
 }
@@ -104,10 +104,10 @@ impl VBScriptObject for Dictionary {
                     .keys()
                     .map(|k| VBValue::String(k.clone()))
                     .collect(),
-            ))),
+            ), vec![])),
             "ITEMS" => Ok(VBValue::Array(std::sync::Arc::new(
                 self.items.values().cloned().collect(),
-            ))),
+            ), vec![])),
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Property '{}' not found on Dictionary", name))),
         }
@@ -147,6 +147,17 @@ impl VBScriptObject for Dictionary {
                 }
                 let key = key_to_cow(&args[0]);
                 Ok(VBValue::Boolean(self.items.contains_key(key.as_ref())))
+            }
+            "ITEM" => {
+                if args.is_empty() {
+                    return Err(VBSErrorType::ValueError
+                        .into_error("Dictionary.Item requires 1 argument (key)".to_string()));
+                }
+                let key = key_to_cow(&args[0]);
+                self.items.get(key.as_ref()).cloned().ok_or_else(|| {
+                    VBSErrorType::RuntimeError
+                        .into_error(format!("Key '{}' not found in Dictionary", key))
+                })
             }
             "REMOVEALL" => {
                 self.items.clear();
@@ -359,10 +370,13 @@ impl VBScriptObject for ErrObject {
         &mut self,
         name: &str,
         args: &[VBValue],
-        _context: &mut ExecutionContext,
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "CLEAR" => Ok(VBValue::Empty),
+            "CLEAR" => {
+                context.clear_err();
+                Ok(VBValue::Empty)
+            }
             "RAISE" => {
                 if args.is_empty() {
                     return Err(VBSErrorType::ValueError.into_error(

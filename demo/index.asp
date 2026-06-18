@@ -14,6 +14,9 @@ pageTitle = "Home - ASPerger Demo"
     <li><a href="form_demo.asp">Form Processing</a> &mdash; Request.Form and query string handling</li>
     <li><a href="loops_demo.asp">Loop Variations</a> &mdash; For Each, While/Wend, Do/Loop, Exit, nesting</li>
     <li><a href="strings_demo.asp">String Functions</a> &mdash; Split, Join, Replace, Mid, InStr, UCase, Trim, etc.</li>
+    <li><a href="arrays_demo.asp">Array Functions</a> &mdash; Array(), LBound, UBound, multi-dim, ReDim, IsArray</li>
+    <li><a href="math_demo.asp">Math &amp; Numeric Functions</a> &mdash; Abs, Sqr, Int, Round, Log, Exp, Sin, Cos, Rnd, Hex, Oct</li>
+    <li><a href="conversion_demo.asp">Type Conversion &amp; Checking</a> &mdash; CInt, CDbl, CStr, CBool, CDate, VarType, TypeName</li>
     <li><a href="advanced_demo.asp">Advanced Features</a> &mdash; Select Case, Sub, Const, ReDim, Dictionary, error handling, Rnd</li>
 </ul>
 

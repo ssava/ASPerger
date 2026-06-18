@@ -190,6 +190,30 @@ Next
 %>
 </table>
 
+<h3>ReDim Multi-Dimensional Array</h3>
+<%
+Dim dynGrid()
+ReDim dynGrid(2, 3)
+dynGrid(0, 0) = "Row0Col0"
+dynGrid(0, 1) = "Row0Col1"
+dynGrid(1, 2) = "Row1Col2"
+dynGrid(2, 3) = "Row2Col3"
+%>
+<table>
+<%
+For r = 0 To 2
+    Response.Write("<tr>")
+    For c = 0 To 3
+        Dim cell
+        cell = dynGrid(r, c)
+        If IsEmpty(cell) Then cell = "—"
+        Response.Write("<td>" & cell & "</td>")
+    Next
+    Response.Write("</tr>")
+Next
+%>
+</table>
+
 <h3>Scripting.Dictionary</h3>
 <%
 Dim dict, key

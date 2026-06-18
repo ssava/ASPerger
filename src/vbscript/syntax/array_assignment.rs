@@ -4,18 +4,33 @@ use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, vbs_error::VBSErrorType, ExecutionContext};
 use std::sync::Arc;
 
+fn compute_flat_index(indices: &[VBValue], dims: &[usize]) -> Option<usize> {
+    if indices.len() != dims.len() {
+        return None;
+    }
+    let mut idx = 0usize;
+    for (i, dim) in dims.iter().enumerate() {
+        let d = to_number(&indices[i]) as usize;
+        if d > *dim {
+            return None;
+        }
+        idx = idx * (dim + 1) + d;
+    }
+    Some(idx)
+}
+
 #[derive(Clone)]
 pub struct ArrayAssignment {
     var_name: String,
-    index_expr: Expr,
+    index_exprs: Vec<Expr>,
     value_expr: Expr,
 }
 
 impl ArrayAssignment {
-    pub fn new(var_name: String, index_expr: Expr, value_expr: Expr) -> Self {
+    pub fn new(var_name: String, index_exprs: Vec<Expr>, value_expr: Expr) -> Self {
         ArrayAssignment {
             var_name,
-            index_expr,
+            index_exprs,
             value_expr,
         }
     }
@@ -23,7 +38,9 @@ impl ArrayAssignment {
 
 impl VBSyntax for ArrayAssignment {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        let idx_val = evaluate(&self.index_expr, context)?;
+        let indices: Result<Vec<VBValue>, VBSError> =
+            self.index_exprs.iter().map(|e| evaluate(e, context)).collect();
+        let indices = indices?;
         let value = evaluate(&self.value_expr, context)?;
 
         // Check type first to avoid borrow conflicts when swapping object out
@@ -33,7 +50,7 @@ impl VBSyntax for ArrayAssignment {
         );
         let is_array = matches!(
             context.get_variable(&self.var_name),
-            Some(VBValue::Array(_))
+            Some(VBValue::Array(..))
         );
 
         if is_object {
@@ -48,7 +65,7 @@ impl VBSyntax for ArrayAssignment {
             };
             match &mut obj_val {
                 VBValue::Object(ref mut obj) => {
-                    obj.indexed_set(&idx_val, value, context)?;
+                    obj.indexed_set(&indices[0], value, context)?;
                 }
                 _ => unreachable!(),
             }
@@ -56,17 +73,34 @@ impl VBSyntax for ArrayAssignment {
             Ok(())
         } else if is_array {
             match context.get_variable_mut(&self.var_name) {
-                Some(VBValue::Array(ref mut items)) => {
-                    let idx = to_number(&idx_val) as usize;
+                Some(VBValue::Array(ref mut items, ref dims)) => {
+                    let flat_idx = if dims.is_empty() {
+                        // Dynamic array — use first index directly
+                        let idx = to_number(&indices[0]) as usize;
+                        if idx >= items.len() {
+                            return Err(VBSErrorType::RuntimeError.into_error(format!(
+                                "Subscript out of range: index {} exceeds array size {}",
+                                idx,
+                                items.len()
+                            )));
+                        }
+                        idx
+                    } else {
+                        compute_flat_index(&indices, dims).ok_or_else(|| {
+                            VBSErrorType::RuntimeError.into_error(
+                                "Subscript out of range".to_string(),
+                            )
+                        })?
+                    };
                     let items = Arc::make_mut(items);
-                    if idx >= items.len() {
+                    if flat_idx >= items.len() {
                         return Err(VBSErrorType::RuntimeError.into_error(format!(
                             "Subscript out of range: index {} exceeds array size {}",
-                            idx,
+                            flat_idx,
                             items.len()
                         )));
                     }
-                    items[idx] = value;
+                    items[flat_idx] = value;
                     Ok(())
                 }
                 _ => unreachable!(),

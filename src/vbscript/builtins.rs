@@ -85,6 +85,7 @@ pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError>
         n if n.eq_ignore_ascii_case("CDBL") => builtin_cdbl(&args),
         n if n.eq_ignore_ascii_case("CLNG") => builtin_clng(&args),
         n if n.eq_ignore_ascii_case("CSNG") => builtin_csng(&args),
+        n if n.eq_ignore_ascii_case("CCUR") => builtin_ccur(&args),
         // Other
         n if n.eq_ignore_ascii_case("HEX") => builtin_hex(&args),
         n if n.eq_ignore_ascii_case("OCT") => builtin_oct(&args),
@@ -129,7 +130,7 @@ fn expect_min_args(args: &[VBValue], min: usize, name: &str) -> Result<(), VBSEr
 }
 
 fn builtin_array(args: &[VBValue]) -> Result<VBValue, VBSError> {
-    Ok(VBValue::Array(std::sync::Arc::new(args.to_vec())))
+    Ok(VBValue::Array(std::sync::Arc::new(args.to_vec()), vec![]))
 }
 
 fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -326,7 +327,7 @@ fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
             .map(|p| VBValue::String(p.to_string()))
             .collect()
     };
-    Ok(VBValue::Array(std::sync::Arc::new(parts)))
+    Ok(VBValue::Array(std::sync::Arc::new(parts), vec![]))
 }
 
 fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -337,7 +338,7 @@ fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
         " ".to_string()
     };
     let arr = match &args[0] {
-        VBValue::Array(a) => a,
+        VBValue::Array(a, _) => a,
         _ => {
             return Err(VBSErrorType::ValueError
                 .into_error("Join requires an array as first argument".to_string()))
@@ -487,14 +488,14 @@ fn builtin_isnumeric(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::String(s) => s.parse::<f64>().is_ok() && !s.is_empty(),
         VBValue::Boolean(_) => false,
         VBValue::Null | VBValue::Empty => false,
-        VBValue::Array(_) | VBValue::Object(_) => false,
+        VBValue::Array(..) | VBValue::Object(_) => false,
     };
     Ok(VBValue::Boolean(result))
 }
 
 fn builtin_isarray(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "IsArray")?;
-    Ok(VBValue::Boolean(matches!(args[0], VBValue::Array(_))))
+    Ok(VBValue::Boolean(matches!(args[0], VBValue::Array(..))))
 }
 
 // ======================== OLE Automation Date Helpers ========================
@@ -512,7 +513,7 @@ pub(crate) fn ole_auto_to_datetime(serial: f64) -> Option<chrono::NaiveDateTime>
     Some(chrono::NaiveDateTime::new(date, time))
 }
 
-fn datetime_to_ole_auto(dt: chrono::NaiveDateTime) -> f64 {
+pub(crate) fn datetime_to_ole_auto(dt: chrono::NaiveDateTime) -> f64 {
     let epoch = chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap();
     let epoch_dt = chrono::NaiveDateTime::new(
         epoch,
@@ -551,7 +552,7 @@ fn add_months(dt: chrono::NaiveDateTime, months: i32) -> chrono::NaiveDateTime {
     chrono::NaiveDateTime::new(date, dt.time())
 }
 
-fn try_parse_date(s: &str) -> Option<chrono::NaiveDateTime> {
+pub(crate) fn try_parse_date(s: &str) -> Option<chrono::NaiveDateTime> {
     let s = s.trim();
     let datetime_formats = [
         "%Y-%m-%d %H:%M:%S",
@@ -1105,7 +1106,7 @@ fn builtin_sqr(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_ubound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "UBound")?;
     let arr = match &args[0] {
-        VBValue::Array(a) => a,
+        VBValue::Array(a, _) => a,
         _ => {
             return Err(VBSErrorType::ValueError.into_error("UBound requires an array".to_string()))
         }
@@ -1122,7 +1123,7 @@ fn builtin_ubound(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_lbound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "LBound")?;
     match &args[0] {
-        VBValue::Array(a) => {
+        VBValue::Array(a, _) => {
             if a.is_empty() {
                 return Err(
                     VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
@@ -1139,7 +1140,7 @@ fn builtin_lbound(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_filter(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 2, "Filter")?;
     let arr = match &args[0] {
-        VBValue::Array(a) => a,
+        VBValue::Array(a, _) => a,
         _ => {
             return Err(VBSErrorType::ValueError.into_error("Filter requires an array".to_string()))
         }
@@ -1172,7 +1173,7 @@ fn builtin_filter(args: &[VBValue]) -> Result<VBValue, VBSError> {
         })
         .cloned()
         .collect();
-    Ok(VBValue::Array(std::sync::Arc::new(result)))
+    Ok(VBValue::Array(std::sync::Arc::new(result), vec![]))
 }
 
 // ======================== Type Conversion Functions ========================
@@ -1227,6 +1228,13 @@ fn builtin_csng(args: &[VBValue]) -> Result<VBValue, VBSError> {
     Ok(VBValue::Number(value_utils::to_arg_f64(&args[0])))
 }
 
+fn builtin_ccur(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "CCur")?;
+    let n = value_utils::to_arg_f64(&args[0]);
+    // Currency is fixed-point with 4 decimal places
+    Ok(VBValue::Number((n * 10000.0).round() / 10000.0))
+}
+
 // ======================== Other Functions ========================
 
 fn builtin_hex(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -1270,8 +1278,8 @@ fn builtin_typename(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::Boolean(_) => "Boolean",
         VBValue::Null => "Null",
         VBValue::Empty => "Empty",
-        VBValue::Array(_) => "Array",
-        VBValue::Object(_) => "Object",
+        VBValue::Array(..) => "Array",
+        VBValue::Object(obj) => &obj.type_name(),
         VBValue::Number(n) => {
             if n.fract() == 0.0 {
                 let n = *n as i64;
@@ -1312,7 +1320,7 @@ fn builtin_vartype(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::String(_) => 8,
         VBValue::Boolean(_) => 11,
         VBValue::Object(_) => 9,
-        VBValue::Array(_) => 8204,
+        VBValue::Array(..) => 8204,
     };
     Ok(VBValue::Number(vt as f64))
 }
