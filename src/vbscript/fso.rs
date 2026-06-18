@@ -16,6 +16,12 @@ use crate::vbscript::vbobject::VBScriptObject;
 #[derive(Debug, Clone)]
 pub struct FileSystemObject;
 
+impl Default for FileSystemObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileSystemObject {
     pub fn new() -> Self {
         FileSystemObject
@@ -643,7 +649,7 @@ impl VBScriptObject for FileObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
-                let force = if args.len() > 0 {
+                let force = if !args.is_empty() {
                     value_utils::to_boolean(&args[0])
                 } else {
                     false
@@ -660,7 +666,7 @@ impl VBScriptObject for FileObject {
                 Ok(VBValue::Empty)
             }
             "OPENASTEXTSTREAM" => {
-                let iomode = if args.len() > 0 {
+                let iomode = if !args.is_empty() {
                     value_utils::to_arg_f64(&args[0]) as i32
                 } else {
                     1
@@ -832,7 +838,7 @@ impl VBScriptObject for FolderObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "DELETE" => {
-                let force = if args.len() > 0 {
+                let force = if !args.is_empty() {
                     value_utils::to_boolean(&args[0])
                 } else {
                     false

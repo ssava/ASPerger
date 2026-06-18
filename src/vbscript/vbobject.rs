@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use super::execution_context::ExecutionContext;
+use super::execution_context::{CIStr, CIString, ExecutionContext};
 use super::value::VBValue;
 use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
@@ -62,6 +62,12 @@ pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct Dictionary {
     items: AHashMap<String, VBValue>,
+}
+
+impl Default for Dictionary {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Dictionary {
@@ -197,7 +203,7 @@ impl VBScriptObject for Dictionary {
 #[derive(Debug)]
 pub struct ClassInstance {
     pub class_name: String,
-    pub instance_vars: AHashMap<String, VBValue>,
+    pub instance_vars: AHashMap<CIString, VBValue>,
 }
 
 impl ClassInstance {
@@ -225,8 +231,7 @@ impl VBScriptObject for ClassInstance {
         let class_def = context.get_class(&self.class_name).ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(format!("Class '{}' not found", self.class_name))
         })?;
-        let prop_name_upper = name.to_uppercase();
-        if let Some(prop_def) = class_def.properties.get(&prop_name_upper) {
+        if let Some(prop_def) = class_def.properties.get(name) {
             if let Some(ref body_lines) = prop_def.get_body {
                 let body_blocks = super::block::parse_blocks(body_lines).map_err(|_| {
                     VBSErrorType::RuntimeError
@@ -234,14 +239,14 @@ impl VBScriptObject for ClassInstance {
                 })?;
                 let mut instance_vars = self.instance_vars.clone();
                 context.set_variable(name, VBValue::Empty);
-                instance_vars.insert(name.to_uppercase(), VBValue::Empty);
+                instance_vars.insert(CIString::new(name.to_string()), VBValue::Empty);
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
                     super::block::execute_blocks(&body_blocks, ctx)
                 });
                 match result {
                     Ok(()) => {
                         let val = instance_vars
-                            .get(&prop_name_upper)
+                            .get(CIStr::new(name))
                             .cloned()
                             .unwrap_or(VBValue::Empty);
                         Ok(val)
@@ -251,7 +256,7 @@ impl VBScriptObject for ClassInstance {
             } else {
                 let val = self
                     .instance_vars
-                    .get(&prop_name_upper)
+                    .get(CIStr::new(name))
                     .cloned()
                     .unwrap_or(VBValue::Empty);
                 Ok(val)
@@ -259,7 +264,7 @@ impl VBScriptObject for ClassInstance {
         } else {
             let val = self
                 .instance_vars
-                .get(&prop_name_upper)
+                .get(CIStr::new(name))
                 .cloned()
                 .unwrap_or(VBValue::Empty);
             Ok(val)
@@ -275,8 +280,7 @@ impl VBScriptObject for ClassInstance {
         let class_def = context.get_class(&self.class_name).ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(format!("Class '{}' not found", self.class_name))
         })?;
-        let prop_name_upper = name.to_uppercase();
-        if let Some(prop_def) = class_def.properties.get(&prop_name_upper) {
+        if let Some(prop_def) = class_def.properties.get(name) {
             if let Some(ref body_lines) = prop_def.let_body {
                 let body_blocks = super::block::parse_blocks(body_lines).map_err(|_| {
                     VBSErrorType::RuntimeError
@@ -284,7 +288,7 @@ impl VBScriptObject for ClassInstance {
                 })?;
                 let mut instance_vars = std::mem::take(&mut self.instance_vars);
                 if let Some(ref param) = prop_def.let_param {
-                    instance_vars.insert(param.to_uppercase(), value.clone());
+                    instance_vars.insert(CIString::new(param.clone()), value.clone());
                 }
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
                     super::block::execute_blocks(&body_blocks, ctx)
@@ -292,11 +296,11 @@ impl VBScriptObject for ClassInstance {
                 self.instance_vars = instance_vars;
                 result
             } else {
-                self.instance_vars.insert(prop_name_upper, value);
+                self.instance_vars.insert(CIString::new(name.to_string()), value);
                 Ok(())
             }
         } else {
-            self.instance_vars.insert(prop_name_upper, value);
+            self.instance_vars.insert(CIString::new(name.to_string()), value);
             Ok(())
         }
     }
@@ -341,6 +345,12 @@ impl VBScriptObject for ClassInstance {
 
 #[derive(Debug, Clone)]
 pub struct ErrObject;
+
+impl Default for ErrObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ErrObject {
     pub fn new() -> Self {

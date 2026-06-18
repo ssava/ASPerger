@@ -10,8 +10,8 @@ use chrono::{Datelike, Timelike};
 use std::cell::RefCell;
 
 thread_local! {
-    static RNG_STATE: RefCell<u32> = RefCell::new(0u32);
-    static RNG_LAST: RefCell<f64> = RefCell::new(0.0f64);
+    static RNG_STATE: RefCell<u32> = const { RefCell::new(0u32) };
+    static RNG_LAST: RefCell<f64> = const { RefCell::new(0.0f64) };
 }
 
 pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError> {
@@ -344,7 +344,7 @@ fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
                 .into_error("Join requires an array as first argument".to_string()))
         }
     };
-    let strings: Vec<String> = arr.iter().map(|v| value_utils::to_arg_string(v)).collect();
+    let strings: Vec<String> = arr.iter().map(value_utils::to_arg_string).collect();
     Ok(VBValue::String(strings.join(&delimiter)))
 }
 
@@ -699,7 +699,7 @@ fn builtin_weekdayname(args: &[VBValue]) -> Result<VBValue, VBSError> {
     } else {
         1
     };
-    if weekday < 1 || weekday > 7 {
+    if !(1..=7).contains(&weekday) {
         return Err(VBSErrorType::ValueError.into_error("Invalid weekday".to_string()));
     }
     let idx = ((weekday - 1) + (firstday - 1)) % 7;
@@ -728,7 +728,7 @@ fn builtin_monthname(args: &[VBValue]) -> Result<VBValue, VBSError> {
     } else {
         false
     };
-    if month < 1 || month > 12 {
+    if !(1..=12).contains(&month) {
         return Err(VBSErrorType::ValueError.into_error("Invalid month".to_string()));
     }
     let names = [
@@ -972,7 +972,7 @@ fn builtin_timevalue(args: &[VBValue]) -> Result<VBValue, VBSError> {
                     )
                     .unwrap()
                 })
-                .ok_or(std::io::Error::new(std::io::ErrorKind::Other, ""))
+                .ok_or(std::io::Error::other(""))
         })
         .map_err(|_| VBSErrorType::RuntimeError.into_error("Invalid time string".to_string()))?;
     let dt =
@@ -1031,7 +1031,7 @@ fn builtin_rnd(args: &[VBValue]) -> Result<VBValue, VBSError> {
                     *l = val;
                     Ok(VBValue::Number(val))
                 }
-                Some(n) if n == 0.0 => Ok(VBValue::Number(*l)),
+                Some(0.0) => Ok(VBValue::Number(*l)),
                 _ => {
                     let val = rnd_next(&mut s);
                     *l = val;
@@ -1186,7 +1186,7 @@ fn builtin_cbool(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_cbyte(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CByte")?;
     let n = value_utils::to_arg_f64(&args[0]).round();
-    if n < 0.0 || n > 255.0 {
+    if !(0.0..=255.0).contains(&n) {
         return Err(VBSErrorType::RuntimeError.into_error("Overflow".to_string()));
     }
     Ok(VBValue::Number(n))
@@ -1279,13 +1279,13 @@ fn builtin_typename(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::Null => "Null",
         VBValue::Empty => "Empty",
         VBValue::Array(..) => "Array",
-        VBValue::Object(obj) => &obj.type_name(),
+        VBValue::Object(obj) => obj.type_name(),
         VBValue::Number(n) => {
             if n.fract() == 0.0 {
                 let n = *n as i64;
-                if n >= -32768 && n <= 32767 {
+                if (-32768..=32767).contains(&n) {
                     "Integer"
-                } else if n >= -2147483648 && n <= 2147483647 {
+                } else if (-2147483648..=2147483647).contains(&n) {
                     "Long"
                 } else {
                     "Double"
@@ -1306,9 +1306,9 @@ fn builtin_vartype(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::Number(n) => {
             if n.fract() == 0.0 {
                 let n = *n as i64;
-                if n >= -32768 && n <= 32767 {
+                if (-32768..=32767).contains(&n) {
                     2
-                } else if n >= -2147483648 && n <= 2147483647 {
+                } else if (-2147483648..=2147483647).contains(&n) {
                     3
                 } else {
                     5
@@ -1475,13 +1475,11 @@ fn format_number_internal(num: f64, numdigits: usize) -> String {
     let int_str = int_part.to_string();
     let mut with_commas = String::new();
     let chars: Vec<char> = int_str.chars().collect();
-    let mut count = 0;
-    for &c in chars.iter().rev() {
+    for (count, &c) in chars.iter().rev().enumerate() {
         if count > 0 && count % 3 == 0 {
             with_commas.push(',');
         }
         with_commas.push(c);
-        count += 1;
     }
     let comma_int: String = with_commas.chars().rev().collect();
     if numdigits > 0 {

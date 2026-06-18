@@ -16,6 +16,12 @@ pub struct RegExpObject {
     global: bool,
 }
 
+impl Default for RegExpObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RegExpObject {
     pub fn new() -> Self {
         RegExpObject {

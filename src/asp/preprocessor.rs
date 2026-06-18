@@ -34,7 +34,15 @@ impl Preprocessor {
     pub fn new() -> Self {
         Preprocessor
     }
+}
 
+impl Default for Preprocessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Preprocessor {
     /// Scan blocks for AspBlock::Directive, accumulate into DirectiveConfig,
     /// and return non-directive block references.
     pub fn process<'a>(&self, blocks: &'a [AspBlock]) -> (DirectiveConfig, Vec<&'a AspBlock>) {

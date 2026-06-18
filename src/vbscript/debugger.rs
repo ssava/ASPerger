@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use ahash::AHashMap;
 
+use super::execution_context::CIString;
 use super::value::VBValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -22,7 +23,7 @@ pub struct StackFrame {
     pub name: String,
     pub file: String,
     pub line: usize,
-    pub variables: AHashMap<String, VBValue>,
+    pub variables: AHashMap<CIString, VBValue>,
 }
 
 pub enum DebugCommand {
@@ -99,7 +100,7 @@ impl Debugger {
         file: &str,
         line: usize,
         frame_depth: usize,
-        vars: Option<&AHashMap<String, VBValue>>,
+        vars: Option<&AHashMap<CIString, VBValue>>,
     ) -> Result<(), crate::vbscript::vbs_error::VBSError> {
         use crate::vbscript::vbs_error::VBSErrorType;
 
@@ -109,7 +110,7 @@ impl Debugger {
                 StepMode::Continue => s
                     .breakpoints
                     .get(file)
-                    .map_or(false, |lines| lines.contains(&line)),
+                    .is_some_and(|lines| lines.contains(&line)),
                 StepMode::StepOver => frame_depth <= s.step_frame_depth && line != s.current_line,
                 StepMode::StepIn => true,
                 StepMode::StepOut => frame_depth < s.step_frame_depth,
@@ -201,7 +202,7 @@ impl Debugger {
         Ok(())
     }
 
-    pub fn push_frame(&self, name: &str, file: &str, line: usize, vars: AHashMap<String, VBValue>) {
+    pub fn push_frame(&self, name: &str, file: &str, line: usize, vars: AHashMap<CIString, VBValue>) {
         let mut s = self.state.lock().unwrap();
         s.stack_frames.push(StackFrame {
             name: name.to_string(),

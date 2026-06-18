@@ -398,7 +398,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             .variables
                             .iter()
                             .map(|(k, v)| types::Variable {
-                                name: k.clone(),
+                                name: k.as_str().to_string(),
                                 value: v.to_string(),
                                 type_field: Some(match v {
                                     asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
@@ -435,13 +435,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let (result, type_field) = if let Some(ref state) = debugger_state {
                     let s = state.lock().unwrap();
-                    let upper = expression.to_uppercase();
 
                     // Look up the expression in the specified frame, then fall back to all frames
                     let found = s.stack_frames.get(frame_id as usize)
-                        .and_then(|f| f.variables.get(&upper))
+                        .and_then(|f| f.variables.get(asperger::vbscript::execution_context::CIStr::new(&expression)))
                         .or_else(|| {
-                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(&upper))
+                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(asperger::vbscript::execution_context::CIStr::new(&expression)))
                         });
 
                     match found {

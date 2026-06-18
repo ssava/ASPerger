@@ -35,7 +35,7 @@ fn profile_literal_assign() {
 fn profile_math_ops() {
     let interp = VBScriptInterpreter;
     let mut ctx = make_ctx();
-    interp.execute("a = 3.14\nb = 2.72\nc = (a + b) * (a - b) / (a * b)", &mut ctx).unwrap();
+    interp.execute("a = 3.14\nb = 2.72\nc = (a + b) * (a - b) / 1.0", &mut ctx).unwrap();
 }
 
 fn profile_loops_and_concat() {

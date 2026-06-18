@@ -395,7 +395,7 @@ impl AspServer {
         let canonical_path = match Path::new(&raw_path).canonicalize() {
             Ok(p) => p,
             Err(e) => {
-                let err = ASPError::new(404, &format!("File not found: {} (folder={}, path={}, error={})", raw_path, folder, request.path, e));
+                let err = ASPError::new(404, format!("File not found: {} (folder={}, path={}, error={})", raw_path, folder, request.path, e));
                 return Ok(HttpResponse {
                     status_line: "404 Not Found".to_string(),
                     content_type: "text/html".to_string(),
@@ -752,7 +752,7 @@ impl AspServer {
                 tokio::signal::ctrl_c().await.ok();
             })
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 
     /// Generate an HTML directory listing for the given canonical directory path.

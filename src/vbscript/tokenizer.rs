@@ -3,6 +3,7 @@
 
 use std::iter::Peekable;
 use std::str::Chars;
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum TokenType {
@@ -91,7 +92,7 @@ pub enum TokenType {
 #[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
-    pub value: String,
+    pub value: Arc<str>,
 }
 
 pub struct Tokenizer<'a> {
@@ -172,7 +173,7 @@ impl<'a> Tokenizer<'a> {
 
         Some(Token {
             token_type: TokenType::EOF,
-            value: String::new(),
+            value: Arc::from(""),
         })
     }
 
@@ -199,15 +200,15 @@ impl<'a> Tokenizer<'a> {
                 self.current_column = 1;
             }
         }
-
         Token {
             token_type: TokenType::NewLine,
-            value,
+            value: Arc::from(value),
         }
     }
 
     fn tokenize_string(&mut self) -> Token {
         let mut value = String::new();
+
         self.advance(); // consume opening quote
 
         while let Some(&c) = self.input.peek() {
@@ -226,7 +227,7 @@ impl<'a> Tokenizer<'a> {
 
         Token {
             token_type: TokenType::StringLiteral,
-            value,
+            value: Arc::from(value),
         }
     }
 
@@ -295,7 +296,7 @@ impl<'a> Tokenizer<'a> {
             TokenType::IntegerLiteral
         };
 
-        Token { token_type, value }
+        Token { token_type, value: Arc::from(value) }
     }
 
     fn tokenize_identifier(&mut self) -> Token {
@@ -312,7 +313,7 @@ impl<'a> Tokenizer<'a> {
 
         let token_type = self.get_keyword_type(&value);
 
-        Token { token_type, value }
+        Token { token_type, value: Arc::from(value) }
     }
 
     fn get_keyword_type(&self, word: &str) -> TokenType {
@@ -518,7 +519,7 @@ impl<'a> Tokenizer<'a> {
 
         Token {
             token_type: TokenType::Comment,
-            value,
+            value: Arc::from(value),
         }
     }
 
@@ -538,7 +539,7 @@ impl<'a> Tokenizer<'a> {
 
         Token {
             token_type: TokenType::DateLiteral,
-            value,
+            value: Arc::from(value),
         }
     }
 
@@ -555,37 +556,37 @@ impl<'a> Tokenizer<'a> {
                 '+' => {
                     return Token {
                         token_type: TokenType::Plus,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '-' => {
                     return Token {
                         token_type: TokenType::Minus,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '*' => {
                     return Token {
                         token_type: TokenType::Multiply,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '/' => {
                     return Token {
                         token_type: TokenType::Divide,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '\\' => {
                     return Token {
                         token_type: TokenType::IntDivide,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '^' => {
                     return Token {
                         token_type: TokenType::Power,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '&' => {
@@ -604,7 +605,7 @@ impl<'a> Tokenizer<'a> {
                             }
                             return Token {
                                 token_type: TokenType::HexLiteral,
-                                value,
+                                value: Arc::from(value),
                             };
                         }
                         // Check for octal literal: &77 or &O77
@@ -623,13 +624,13 @@ impl<'a> Tokenizer<'a> {
                             }
                             return Token {
                                 token_type: TokenType::OctLiteral,
-                                value,
+                                value: Arc::from(value),
                             };
                         }
                     }
                     return Token {
                         token_type: TokenType::Concat,
-                        value,
+                        value: Arc::from(value),
                     };
                 }
                 '=' => {
@@ -638,42 +639,42 @@ impl<'a> Tokenizer<'a> {
                         self.advance();
                         return Token {
                             token_type: TokenType::Equal,
-                            value,
+                            value: Arc::from(value),
                         };
                     }
                     return Token {
                         token_type: TokenType::Assign,
-                        value,
+                        value: Arc::from(value),
                     };
                 }
                 '.' => {
                     return Token {
                         token_type: TokenType::Dot,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 ',' => {
                     return Token {
                         token_type: TokenType::Comma,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 ':' => {
                     return Token {
                         token_type: TokenType::Colon,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '(' => {
                     return Token {
                         token_type: TokenType::LeftParen,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 ')' => {
                     return Token {
                         token_type: TokenType::RightParen,
-                        value,
+                        value: Arc::from(value),
                     }
                 }
                 '>' => {
@@ -682,12 +683,12 @@ impl<'a> Tokenizer<'a> {
                         self.advance(); // Consume the '='
                         return Token {
                             token_type: TokenType::GreaterEqual,
-                            value,
+                            value: Arc::from(value),
                         };
                     }
                     return Token {
                         token_type: TokenType::GreaterThan,
-                        value,
+                        value: Arc::from(value),
                     };
                 }
                 '<' => {
@@ -696,19 +697,19 @@ impl<'a> Tokenizer<'a> {
                         self.advance(); // Consume the '='
                         return Token {
                             token_type: TokenType::LessEqual,
-                            value,
+                            value: Arc::from(value),
                         };
                     } else if self.input.peek() == Some(&'>') {
                         value.push('>');
                         self.advance(); // Consume the '>'
                         return Token {
                             token_type: TokenType::NotEqual,
-                            value,
+                            value: Arc::from(value),
                         };
                     }
                     return Token {
                         token_type: TokenType::LessThan,
-                        value,
+                        value: Arc::from(value),
                     };
                 }
                 _ => {
@@ -716,7 +717,7 @@ impl<'a> Tokenizer<'a> {
                     self.advance(); // Consume invalid character
                     return Token {
                         token_type: TokenType::Invalid,
-                        value,
+                        value: Arc::from(value),
                     };
                 }
             }
@@ -725,7 +726,7 @@ impl<'a> Tokenizer<'a> {
         // Default return for unknown operator
         Token {
             token_type: TokenType::EOF,
-            value,
+            value: Arc::from(value),
         }
     }
 }

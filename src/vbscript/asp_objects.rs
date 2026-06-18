@@ -317,6 +317,12 @@ impl VBScriptObject for ResponseObject {
 #[derive(Debug, Clone)]
 pub struct ResponseCookies;
 
+impl Default for ResponseCookies {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ResponseCookies {
     pub fn new() -> Self {
         ResponseCookies
@@ -381,7 +387,7 @@ impl VBScriptObject for CookieObject {
             "PATH" => Ok(VBValue::String(entry.path.clone())),
             "SECURE" => Ok(VBValue::Boolean(entry.secure)),
             "HASKEYS" => Ok(VBValue::Boolean(!entry.subkeys.is_empty())),
-            _ => Ok(VBValue::String(entry.value.clone())),
+            _ => Ok(VBValue::String(entry.value.to_string())),
         }
     }
     fn set_property(
@@ -453,7 +459,7 @@ impl VBScriptObject for ResponseCookies {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(context.response.cookies.len() as f64)),
             _ => match context.response.cookies.get(name) {
-                Some(entry) => Ok(VBValue::String(entry.value.clone())),
+                Some(entry) => Ok(VBValue::String(entry.value.to_string())),
                 None => Ok(VBValue::Empty),
             },
         }

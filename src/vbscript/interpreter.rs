@@ -51,20 +51,17 @@ impl VBScriptInterpreter {
 
             match &token.token_type {
                 TokenType::NewLine => {
-                    if !current_line.is_empty() {
-                        if !Self::is_line_continuation(&current_line) {
+                    if !current_line.is_empty()
+                        && !Self::is_line_continuation(&current_line) {
                             lines.push(std::mem::take(&mut current_line));
                         }
-                    }
                 }
 
                 TokenType::WhiteSpace => {
                     if Self::is_continuation_sequence(&tokens[i..]) {
                         i = Self::skip_continuation_sequence(&tokens[i..]);
-                    } else {
-                        if !current_line.is_empty() {
-                            current_line.push(token.clone());
-                        }
+                    } else if !current_line.is_empty() {
+                        current_line.push(token.clone());
                     }
                 }
 
@@ -103,7 +100,7 @@ impl VBScriptInterpreter {
 
         let lines = lines
             .into_iter()
-            .map(|line| Self::trim_whitespace_tokens(line))
+            .map(Self::trim_whitespace_tokens)
             .filter(|line| !line.is_empty())
             .collect();
 
@@ -121,10 +118,7 @@ impl VBScriptInterpreter {
     fn is_in_string_literal(tokens: &[Token]) -> bool {
         let mut in_string = false;
         for token in tokens {
-            match token.token_type {
-                TokenType::StringLiteral => in_string = !in_string,
-                _ => {}
-            }
+            if token.token_type == TokenType::StringLiteral { in_string = !in_string }
         }
         in_string
     }
@@ -176,7 +170,7 @@ impl VBScriptInterpreter {
 
         while result
             .last()
-            .map_or(false, |t| matches!(t.token_type, TokenType::WhiteSpace))
+            .is_some_and(|t| matches!(t.token_type, TokenType::WhiteSpace))
         {
             result.pop();
         }

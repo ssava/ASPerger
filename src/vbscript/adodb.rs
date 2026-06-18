@@ -17,6 +17,12 @@ pub struct Connection {
     state: i32,
 }
 
+impl Default for Connection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Connection {
     pub fn new() -> Self {
         Connection {

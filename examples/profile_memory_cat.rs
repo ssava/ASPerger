@@ -32,7 +32,7 @@ fn profile_assign() {
 fn profile_math() {
     let interp = VBScriptInterpreter;
     let mut ctx = make_ctx();
-    interp.execute("Dim i, s\nFor i = 1 To 100\na = 3.14 * (i + 2.72) / (i - 1.0)\nNext", &mut ctx).unwrap();
+    interp.execute("Dim i, s\nFor i = 2 To 100\na = 3.14 * (i + 2.72) / (i - 1.0)\nNext", &mut ctx).unwrap();
 }
 
 fn profile_loops() {

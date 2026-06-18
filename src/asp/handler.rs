@@ -27,18 +27,21 @@ impl HtmlHandler {
     }
 }
 
+impl Default for HtmlHandler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Handler for HtmlHandler {
     fn set_next(&mut self, next: Arc<dyn Handler + Send + Sync>) {
         self.next = Some(next);
     }
 
     fn handle(&self, block: &AspBlock, context: &mut ExecutionContext) -> Result<(), ASPError> {
-        match block {
-            AspBlock::Html(html) => {
-                context.write(html);
-                return Ok(());
-            }
-            _ => {}
+        if let AspBlock::Html(html) = block {
+            context.write(html);
+            return Ok(());
         }
         if let Some(next) = &self.next {
             // Pass the block to the next handler in the chain.

@@ -220,7 +220,7 @@ pub struct UserDefinedFunction {
     pub is_function: bool,
 }
 
-fn first_non_ws<'a>(tokens: &'a [Token]) -> Option<&'a Token> {
+fn first_non_ws(tokens: &[Token]) -> Option<&Token> {
     tokens
         .iter()
         .find(|t| t.token_type != TokenType::WhiteSpace)
@@ -242,11 +242,12 @@ fn find_keyword_or_type(tokens: &[Token], keyword: &str, token_type: TokenType) 
 fn tokens_to_string(tokens: &[Token]) -> String {
     tokens
         .iter()
-        .map(|t| t.value.clone())
-        .collect::<Vec<String>>()
+        .map(|t| t.value.as_ref().to_string())
+        .collect::<Vec<_>>()
         .join(" ")
 }
 
+#[allow(clippy::type_complexity)]
 fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>>)>, VBSError> {
     let mut var_names = Vec::new();
     let mut i = 1;
@@ -262,7 +263,7 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>
                 tokens[i].value
             )));
         }
-        let name = tokens[i].value.clone();
+        let name = tokens[i].value.to_string();
         i += 1;
 
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
@@ -349,7 +350,7 @@ fn parse_const_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError
                 tokens[i].value
             )));
         }
-        let name = tokens[i].value.clone();
+        let name = tokens[i].value.to_string();
         i += 1;
 
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
@@ -392,7 +393,7 @@ fn parse_assignment_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBS
         )));
     }
 
-    let var_name = tokens[i].value.clone();
+    let var_name = tokens[i].value.to_string();
     i += 1;
 
     while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
@@ -431,7 +432,7 @@ fn parse_redim_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError
             VBSErrorType::SyntaxError.into_error("Expected variable name after ReDim".to_string())
         );
     }
-    let var_name = tokens[i].value.clone();
+    let var_name = tokens[i].value.to_string();
     i += 1;
 
     while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
@@ -493,7 +494,7 @@ fn find_method_token(tokens: &[Token], method_name: &str) -> Option<usize> {
     let start = dot_idx + 1;
     tokens[start..]
         .iter()
-        .position(|t| t.token_type == TokenType::Identifier && t.value == method_name)
+        .position(|t| t.token_type == TokenType::Identifier && t.value.as_ref() == method_name)
         .map(|offset| start + offset)
 }
 
@@ -606,7 +607,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
                 i += 1;
             }
             if i < tokens.len() && tokens[i].token_type == TokenType::Identifier {
-                let property_name = tokens[i].value.clone();
+                let property_name = tokens[i].value.to_string();
                 i += 1;
                 while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
                     i += 1;
@@ -632,7 +633,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Assign
     {
-        let var_name = non_ws[0].value.clone();
+        let var_name = non_ws[0].value.to_string();
         let assign_idx = tokens
             .iter()
             .position(|t| t.token_type == TokenType::Assign)
@@ -646,7 +647,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::LeftParen
     {
-        let var_name = non_ws[0].value.clone();
+        let var_name = non_ws[0].value.to_string();
         let mut i = 0;
         while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
             i += 1;
@@ -716,8 +717,8 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[2].token_type == TokenType::Identifier
         && non_ws[3].token_type == TokenType::Assign
     {
-        let object_name = non_ws[0].value.clone();
-        let property_name = non_ws[2].value.clone();
+        let object_name = non_ws[0].value.to_string();
+        let property_name = non_ws[2].value.to_string();
         let assign_idx = tokens
             .iter()
             .position(|t| t.token_type == TokenType::Assign)
@@ -736,8 +737,8 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[1].token_type == TokenType::Dot
         && non_ws[2].token_type == TokenType::Identifier
     {
-        let object_name = non_ws[0].value.clone();
-        let method_name = non_ws[2].value.clone();
+        let object_name = non_ws[0].value.to_string();
+        let method_name = non_ws[2].value.to_string();
 
         let args = if let Some(mi) = find_method_token(tokens, &method_name) {
             let arg_tokens = &tokens[mi + 1..];
@@ -755,7 +756,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[1].token_type == TokenType::Identifier
         && non_ws[2].token_type == TokenType::Assign
     {
-        let property_name = non_ws[1].value.clone();
+        let property_name = non_ws[1].value.to_string();
         let assign_idx = tokens
             .iter()
             .position(|t| t.token_type == TokenType::Assign)
@@ -773,12 +774,11 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[0].token_type == TokenType::Dot
         && non_ws[1].token_type == TokenType::Identifier
     {
-        let method_name = non_ws[1].value.clone();
+        let method_name = non_ws[1].value.to_string();
         let remaining: Vec<Token> = tokens
             .iter()
             .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .cloned()
-            .skip(2)
+            .skip(2).cloned()
             .collect();
         let args = if remaining.is_empty() {
             Vec::new()
@@ -798,7 +798,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[1].token_type != TokenType::Assign
         && non_ws[1].token_type != TokenType::Dot
     {
-        let name = non_ws[0].value.clone();
+        let name = non_ws[0].value.to_string();
         let mut assign_pos = None;
         for (i, tok) in tokens.iter().enumerate() {
             if tok.token_type == TokenType::Assign {
@@ -808,7 +808,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         }
         if assign_pos.is_none() {
             let name_pos = tokens.iter().position(|t| {
-                t.token_type == TokenType::Identifier && t.value == name
+                t.token_type == TokenType::Identifier && t.value.as_ref() == name
             }).unwrap_or(0);
             let arg_tokens = &tokens[name_pos + 1..];
             let filtered: Vec<Token> = arg_tokens.iter()
@@ -829,7 +829,7 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::LeftParen
     {
-        let name = non_ws[0].value.clone();
+        let name = non_ws[0].value.to_string();
         let mut i = 0;
         while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
             i += 1;
@@ -898,13 +898,6 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
 
 // ===== Token-to-Expr helpers =====
 
-fn parse_tokens_to_expr(tokens: &[Token]) -> Result<Expr, VBSError> {
-    if tokens.is_empty() {
-        return Ok(Expr::Literal(VBValue::Empty));
-    }
-    parse_expression(tokens)
-}
-
 // ===== Function/Sub parsing =====
 
 fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
@@ -922,14 +915,14 @@ fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStat
     }
 
     let is_function = no_ws[0].token_type == TokenType::Function;
-    let name = no_ws[1].value.clone();
+    let name = no_ws[1].value.to_string();
 
     let mut params = Vec::new();
     if no_ws.len() > 2 && no_ws[2].token_type == TokenType::LeftParen {
         let mut i = 3;
         while i < no_ws.len() && no_ws[i].token_type != TokenType::RightParen {
             if no_ws[i].token_type == TokenType::Identifier {
-                params.push(no_ws[i].value.clone());
+                params.push(no_ws[i].value.to_string());
             }
             i += 1;
         }
@@ -1151,7 +1144,7 @@ fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
         });
 
     let class_name = name_idx
-        .map(|i| line[i].value.clone())
+        .map(|i| line[i].value.to_string())
         .unwrap_or_else(|| "".to_string());
 
     let mut body_lines: Vec<Vec<Token>> = Vec::new();
@@ -1314,21 +1307,11 @@ fn parse_blocks_inner(
 }
 
 fn parse_expr_from_range(tokens: &[Token], start: usize, end: usize) -> Result<Expr, VBSError> {
-    let filtered: Vec<Token> = tokens[start..end]
-        .iter()
-        .filter(|t| t.token_type != TokenType::WhiteSpace)
-        .cloned()
-        .collect();
-    parse_tokens_to_expr(&filtered)
+    parse_expression(&tokens[start..end])
 }
 
 fn parse_expr_from_slice(tokens: &[Token], start: usize) -> Result<Expr, VBSError> {
-    let filtered: Vec<Token> = tokens[start..]
-        .iter()
-        .filter(|t| t.token_type != TokenType::WhiteSpace)
-        .cloned()
-        .collect();
-    parse_tokens_to_expr(&filtered)
+    parse_expression(&tokens[start..])
 }
 
 fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
@@ -1501,7 +1484,7 @@ fn parse_for_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
         return Err(VBSErrorType::SyntaxError.into_error("Invalid For statement".to_string()));
     }
 
-    let counter = for_line_no_ws[1].value.clone();
+    let counter = for_line_no_ws[1].value.to_string();
 
     if counter.eq_ignore_ascii_case("each") {
         return parse_for_each_block(line, line_num, pos, lines, &for_line_no_ws);
@@ -1569,7 +1552,7 @@ fn parse_for_each_block(
         return Err(VBSErrorType::SyntaxError.into_error("Invalid For Each statement".to_string()));
     }
 
-    let element = for_line_no_ws[2].value.clone();
+    let element = for_line_no_ws[2].value.to_string();
 
     let in_idx = line
         .iter()
@@ -1817,7 +1800,7 @@ fn parse_exit_statement(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockSt
         .iter()
         .skip(1)
         .find(|t| t.token_type != TokenType::WhiteSpace)
-        .map(|t| t.value.as_str())
+        .map(|t| t.value.as_ref())
         .unwrap_or("");
 
     match exit_type.to_uppercase().as_str() {
@@ -1961,7 +1944,7 @@ fn parse_exit_line(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
         .iter()
         .filter(|t| t.token_type != TokenType::WhiteSpace)
         .collect();
-    let exit_kind = non_ws.get(1).map(|t| t.value.as_str()).unwrap_or("");
+    let exit_kind = non_ws.get(1).map(|t| t.value.as_ref()).unwrap_or("");
     match exit_kind.to_uppercase().as_str() {
         "FOR" => Ok(Box::new(ExitSyntax {
             exit_type: VBSErrorType::ExitFor,
@@ -2072,7 +2055,7 @@ fn parse_on_error_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSEr
         && non_ws[1].value.eq_ignore_ascii_case("error")
         && non_ws[2].value.eq_ignore_ascii_case("goto")
         && non_ws[3].token_type == TokenType::IntegerLiteral
-        && non_ws[3].value == "0"
+        && non_ws[3].value.as_ref() == "0"
     {
         return Ok(Box::new(OnErrorGoto0));
     }
@@ -2089,11 +2072,12 @@ pub(crate) fn execute_user_defined_function(
 ) -> Result<VBValue, VBSError> {
     // Push stack frame for debugger
     if let Some(ref debugger) = context.debugger {
-        let vars: AHashMap<String, VBValue> = func
+        use super::execution_context::CIString;
+        let vars: AHashMap<CIString, VBValue> = func
             .params
             .iter()
             .enumerate()
-            .map(|(i, p)| (p.clone(), args.get(i).cloned().unwrap_or(VBValue::Empty)))
+            .map(|(i, p)| (CIString::new(p.clone()), args.get(i).cloned().unwrap_or(VBValue::Empty)))
             .collect();
         debugger.push_frame(&func.name, &context.script_path, 0, vars);
     }
@@ -2192,7 +2176,7 @@ fn extract_properties_from_class_body(
                             continue;
                         }
                     };
-                    let prop_name = name_tok.value.clone();
+                    let prop_name = name_tok.value.to_string();
                     i += 1;
 
                     let mut param = None;
@@ -2204,7 +2188,7 @@ fn extract_properties_from_class_body(
                         {
                             if let Some(param_tok) = no_ws.get(p_idx + 4) {
                                 if param_tok.token_type == TokenType::Identifier {
-                                    param = Some(param_tok.value.clone());
+                                    param = Some(param_tok.value.to_string());
                                 }
                             }
                         }
@@ -2475,10 +2459,8 @@ pub fn execute_blocks(
                                 if result {
                                     break;
                                 }
-                            } else {
-                                if !result {
-                                    break;
-                                }
+                            } else if !result {
+                                break;
                             }
                         } else {
                             break;
@@ -2492,10 +2474,8 @@ pub fn execute_blocks(
                                 if result {
                                     break;
                                 }
-                            } else {
-                                if !result {
-                                    break;
-                                }
+                            } else if !result {
+                                break;
                             }
                         }
                         match execute_blocks(body, context) {
@@ -2567,9 +2547,7 @@ pub fn execute_blocks(
                 let prev_with = context.scope.with_object.replace(obj_val);
                 let result = execute_blocks(body, context);
                 context.scope.with_object = prev_with;
-                if let Err(e) = result {
-                    return Err(e);
-                }
+                result?
             }
             // --- Control-flow sentinels propagated as errors ---
             BlockStatement::ExitFor(_) => {

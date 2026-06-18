@@ -69,7 +69,7 @@ impl VBSyntax for ResponseCookiesSetProp {
             .response
             .cookies
             .entry(name.clone())
-            .or_insert_with(CookieEntry::default);
+            .or_default();
         let str_val = crate::vbscript::value_utils::to_arg_string(&value);
         match self.property.to_uppercase().as_str() {
             "EXPIRES" => entry.expires = str_val,

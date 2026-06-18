@@ -52,8 +52,7 @@ impl Default for AspServerConfig {
 impl AspServerConfig {
     /// Load `asp.ini` from the served folder and apply its values on top of defaults.
     pub fn from_folder(folder: &str) -> Self {
-        let mut cfg = Self::default();
-        cfg.folder = folder.to_string();
+        let mut cfg = Self { folder: folder.to_string(), ..Self::default() };
 
         let ini_path = Path::new(folder).join("asp.ini");
         if let Ok(content) = std::fs::read_to_string(&ini_path) {

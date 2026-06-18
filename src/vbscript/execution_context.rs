@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use ahash::AHashMap;
@@ -9,17 +10,75 @@ use super::tokenizer::Token;
 use super::vbs_error::VBSError;
 use super::VBValue;
 
+// ── Case-insensitive string types for hashmap keys ──────────────────────
+
+/// Case-insensitive string slice for hashmap lookups (borrowed key).
+/// Uses ASCII case-insensitive hashing and comparison.
+#[repr(transparent)]
+pub struct CIStr(str);
+
+impl CIStr {
+    pub fn new(s: &str) -> &Self {
+        unsafe { &*(s as *const str as *const CIStr) }
+    }
+}
+
+impl Hash for CIStr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for b in self.0.bytes() {
+            state.write_u8(b.to_ascii_lowercase());
+        }
+    }
+}
+
+impl PartialEq for CIStr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+impl Eq for CIStr {}
+
+/// Owned case-insensitive string for HashMap keys.
+#[derive(Debug, Clone)]
+pub struct CIString(String);
+
+impl CIString {
+    pub fn new(s: String) -> Self {
+        CIString(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Hash for CIString {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        CIStr::new(&self.0).hash(state)
+    }
+}
+
+impl PartialEq for CIString {
+    fn eq(&self, other: &Self) -> bool {
+        CIStr::new(&self.0) == CIStr::new(&other.0)
+    }
+}
+impl Eq for CIString {}
+
+impl std::borrow::Borrow<CIStr> for CIString {
+    fn borrow(&self) -> &CIStr {
+        CIStr::new(&self.0)
+    }
+}
+
 #[derive(PartialEq)]
+#[derive(Default)]
 pub enum ErrorMode {
+    #[default]
     Normal,
     ResumeNext,
 }
 
-impl Default for ErrorMode {
-    fn default() -> Self {
-        ErrorMode::Normal
-    }
-}
 
 #[allow(dead_code)]
 pub struct PropertyDef {
@@ -39,11 +98,11 @@ pub struct ClassDefinition {
 
 /// Variable scope: holds variables, functions, classes, error state, and the with-object.
 pub struct Scope {
-    variables: AHashMap<String, VBValue>,
-    functions: AHashMap<String, UserDefinedFunction>,
+    variables: AHashMap<CIString, VBValue>,
+    functions: AHashMap<CIString, UserDefinedFunction>,
     /// Cached parsed function bodies — parsed once at definition time, reused on every call.
-    function_bodies: AHashMap<String, Vec<BlockStatement>>,
-    classes: AHashMap<String, ClassDefinition>,
+    function_bodies: AHashMap<CIString, Vec<BlockStatement>>,
+    classes: AHashMap<CIString, ClassDefinition>,
     error_mode: ErrorMode,
     pub err_number: f64,
     pub err_description: String,
@@ -67,39 +126,39 @@ impl Scope {
     }
 
     pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
-        self.variables.get(&name.to_uppercase())
+        self.variables.get(CIStr::new(name))
     }
 
     pub fn set_variable(&mut self, name: &str, value: VBValue) {
-        self.variables.insert(name.to_uppercase(), value);
+        self.variables.insert(CIString::new(name.to_string()), value);
     }
 
     pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
-        self.variables.get_mut(&name.to_uppercase())
+        self.variables.get_mut(CIStr::new(name))
     }
 
     pub fn define_function(&mut self, func: UserDefinedFunction) {
-        self.functions.insert(func.name.to_uppercase(), func);
+        self.functions.insert(CIString::new(func.name.clone()), func);
     }
 
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
-        self.functions.get(&name.to_uppercase())
+        self.functions.get(CIStr::new(name))
     }
 
     pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
-        self.function_bodies.get(&name.to_uppercase())
+        self.function_bodies.get(CIStr::new(name))
     }
 
     pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
-        self.function_bodies.insert(name.to_uppercase(), body);
+        self.function_bodies.insert(CIString::new(name.to_string()), body);
     }
 
     pub fn define_class(&mut self, class: ClassDefinition) {
-        self.classes.insert(class.name.to_uppercase(), class);
+        self.classes.insert(CIString::new(class.name.clone()), class);
     }
 
     pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
-        self.classes.get(&name.to_uppercase())
+        self.classes.get(CIStr::new(name))
     }
 
     pub fn get_error_mode(&self) -> &ErrorMode {
@@ -120,11 +179,11 @@ impl Scope {
         self.err_description.clear();
     }
 
-    pub fn variables(&self) -> &AHashMap<String, VBValue> {
+    pub fn variables(&self) -> &AHashMap<CIString, VBValue> {
         &self.variables
     }
 
-    pub fn variables_mut(&mut self) -> &mut AHashMap<String, VBValue> {
+    pub fn variables_mut(&mut self) -> &mut AHashMap<CIString, VBValue> {
         &mut self.variables
     }
 }
@@ -204,6 +263,7 @@ pub struct ExecutionContext {
     /// Optional DAP debugger (shared across requests via Arc).
     pub debugger: Option<Arc<Debugger>>,
     /// Callback for Server.Execute / Server.Transfer.
+    #[allow(clippy::type_complexity)]
     pub execute_file_callback:
         Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
     /// Physical ASP file line where the current VBScript code block starts.
@@ -214,6 +274,12 @@ pub struct ExecutionContext {
 impl ExecutionContext {
     /// Create a new execution context with defaults.
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Default for ExecutionContext {
+    fn default() -> Self {
         ExecutionContext {
             scope: Scope::new(),
             request: RequestContext {
@@ -237,7 +303,9 @@ impl ExecutionContext {
             code_start_line: 0,
         }
     }
+}
 
+impl ExecutionContext {
     /// Clear the response buffer.
     pub fn flush_response_buffer(&mut self) {
         self.response.flush_buffer();
@@ -297,7 +365,7 @@ impl ExecutionContext {
     /// run closure `f`, then restore the saved scope. Used for class Property Get/Let/Set.
     pub fn with_instance_scope<T>(
         &mut self,
-        instance_vars: &mut AHashMap<String, VBValue>,
+        instance_vars: &mut AHashMap<CIString, VBValue>,
         f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
     ) -> Result<T, VBSError> {
         let saved = std::mem::replace(self.scope.variables_mut(), std::mem::take(instance_vars));

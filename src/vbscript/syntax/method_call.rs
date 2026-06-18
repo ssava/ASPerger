@@ -58,19 +58,14 @@ fn try_property_indexed_access(
         }
     };
     if let VBValue::Object(ref obj) = obj_ref {
-        if let Ok(prop_val) = obj.get_property(property, context) {
-            match &prop_val {
-                VBValue::Object(sub_obj) => {
-                    if let Ok(result) = sub_obj.indexed_get(&args[0], context) {
-                        if object_name == "__with_obj__" {
-                            context.scope.with_object = Some(obj_ref);
-                        } else {
-                            context.set_variable(object_name, obj_ref);
-                        }
-                        return Ok(Some(result));
-                    }
+        if let Ok(VBValue::Object(sub_obj)) = obj.get_property(property, context).as_ref() {
+            if let Ok(result) = sub_obj.indexed_get(&args[0], context) {
+                if object_name == "__with_obj__" {
+                    context.scope.with_object = Some(obj_ref);
+                } else {
+                    context.set_variable(object_name, obj_ref);
                 }
-                _ => {}
+                return Ok(Some(result));
             }
         }
     }
@@ -154,13 +149,12 @@ impl VBSyntax for MethodCall {
         }
 
         // ASP pattern: obj.Property(args) — try property + indexed_get first
-        if !args.is_empty() && self.object_name != "__with_obj__" {
-            if try_property_indexed_access(&self.object_name, &self.method_name, &args, context)?
+        if !args.is_empty() && self.object_name != "__with_obj__"
+            && try_property_indexed_access(&self.object_name, &self.method_name, &args, context)?
                 .is_some()
             {
                 return Ok(());
             }
-        }
 
         if self.object_name == "__with_obj__" {
             // With-block method call: use context.scope.with_object

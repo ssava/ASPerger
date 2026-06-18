@@ -147,8 +147,6 @@ pub(crate) fn token_to_binop(token: &Token) -> Option<BinOp> {
                     Some(BinOp::Imp)
                 } else if v.eq_ignore_ascii_case("XOR") {
                     Some(BinOp::Xor)
-                } else if v.eq_ignore_ascii_case("NOT") {
-                    None
                 } else {
                     None
                 }
@@ -210,7 +208,7 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                 prop.value
             )));
         }
-        let prop_name = prop.value.clone();
+        let prop_name = prop.value.to_string();
 
         if let Some(next) = peek(tokens, *pos) {
             if next.token_type == TokenType::LeftParen {
@@ -273,7 +271,7 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             })?;
             Ok(Expr::Literal(VBValue::Number(num)))
         }
-        TokenType::StringLiteral => Ok(Expr::Literal(VBValue::String(token.value.clone()))),
+        TokenType::StringLiteral => Ok(Expr::Literal(VBValue::String(token.value.to_string()))),
         TokenType::True => Ok(Expr::Literal(VBValue::Boolean(true))),
         TokenType::False => Ok(Expr::Literal(VBValue::Boolean(false))),
         TokenType::Null => Ok(Expr::Literal(VBValue::Null)),
@@ -295,10 +293,10 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
                     class_name.value
                 )));
             }
-            Ok(Expr::NewObject(class_name.value.clone()))
+            Ok(Expr::NewObject(class_name.value.to_string()))
         }
         TokenType::Identifier => {
-            let name = token.value.clone();
+            let name = token.value.to_string();
             match peek(tokens, *pos) {
                 Some(next) if next.token_type == TokenType::LeftParen => {
                     advance(tokens, pos);
@@ -447,7 +445,7 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
                     prop.value
                 )));
             }
-            let prop_name = prop.value.clone();
+            let prop_name = prop.value.to_string();
 
             if let Some(next) = peek(tokens, *pos) {
                 if next.token_type == TokenType::LeftParen {
@@ -657,12 +655,10 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                 // ASP pattern: obj.Property(args) where Property returns a collection
                 // Try property access + indexed_get first
                 if let VBValue::Object(ref obj) = &obj_val {
-                    if let Ok(prop_val) = obj.get_property(method, context) {
-                        if let VBValue::Object(sub_obj) = &prop_val {
-                            let evaluated_arg = evaluate(&args[0], context)?;
-                            if let Ok(result) = sub_obj.indexed_get(&evaluated_arg, context) {
-                                return Ok(result);
-                            }
+                    if let Ok(VBValue::Object(sub_obj)) = obj.get_property(method, context).as_ref() {
+                        let evaluated_arg = evaluate(&args[0], context)?;
+                        if let Ok(result) = sub_obj.indexed_get(&evaluated_arg, context) {
+                            return Ok(result);
                         }
                     }
                 }
