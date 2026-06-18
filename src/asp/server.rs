@@ -528,6 +528,41 @@ impl AspServer {
         context.request.query_string = request.query_string.clone();
         context.request.params = Self::parse_query_string(&request.query_string);
         context.request.headers = request.headers.clone();
+        // Populate standard CGI/ServerVariables
+        context.request.headers.insert(
+            "script_name".to_string(),
+            format!("/{}", request.path),
+        );
+        context.request.headers.insert(
+            "server_name".to_string(),
+            request
+                .headers
+                .get("host")
+                .and_then(|h| h.split(':').next())
+                .unwrap_or("127.0.0.1")
+                .to_string(),
+        );
+        context
+            .request
+            .headers
+            .insert("request_method".to_string(), request.method.clone());
+        context
+            .request
+            .headers
+            .insert("query_string".to_string(), request.query_string.clone());
+        context.request.headers.insert(
+            "server_port".to_string(),
+            request
+                .headers
+                .get("host")
+                .and_then(|h| h.split(':').nth(1))
+                .unwrap_or("8080")
+                .to_string(),
+        );
+        context
+            .request
+            .headers
+            .insert("server_protocol".to_string(), "HTTP/1.1".to_string());
         context.request.cookies = request.cookies;
         context.request.total_bytes = request.body.len();
 
