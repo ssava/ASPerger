@@ -654,8 +654,6 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             let obj_val = evaluate(object, context)?;
             let is_object = matches!(&obj_val, VBValue::Object(_));
             if is_object && !args.is_empty() {
-                // ASP pattern: obj.Property(args) where Property returns a collection
-                // Try property access + indexed_get first
                 if let VBValue::Object(ref obj) = &obj_val {
                     if let Ok(VBValue::Object(sub_obj)) = obj.get_property(method, context).as_ref() {
                         let evaluated_arg = evaluate(&args[0], context)?;
@@ -665,7 +663,6 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     }
                 }
             }
-            // Fall back to method call
             let mut obj_mut = obj_val;
             match &mut obj_mut {
                 VBValue::Object(ref mut obj) => {
@@ -765,10 +762,15 @@ fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
 }
 
 fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
+    // Fast path: only check op when values are Object/Array (rare case)
     if matches!(left, VBValue::Array(..) | VBValue::Object(_))
         || matches!(right, VBValue::Array(..) | VBValue::Object(_))
     {
-        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+        // Is, Eq, Ne can handle Object/Array (reference comparison via values_equal)
+        // Concat can handle any type (converts to string via to_string_val)
+        if !matches!(op, BinOp::Is | BinOp::Eq | BinOp::Ne | BinOp::Concat) {
+            return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+        }
     }
     match op {
         BinOp::Add => match (left, right) {

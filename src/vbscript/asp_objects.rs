@@ -948,11 +948,23 @@ impl VBScriptObject for ApplicationObject {
         match name.to_uppercase().as_str() {
             "LOCK" => {
                 if let Some(ref store) = context.store {
-                    let _guard = store.lock_app();
+                    let mut lock_state = store.lock_app();
+                    if !*lock_state {
+                        *lock_state = true;
+                        context.app_locked = true;
+                    }
+                    // Guard dropped here — lock released, but app_locked flag tracks it
                 }
                 Ok(VBValue::Empty)
             }
-            "UNLOCK" => Ok(VBValue::Empty),
+            "UNLOCK" => {
+                if let Some(ref store) = context.store {
+                    let mut lock_state = store.lock_app();
+                    *lock_state = false;
+                }
+                context.app_locked = false;
+                Ok(VBValue::Empty)
+            }
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Method '{}' not found on Application", name))),
         }

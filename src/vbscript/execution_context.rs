@@ -279,6 +279,8 @@ pub struct ExecutionContext {
     /// Physical ASP file line where the current VBScript code block starts.
     /// Used to offset `block.line()` values to match VS Code breakpoints.
     pub code_start_line: usize,
+    /// Whether Application.Lock is held by this request.
+    pub app_locked: bool,
 }
 
 impl ExecutionContext {
@@ -311,6 +313,7 @@ impl Default for ExecutionContext {
             debugger: None,
             execute_file_callback: None,
             code_start_line: 0,
+            app_locked: false,
         }
     }
 }
