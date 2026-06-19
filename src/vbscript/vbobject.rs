@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use super::block::{parse_blocks, execute_blocks};
 use super::execution_context::{CIStr, CIString, ExecutionContext};
 use super::value::VBValue;
 use super::value_utils;
@@ -308,13 +309,88 @@ impl VBScriptObject for ClassInstance {
     fn call_method(
         &mut self,
         name: &str,
-        _args: &[VBValue],
-        _context: &mut ExecutionContext,
+        args: &[VBValue],
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        Err(VBSErrorType::RuntimeError.into_error(format!(
-            "Method '{}' not found on class '{}'",
-            name, self.class_name
-        )))
+        // Clone method data upfront to avoid borrow conflicts with context
+        let method = context
+            .get_class(&self.class_name)
+            .and_then(|c| {
+                // Try exact match first, then case-insensitive lookup
+                c.methods.get(name).cloned().or_else(|| {
+                    let upper = name.to_uppercase();
+                    c.methods.get(&upper).cloned()
+                })
+            })
+            .ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error(format!(
+                    "Method '{}' not found on class '{}'",
+                    name, self.class_name
+                ))
+            })?;
+
+        // Parse and cache method body
+        let cache_key = format!("__cls_{}_{}", self.class_name, method.name);
+        let body_blocks = match context.get_function_body(&cache_key) {
+            Some(cached) => cached.clone(),
+            None => {
+                let blocks = parse_blocks(&method.body_lines).map_err(|_| {
+                    VBSErrorType::RuntimeError.into_error(format!(
+                        "Error parsing method '{}' body",
+                        method.name
+                    ))
+                })?;
+                let name = cache_key.clone();
+                context.set_function_body(&name, blocks.clone());
+                blocks
+            }
+        };
+
+        // Build instance vars map with method params
+        let mut instance_vars = self.instance_vars.clone();
+        for (i, param) in method.params.iter().enumerate() {
+            let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
+            instance_vars.insert(CIString::new(param.clone()), val);
+        }
+
+        // For Functions, init return value variable
+        if method.is_function {
+            instance_vars.insert(CIString::new(method.name.clone()), VBValue::Empty);
+        }
+
+        // Execute with merged scope (globals + instance vars)
+        let result = context.with_class_method_scope(&mut instance_vars, |ctx| {
+            execute_blocks(&body_blocks, ctx)
+        });
+
+        // Capture updated instance vars
+        self.instance_vars = instance_vars;
+
+        match result {
+            Ok(()) => {
+                if method.is_function {
+                    Ok(self
+                        .instance_vars
+                        .get(CIStr::new(&method.name))
+                        .cloned()
+                        .unwrap_or(VBValue::Empty))
+                } else {
+                    Ok(VBValue::Empty)
+                }
+            }
+            Err(e) if e.is_exit_function() || e.is_exit_sub() => {
+                if method.is_function {
+                    Ok(self
+                        .instance_vars
+                        .get(CIStr::new(&method.name))
+                        .cloned()
+                        .unwrap_or(VBValue::Empty))
+                } else {
+                    Ok(VBValue::Empty)
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     fn indexed_get(

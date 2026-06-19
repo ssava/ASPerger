@@ -91,9 +91,19 @@ pub struct PropertyDef {
 }
 
 #[allow(dead_code)]
+#[derive(Clone)]
+pub struct MethodDef {
+    pub name: String,
+    pub params: Vec<String>,
+    pub body_lines: Vec<Vec<Token>>,
+    pub is_function: bool,
+}
+
+#[allow(dead_code)]
 pub struct ClassDefinition {
     pub name: String,
     pub properties: AHashMap<String, PropertyDef>,
+    pub methods: AHashMap<String, MethodDef>,
 }
 
 /// Variable scope: holds variables, functions, classes, error state, and the with-object.
@@ -371,6 +381,32 @@ impl ExecutionContext {
         let saved = std::mem::replace(self.scope.variables_mut(), std::mem::take(instance_vars));
         let result = f(self);
         *instance_vars = std::mem::replace(self.scope.variables_mut(), saved);
+        result
+    }
+
+    /// Run closure `f` with `instance_vars` merged into the current scope
+    /// (instance vars take priority over globals). After the closure, updated
+    /// instance vars are extracted back and globals remain in scope.
+    /// Used for class Sub/Function method dispatch.
+    pub fn with_class_method_scope<T>(
+        &mut self,
+        instance_vars: &mut AHashMap<CIString, VBValue>,
+        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
+    ) -> Result<T, VBSError> {
+        let saved = std::mem::take(self.scope.variables_mut());
+        let mut merged = saved.clone();
+        for (k, v) in instance_vars.iter() {
+            merged.insert(k.clone(), v.clone());
+        }
+        *self.scope.variables_mut() = merged;
+        let result = f(self);
+        let final_vars = self.scope.variables_mut();
+        for key in instance_vars.keys().cloned().collect::<Vec<_>>() {
+            if let Some(v) = final_vars.remove(&key) {
+                instance_vars.insert(key, v);
+            }
+        }
+        // What's left in final_vars are the globals (possibly mutated) — keep them
         result
     }
 

@@ -3,7 +3,7 @@
 //! With/End With, Class/Property definitions, Function/Sub declarations,
 //! and top-level statement dispatch.
 
-use super::execution_context::{ClassDefinition, ErrorMode, PropertyDef};
+use super::execution_context::{ClassDefinition, ErrorMode, MethodDef, PropertyDef};
 use super::expr::{evaluate, parse_expression, BinOp, Expr};
 use super::syntax::{
     ArrayAssignment, Assignment, Const, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext,
@@ -2253,6 +2253,113 @@ fn extract_properties_from_class_body(
     Ok(properties)
 }
 
+fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String, MethodDef> {
+    let mut methods: AHashMap<String, MethodDef> = AHashMap::new();
+    let mut i = 0;
+
+    while i < body_lines.len() {
+        let line = &body_lines[i];
+        let no_ws: Vec<&Token> = line
+            .iter()
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .collect();
+
+        if no_ws.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let start_idx = if no_ws[0].token_type == TokenType::Public
+            || no_ws[0].token_type == TokenType::Private
+        {
+            if no_ws.len() < 2 {
+                i += 1;
+                continue;
+            }
+            1
+        } else {
+            0
+        };
+
+        let is_func = no_ws[start_idx].token_type == TokenType::Function
+            || no_ws[start_idx].value.eq_ignore_ascii_case("function");
+        let is_sub = no_ws[start_idx].token_type == TokenType::Sub
+            || no_ws[start_idx].value.eq_ignore_ascii_case("sub");
+
+        if !is_func && !is_sub {
+            i += 1;
+            continue;
+        }
+
+        let name_idx = start_idx + 1;
+        if name_idx >= no_ws.len() || no_ws[name_idx].token_type != TokenType::Identifier {
+            i += 1;
+            continue;
+        }
+        let method_name = no_ws[name_idx].value.to_string();
+
+        let mut params = Vec::new();
+        if no_ws.len() > name_idx + 1 && no_ws[name_idx + 1].token_type == TokenType::LeftParen {
+            let mut p = name_idx + 2;
+            while p < no_ws.len() && no_ws[p].token_type != TokenType::RightParen {
+                if no_ws[p].token_type == TokenType::Identifier {
+                    params.push(no_ws[p].value.to_string());
+                }
+                p += 1;
+            }
+        }
+
+        i += 1;
+        let mut body: Vec<Vec<Token>> = Vec::new();
+
+        loop {
+            if i >= body_lines.len() {
+                break;
+            }
+            let bline = &body_lines[i];
+            let first = first_non_ws(bline);
+            if let Some(f) = first {
+                if f.token_type == TokenType::End {
+                    let second = bline
+                        .iter()
+                        .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                        .skip(1)
+                        .find(|t| t.token_type != TokenType::WhiteSpace);
+                    if let Some(s) = second {
+                        if (is_func
+                            && (s.value.eq_ignore_ascii_case("function")
+                                || s.token_type == TokenType::Function))
+                            || (is_sub
+                                && (s.value.eq_ignore_ascii_case("sub")
+                                    || s.token_type == TokenType::Sub))
+                        {
+                            i += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            body.push(bline.clone());
+            i += 1;
+        }
+
+        let key = method_name.to_uppercase();
+        if !methods.contains_key(&key) {
+            methods.insert(
+                key,
+                MethodDef {
+                    name: method_name,
+                    params,
+                    body_lines: body,
+                    is_function: is_func,
+                },
+            );
+        }
+    }
+
+    methods
+}
+
 /// Execute a slice of `BlockStatement` nodes in order, handling control flow
 /// (Exit For/Do/Function/Sub) and debugger hooks.
 pub fn execute_blocks(
@@ -2534,9 +2641,11 @@ pub fn execute_blocks(
                     );
                 }
                 if let Ok(properties) = extract_properties_from_class_body(body_lines) {
+                    let methods = extract_methods_from_class_body(body_lines);
                     let class_def = ClassDefinition {
                         name: name.clone(),
                         properties,
+                        methods,
                     };
                     context.define_class(class_def);
                 }

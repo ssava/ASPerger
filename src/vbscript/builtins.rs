@@ -552,6 +552,18 @@ fn add_months(dt: chrono::NaiveDateTime, months: i32) -> chrono::NaiveDateTime {
     chrono::NaiveDateTime::new(date, dt.time())
 }
 
+/// Convert a VBValue to NaiveDateTime: try numeric OLE date first, then string parse.
+pub(crate) fn value_to_datetime(val: &VBValue) -> Option<chrono::NaiveDateTime> {
+    match val {
+        VBValue::Number(n) => ole_auto_to_datetime(*n),
+        VBValue::String(s) => try_parse_date(s),
+        _ => {
+            let s = value_utils::to_arg_string(val);
+            try_parse_date(&s)
+        }
+    }
+}
+
 pub(crate) fn try_parse_date(s: &str) -> Option<chrono::NaiveDateTime> {
     let s = s.trim();
     let datetime_formats = [
@@ -625,62 +637,55 @@ fn builtin_time(_args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 fn builtin_year(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Year")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     Ok(VBValue::Number(dt.year() as f64))
 }
 
 fn builtin_month(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Month")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     Ok(VBValue::Number(dt.month() as f64))
 }
 
 fn builtin_day(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Day")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     Ok(VBValue::Number(dt.day() as f64))
 }
 
 fn builtin_hour(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Hour")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid time".to_string()))?;
     Ok(VBValue::Number(dt.hour() as f64))
 }
 
 fn builtin_minute(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Minute")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid time".to_string()))?;
     Ok(VBValue::Number(dt.minute() as f64))
 }
 
 fn builtin_second(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Second")?;
-    let n = value_utils::to_arg_f64(&args[0]);
-    let dt = ole_auto_to_datetime(n)
+    let dt = value_to_datetime(&args[0])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid time".to_string()))?;
     Ok(VBValue::Number(dt.second() as f64))
 }
 
 fn builtin_weekday(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "Weekday")?;
-    let n = value_utils::to_arg_f64(&args[0]);
+    let dt = value_to_datetime(&args[0])
+        .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     let firstday = if args.len() >= 2 {
         value_utils::to_arg_f64(&args[1]) as u32
     } else {
         1
     };
-    let dt = ole_auto_to_datetime(n)
-        .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     let vbs_weekday = dt.weekday().num_days_from_sunday() + 1;
     let result = ((vbs_weekday + 7 - firstday) % 7) + 1;
     Ok(VBValue::Number(result as f64))
@@ -876,8 +881,7 @@ fn builtin_datediff(args: &[VBValue]) -> Result<VBValue, VBSError> {
 fn builtin_datepart(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 2, "DatePart")?;
     let interval = value_utils::to_arg_string(&args[0]).to_lowercase();
-    let date = value_utils::to_arg_f64(&args[1]);
-    let dt = ole_auto_to_datetime(date)
+    let dt = value_to_datetime(&args[1])
         .ok_or_else(|| VBSErrorType::RuntimeError.into_error("Invalid date".to_string()))?;
     let result = match interval.as_str() {
         "yyyy" => dt.year() as f64,

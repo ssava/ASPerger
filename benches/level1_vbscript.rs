@@ -249,6 +249,91 @@ fn bench_select_case(c: &mut Criterion) {
     });
 }
 
+// ── Date functions (new: string date support) ──────────────────────────
+
+fn bench_date_functions_ole(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Dim d, y, m, dy\nd = DateSerial(2026, 6, 19)\ny = Year(d)\nm = Month(d)\ndy = Day(d)",
+    );
+    c.bench_function("date/ole_serial", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
+fn bench_date_functions_string(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Dim d, y, m, dy\nd = CDate(\"06/19/2026\")\ny = Year(d)\nm = Month(d)\ndy = Day(d)",
+    );
+    c.bench_function("date/from_cdate_string", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
+fn bench_date_functions_raw_string(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Dim y, m, dy\ny = Year(\"2026-06-19\")\nm = Month(\"2026-06-19\")\ndy = Day(\"2026-06-19\")",
+    );
+    c.bench_function("date/raw_string", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
+// ── Class methods (new: Sub/Function dispatch) ─────────────────────────
+
+fn bench_class_method_no_args(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Class Counter\nPublic count\nPublic Sub Inc\ncount = count + 1\nEnd Sub\nEnd Class\n\
+         Dim c, i\nSet c = New Counter\nc.count = 0\nFor i = 1 To 100\nc.Inc\nNext",
+    );
+    c.bench_function("class/method_no_args_100", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
+fn bench_class_function_return(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Class Calc\nPublic Function Add(a, b)\nAdd = a + b\nEnd Function\nEnd Class\n\
+         Dim c, i, r\nSet c = New Calc\nFor i = 1 To 100\nr = c.Add(i, 2)\nNext",
+    );
+    c.bench_function("class/function_return_100", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
+fn bench_class_method_mutates_instance(c: &mut Criterion) {
+    let interp = VBScriptInterpreter;
+    let code = black_box(
+        "Class Accum\nPublic total\nPublic Sub Add(n)\ntotal = total + n\nEnd Sub\nEnd Class\n\
+         Dim a, i\nSet a = New Accum\na.total = 0\nFor i = 1 To 100\na.Add(i)\nNext",
+    );
+    c.bench_function("class/instance_mutation_100", |b| {
+        b.iter(|| {
+            let mut ctx = make_ctx();
+            interp.execute(code, &mut ctx).unwrap();
+        });
+    });
+}
+
 criterion_group!(
     name = vbscript;
     config = Criterion::default().sample_size(100);
@@ -272,6 +357,12 @@ criterion_group!(
         bench_dictionary,
         bench_if_else,
         bench_select_case,
+        bench_date_functions_ole,
+        bench_date_functions_string,
+        bench_date_functions_raw_string,
+        bench_class_method_no_args,
+        bench_class_function_return,
+        bench_class_method_mutates_instance,
 );
 
 criterion_main!(vbscript);

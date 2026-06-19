@@ -3258,6 +3258,55 @@ mod tests {
     }
 
     #[test]
+    fn test_builtin_year_month_day_with_date_string() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "d = CDate(\"06/15/2024\")\ny = Year(d)\nm = Month(d)\ndy = Day(d)",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(ctx.get_variable("y"), Some(&VBValue::Number(2024.0)));
+        assert_eq!(ctx.get_variable("m"), Some(&VBValue::Number(6.0)));
+        assert_eq!(ctx.get_variable("dy"), Some(&VBValue::Number(15.0)));
+    }
+
+    #[test]
+    fn test_builtin_year_with_date_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("y = Year(\"2024-06-15\")", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.get_variable("y"), Some(&VBValue::Number(2024.0)));
+    }
+
+    #[test]
+    fn test_builtin_month_with_date_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("m = Month(\"2024-06-15\")", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.get_variable("m"), Some(&VBValue::Number(6.0)));
+    }
+
+    #[test]
+    fn test_builtin_day_with_date_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("dy = Day(\"2024-06-15\")", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.get_variable("dy"), Some(&VBValue::Number(15.0)));
+    }
+
+    #[test]
     fn test_builtin_hour_minute_second() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
@@ -5104,6 +5153,80 @@ mod tests {
         );
         assert_eq!(
             ctx.get_variable("aType"),
+            Some(&VBValue::String("Application".to_string()))
+        );
+    }
+
+    // ===== CLASS METHOD TESTS =====
+
+    #[test]
+    fn test_class_function_method_returns_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class TestClass\nPublic Function GetValue\n GetValue = 42\nEnd Function\nEnd Class\n\
+                 Set obj = New TestClass\nresult = obj.GetValue()",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(42.0))
+        );
+    }
+
+    #[test]
+    fn test_class_method_with_params() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class TestClass\nPublic Function Add(a, b)\n Add = a + b\nEnd Function\nEnd Class\n\
+                 Set obj = New TestClass\nresult = obj.Add(3, 4)",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(7.0))
+        );
+    }
+
+    #[test]
+    fn test_class_method_mutates_instance_var() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class Counter\nPublic count\nPublic Sub Increment\n count = count + 1\nEnd Sub\nEnd Class\n\
+                 Set c = New Counter\nc.count = 5\nc.Increment\nresult = c.count",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(6.0))
+        );
+    }
+
+    #[test]
+    fn test_class_method_accesses_global_object() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class TestClass\nPublic Function GetApp\n Set GetApp = Application\nEnd Function\nEnd Class\n\
+                 Set obj = New TestClass\nSet app = obj.GetApp()\natype = TypeName(app)",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("atype"),
             Some(&VBValue::String("Application".to_string()))
         );
     }
