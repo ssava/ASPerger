@@ -91,6 +91,7 @@ fn advance<'a>(tokens: &'a [&'a Token], pos: &mut usize) -> Option<&'a Token> {
 
 fn precedence(token_type: &TokenType) -> (u8, bool) {
     match token_type {
+        TokenType::Dot => (80, false),
         TokenType::Power => (70, true),
         TokenType::Multiply | TokenType::Divide => (60, false),
         TokenType::IntDivide => (55, false),
@@ -398,6 +399,7 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
                 | TokenType::Step
                 | TokenType::Comma
                 | TokenType::EOF => break,
+                TokenType::Dot => precedence(&token.token_type).0,
                 _ => 0,
             }
         };
