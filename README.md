@@ -254,6 +254,44 @@ cargo build --release
 ./target/release/asperger --port 9090 --folder ./asp_files
 ```
 
+## Docker
+
+```bash
+# Build the image
+docker build -t asperger .
+
+# Run (serve ASP files from ./asp_files on port 8080)
+docker run -p 8080:8080 -v "$(pwd)/asp_files:/asp_files" asperger
+
+# With custom port
+docker run -p 9090:8080 -v "$(pwd)/asp_files:/asp_files" asperger
+```
+
+Configuration via environment variables (also settable in `docker-compose.yml`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ASPERGER_HOST` | `0.0.0.0` | Bind address |
+| `ASPERGER_PORT` | `8080` | Port number |
+| `ASPERGER_FOLDER` | `/asp_files` | Directory containing ASP files |
+| `ASPERGER_DIRECTORY_LISTING` | *(unset)* | Set to `true` to enable directory listing |
+
+### docker-compose example
+
+```yaml
+version: "3"
+services:
+  asperger:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./asp_files:/asp_files
+    environment:
+      - ASPERGER_PORT=8080
+      - ASPERGER_DIRECTORY_LISTING=true
+```
+
 ## License
 
 GNU General Public License v3.0

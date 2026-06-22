@@ -7,22 +7,22 @@ use clap::Parser;
 #[clap(author, version, about, long_about = None)]
 pub struct Config {
     /// Host address the server will listen on.
-    #[clap(long, default_value = "127.0.0.1")]
+    #[clap(long, env = "ASPERGER_HOST", default_value = "127.0.0.1")]
     pub host: String,
 
     /// Port the server will listen on.
-    #[clap(short, long, default_value = "8080")]
+    #[clap(short, long, env = "ASPERGER_PORT", default_value = "8080")]
     pub port: u16,
 
     /// Directory containing ASP files to serve.
-    #[clap(short, long, default_value = ".")]
+    #[clap(short, long, env = "ASPERGER_FOLDER", default_value = ".")]
     pub folder: String,
 
     /// Path to an .asp file or directory (positional shortcut for --folder).
     pub program: Option<String>,
 
     /// Enable directory listing when no default document is found.
-    #[clap(long)]
+    #[clap(long, env = "ASPERGER_DIRECTORY_LISTING")]
     pub enable_directory_listing: bool,
 }
 
