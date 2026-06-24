@@ -43,9 +43,11 @@ pub struct AspDirConfig {
 
 /// Lazy cache of per-directory `AspDirConfig` resolved from `asp.ini` files.
 ///
-/// On first access to a directory, walks from the root folder's children to the
-/// requested directory, merging each `asp.ini`'s `[server]` section on top of
-/// the base defaults. Subsequent lookups are O(1) cache hits.
+/// Resolution walks from the root folder's immediate children down to the
+/// requested directory, loading each `asp.ini`'s `[server]` section in order.
+/// Deeper INI files override keys set by shallower ones (closest wins).
+/// The base defaults apply when no INI is present along the path.
+/// Subsequent lookups are O(1) cache hits.
 pub struct DirConfigCache {
     base: AspDirConfig,
     root_folder: PathBuf,
@@ -63,7 +65,13 @@ impl DirConfigCache {
     }
 
     /// Resolve the effective `AspDirConfig` for a canonical directory path.
-    /// Results are cached after first resolution.
+    ///
+    /// Algorithm:
+    /// 1. Check the write-locked cache — return clone on hit.
+    /// 2. Start from the base config.
+    /// 3. Walk each path component under root_folder; if `asp.ini` exists,
+    ///    merge its `[server]` section on top of the running config.
+    /// 4. Store the result in cache and return it.
     pub fn resolve(&self, canonical_dir: &Path) -> AspDirConfig {
         if let Some(config) = self.cache.read().unwrap().get(canonical_dir) {
             return config.clone();
@@ -91,6 +99,14 @@ impl DirConfigCache {
         dir_config
     }
 
+    /// Parse the `[server]` section of an `asp.ini` file and merge its
+    /// key-value pairs into `dir_config`. Ignores comments (`#`, `;`),
+    /// empty lines, and sections other than `[server]`.
+    ///
+    /// Supported keys:
+    /// - `default_documents` — comma-separated list (replaces the whole list)
+    /// - `default_document`  — single value (backward compat, replaces the list)
+    /// - `enable_directory_listing` — boolean (`true` enables)
     fn apply_ini_to_dir_config(dir_config: &mut AspDirConfig, content: &str) {
         let mut in_server = false;
         for line in content.lines() {
@@ -162,6 +178,10 @@ impl Default for AspServerConfig {
 
 impl AspServerConfig {
     /// Load `asp.ini` from the served folder and apply its values on top of defaults.
+    ///
+    /// Reads the `[server]` section of `<folder>/asp.ini` and applies recognized keys.
+    /// This is the per-server-root INI; per-directory INI files are handled by
+    /// `DirConfigCache` at request time.
     pub fn from_folder(folder: &str) -> Self {
         let mut cfg = Self { folder: folder.to_string(), ..Self::default() };
 
@@ -225,9 +245,12 @@ impl AspServerConfig {
         )
     }
 
-    /// Apply overrides from a map (e.g. DAP launch args or CLI args).
-    /// Empty / Never values are ignored so INI/defaults are preserved.
-    /// `default_documents` is a comma-separated string that replaces the list.
+    /// Apply overrides from external sources (e.g. DAP launch args or CLI args).
+    ///
+    /// Override priority (highest wins):
+    ///   defaults < asp.ini < `apply_overrides`
+    /// Empty / `None` values are skipped so INI/defaults are preserved.
+    /// `default_documents` is a comma-separated string that replaces the full list.
     pub fn apply_overrides(&mut self, host: Option<&str>, port: Option<u16>, folder: Option<&str>, default_documents: Option<&str>, directory_listing: Option<bool>) {
         if let Some(h) = host {
             if !h.is_empty() {

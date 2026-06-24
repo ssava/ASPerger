@@ -22,6 +22,12 @@ struct TextStreamInner {
     closed: bool,
 }
 
+/// `Scripting.TextStream` — read/write/append access to a text file.
+///
+/// Returned by `FileSystemObject.CreateTextFile`, `OpenTextFile`,
+/// and `File.OpenAsTextStream`.  Supports `Read`, `ReadLine`,
+/// `ReadAll`, `Write`, `WriteLine`, `Skip`, `SkipLine`,
+/// `Close`, and the `AtEndOfStream` / `AtEndOfLine` / `Line` / `Column` properties.
 #[derive(Debug, Clone)]
 pub struct TextStream {
     inner: Arc<Mutex<TextStreamInner>>,

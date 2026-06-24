@@ -10,20 +10,25 @@ use ahash::AHashMap;
 #[allow(dead_code)]
 /// Trait for VBScript COM / intrinsic objects that can expose properties,
 /// methods, and indexed access to scripts.
+///
+/// Any VBScript value that behaves like an object (e.g. `Request`, `Response`,
+/// `Dictionary`, `FileSystemObject`, class instances) implements this trait.
+/// The interpreter dispatches property/method/indexed access through these
+/// methods rather than operating on internal fields directly.
 pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
-    /// Clone the object into a new boxed trait object.
+    /// Clone the object into a new boxed trait object (deep copy).
     fn clone_box(&self) -> Box<dyn VBScriptObject>;
-    /// Return a human-readable type name for debugging.
+    /// Return a human-readable type name for debugging (e.g. `"Dictionary"`).
     fn type_name(&self) -> &'static str {
         "VBScriptObject"
     }
-    /// Get a named property value.
+    /// Get a named property value (e.g. `obj.Count`, `obj.Keys`).
     fn get_property(
         &self,
         name: &str,
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError>;
-    /// Set a named property value.
+    /// Set a named property value (e.g. `obj.Key = value`).
     fn set_property(
         &mut self,
         _name: &str,
@@ -33,12 +38,14 @@ pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
         Err(VBSErrorType::RuntimeError
             .into_error("Object does not support setting properties".to_string()))
     }
+    /// Call a method on the object (e.g. `obj.Add key, value`).
     fn call_method(
         &mut self,
         name: &str,
         _args: &[VBValue],
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError>;
+    /// Indexed read access — `obj(key)` in expression context.
     fn indexed_get(
         &self,
         _index: &VBValue,
@@ -47,6 +54,7 @@ pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
         Err(VBSErrorType::RuntimeError
             .into_error("Object does not support indexed access".to_string()))
     }
+    /// Indexed write access — `obj(key) = value`.
     fn indexed_set(
         &mut self,
         _index: &VBValue,
@@ -58,8 +66,14 @@ pub trait VBScriptObject: std::fmt::Debug + Send + Sync {
     }
 }
 
-// ---- Dictionary ----
+// ---- Dictionary (Scripting.Dictionary) ----
 
+/// VBScript `Scripting.Dictionary` — a key-value map with case-INSENSITIVE
+/// string keys.  Supports `Add`, `Remove`, `Exists`, `Keys`, `Items`,
+/// `Count`, `RemoveAll`, and indexed access via `dict(key)`.
+///
+/// Note: real VBScript `Dictionary.Add` throws on duplicate key; this
+/// implementation silently overwrites (like `HashMap::insert`).
 #[derive(Debug, Clone)]
 pub struct Dictionary {
     items: AHashMap<String, VBValue>,
@@ -298,6 +312,11 @@ mod dictionary_tests {
 
 // ---- ClassInstance ----
 
+/// A runtime instance of a user-defined `Class`.
+///
+/// Created by `Set obj = New ClassName`.  Stores the class name for
+/// method resolution and a mutable map of instance variables
+/// (declared with `Dim`/`Private`/`Public` inside the class body).
 #[derive(Debug)]
 pub struct ClassInstance {
     pub class_name: String,
@@ -516,6 +535,11 @@ impl VBScriptObject for ClassInstance {
 
 // ---- ErrObject ----
 
+/// VBScript `Err` object — records runtime error state.
+///
+/// Properties: `Err.Number`, `Err.Description`.
+/// Methods: `Err.Clear`, `Err.Raise number[, description]`.
+/// The interpreter injects an `Err` object into every execution context.
 #[derive(Debug, Clone)]
 pub struct ErrObject;
 

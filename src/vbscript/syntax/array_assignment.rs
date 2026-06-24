@@ -4,6 +4,12 @@ use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, vbs_error::VBSErrorType, ExecutionContext};
 use std::sync::Arc;
 
+/// Convert multi-dimensional array indices into a flat offset.
+///
+/// Each dimension `dims[i]` stores the upper bound; the total range for
+/// that dimension is `dims[i] + 1`.  The flat index is computed as:
+///   idx = (((i0 * (d1+1)) + i1) * (d2+1)) + i2 ...
+/// Returns `None` if any index exceeds its dimension bound.
 fn compute_flat_index(indices: &[VBValue], dims: &[usize]) -> Option<usize> {
     if indices.len() != dims.len() {
         return None;
@@ -19,6 +25,11 @@ fn compute_flat_index(indices: &[VBValue], dims: &[usize]) -> Option<usize> {
     Some(idx)
 }
 
+/// AST node for `arr(i) = value` or `arr(i, j) = value` (array element assignment).
+///
+/// Supports both plain VBScript arrays and Object-indexed assignment
+/// (e.g. `Application("key") = value`), dispatching to `indexed_set`
+/// when the target is an `Object` or direct element mutation for `Array`.
 #[derive(Clone)]
 pub struct ArrayAssignment {
     var_name: String,

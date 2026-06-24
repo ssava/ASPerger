@@ -7,68 +7,57 @@ use super::builtins;
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 
+/// Binary operators supported by VBScript expressions.
+///
+/// Precedences range from 80 (`.` — tightest) down to 1 (`Imp`).
+/// See `precedence()` for the full table.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BinOp {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    IntDiv,
-    Pow,
-    Mod,
-    Concat,
-    Eq,
-    Ne,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    And,
-    Or,
-    Xor,
-    Eqv,
-    Imp,
-    Is,
+    Add, Sub, Mul, Div, IntDiv, Pow, Mod, Concat,
+    Eq, Ne, Lt, Gt, Le, Ge,
+    And, Or, Xor, Eqv, Imp, Is,
 }
 
+/// Unary prefix operators.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnaryOp {
     Neg,
     Not,
 }
 
+/// Expression AST node for the VBScript expression parser.
+///
+/// Built by `parse_expression` (a Pratt parser), consumed by `evaluate`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
+    /// A literal value (string, number, boolean, null, empty, array, object).
     Literal(VBValue),
+    /// A variable reference (resolved against the current scope at eval time).
     Variable(String),
-    BinaryOp {
-        left: Box<Expr>,
-        op: BinOp,
-        right: Box<Expr>,
-    },
-    UnaryOp {
-        op: UnaryOp,
-        expr: Box<Expr>,
-    },
-    FunctionCall {
-        name: String,
-        args: Vec<Expr>,
-    },
-    PropertyAccess {
-        object: Box<Expr>,
-        property: String,
-    },
-    MethodCall {
-        object: Box<Expr>,
-        method: String,
-        args: Vec<Expr>,
-    },
+    /// A binary operation (`a + b`, `a & b`, `a Is b`, etc.).
+    BinaryOp { left: Box<Expr>, op: BinOp, right: Box<Expr> },
+    /// A unary operation (`-x`, `Not x`).
+    UnaryOp { op: UnaryOp, expr: Box<Expr> },
+    /// A function call (`FuncName(arg1, arg2)`).
+    FunctionCall { name: String, args: Vec<Expr> },
+    /// Property access (`obj.Prop`).
+    PropertyAccess { object: Box<Expr>, property: String },
+    /// Method call on an expression result (`obj.Method(args)`).
+    MethodCall { object: Box<Expr>, method: String, args: Vec<Expr> },
+    /// `New ClassName` for class instantiation.
     NewObject(String),
+    /// Reference to the current `With` object (`.` prefix).
     WithObject,
     /// Used internally for `Case Is <op> <value>` in Select Case.
     CaseComparison { op: BinOp, rhs: Box<Expr> },
 }
 
+/// Parse a sequence of tokens into an `Expr` AST using a Pratt parser.
+///
+/// Whitespace tokens are filtered out first.  The parser binds with
+/// precedence rules defined in `precedence()` — see that function for
+/// the full table.  Dot access (`.`) has the highest precedence (80)
+/// so that `"a" & obj.Prop` parses as `Concat("a", PropertyAccess(obj, Prop))`.
 pub fn parse_expression(tokens: &[Token]) -> Result<Expr, VBSError> {
     let filtered: Vec<&Token> = tokens
         .iter()
@@ -518,6 +507,11 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
     Ok(lhs)
 }
 
+/// Evaluate an `Expr` AST node to a `VBValue` in the given execution context.
+///
+/// Handles all `Expr` variants: literals, variables (including `__with_obj__`),
+/// binary/unary ops, function calls (builtin + user-defined), property/method
+/// access on objects, `New`, and `CaseComparison`.
 pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
     match expr {
         Expr::Literal(val) => Ok(val.clone()),

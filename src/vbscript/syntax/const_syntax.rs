@@ -2,6 +2,12 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+/// AST node for `Const name = expr` declarations.
+///
+/// Evaluates the expression at parse time (during the first execution
+/// pass) and sets the constant as a variable in the current scope.
+/// Note: VBScript `Const` values are immutable, but the interpreter
+/// does not enforce immutability here.
 #[derive(Clone)]
 pub struct Const {
     var_names: Vec<(String, Expr)>,

@@ -71,15 +71,19 @@ impl std::borrow::Borrow<CIStr> for CIString {
     }
 }
 
-#[derive(PartialEq)]
-#[derive(Default)]
+/// VBScript error-handling mode.
+///
+/// - `Normal`: errors halt execution and propagate up the call stack.
+/// - `ResumeNext`: errors are recorded in `Err` but execution continues
+///   on the next statement.
+#[derive(PartialEq, Default)]
 pub enum ErrorMode {
     #[default]
     Normal,
     ResumeNext,
 }
 
-
+/// Parsed definition of a VBScript `Property Get/Let/Set` block.
 #[allow(dead_code)]
 pub struct PropertyDef {
     pub name: String,
@@ -90,6 +94,7 @@ pub struct PropertyDef {
     pub set_param: Option<String>,
 }
 
+/// Parsed definition of a `Sub` or `Function` method.
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct MethodDef {
@@ -99,6 +104,7 @@ pub struct MethodDef {
     pub is_function: bool,
 }
 
+/// Parsed `Class` definition with its properties and methods.
 #[allow(dead_code)]
 pub struct ClassDefinition {
     pub name: String,
@@ -107,16 +113,28 @@ pub struct ClassDefinition {
 }
 
 /// Variable scope: holds variables, functions, classes, error state, and the with-object.
+///
+/// Each `Scope` is the per-request variable store.  When a function or
+/// class method is called, a new scope inherits or wraps the parent's
+/// variables (see `with_instance_scope` / `with_class_method_scope`).
 pub struct Scope {
+    /// All script-level variables (case-insensitive keys).
     variables: AHashMap<CIString, VBValue>,
+    /// User-defined `Sub` / `Function` definitions.
     functions: AHashMap<CIString, UserDefinedFunction>,
     /// Cached parsed function bodies — parsed once at definition time, reused on every call.
     function_bodies: AHashMap<CIString, Vec<BlockStatement>>,
+    /// `Class` definitions (stored by class name).
     classes: AHashMap<CIString, ClassDefinition>,
+    /// Current `On Error` mode.
     error_mode: ErrorMode,
+    /// The `Err.Number` value set by the last runtime error.
     pub err_number: f64,
+    /// The `Err.Description` value set by the last runtime error.
     pub err_description: String,
+    /// The object set by `With obj ... End With`.
     pub with_object: Option<VBValue>,
+    /// The expression value set by `Select Case expr`.
     pub(crate) select_value: Option<VBValue>,
 }
 
@@ -199,17 +217,32 @@ impl Scope {
 }
 
 /// Per-request HTTP data populated by the server before script execution.
+///
+/// Populated by `process_request` in `server.rs` before the handler chain
+/// runs.  `params` holds URL query parameters (`?a=1&b=2`), `form` holds
+/// POST body (URL-encoded or multipart), and `cookies` is the parsed
+/// `Cookie` header.
 #[derive(Default)]
 pub struct RequestContext {
+    /// HTTP method (GET, POST, HEAD, etc.).
     pub method: String,
+    /// URL path (without query string).
     pub path: String,
+    /// Raw query string portion of the URL.
     pub query_string: String,
+    /// Parsed query-string key-value pairs.
     pub params: AHashMap<String, String>,
+    /// All request headers (lowercase keys).
     pub headers: AHashMap<String, String>,
+    /// POST form data (URL-encoded or multipart).
     pub form: AHashMap<String, String>,
+    /// Parsed Cookie header key-value pairs.
     pub cookies: AHashMap<String, String>,
+    /// Content-Length (byte count of the request body).
     pub total_bytes: usize,
+    /// Active code page for string encoding.
     pub code_page: u32,
+    /// Locale identifier.
     pub lcid: u32,
 }
 
@@ -225,14 +258,26 @@ pub struct CookieEntry {
 }
 
 /// Response state accumulated during script execution.
+///
+/// Written to by `Response.Write`, `Response.Redirect`, `Response.End`,
+/// and the cookie setters.  After the handler chain finishes, the server
+/// flattens this into an HTTP response line, headers, and body.
 #[derive(Default)]
 pub struct ResponseContext {
+    /// Response body content built by `Response.Write` calls.
     pub buffer: String,
+    /// HTTP status line (e.g. `"200 OK"`, `"302 Found"`).
     pub status: String,
+    /// Extra headers to append to the response (e.g. `Set-Cookie`, `Location`).
     pub extra_headers: Vec<(String, String)>,
+    /// Set by `Response.End` / `Response.Redirect` — the handler chain
+    /// should stop processing further blocks when this is true.
     pub ended: bool,
+    /// URL set by `Response.Redirect` for the `Location` header.
     pub redirect_url: String,
+    /// Content flushed via `Response.Flush` (already sent to the client).
     pub flushed: String,
+    /// Cookies set via `Response.Cookies("name") = value`.
     pub cookies: AHashMap<String, CookieEntry>,
 }
 

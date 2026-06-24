@@ -3,6 +3,12 @@ use crate::vbscript::expr::{evaluate, to_number, Expr};
 use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+/// AST node for `ReDim var(size)` and `ReDim Preserve var(size)`.
+///
+/// Without `Preserve`, a new array is allocated (content is lost).
+/// With `Preserve`, existing elements are copied into the new array up
+/// to `min(old_len, new_len)`.  Multi-dimensional `Preserve` is rejected
+/// (VBScript limitation — only the last dimension may change).
 #[derive(Clone)]
 pub struct ReDim {
     var_name: String,

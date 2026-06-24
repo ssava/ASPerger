@@ -376,9 +376,17 @@ impl AspServer {
         }
     }
 
-    /// Process a parsed HTTP request: resolve includes, parse ASP blocks,
-    /// apply preprocessor directives, inject intrinsic objects, and execute
-    /// blocks through the handler chain. Returns an `HttpResponse`.
+    /// Process a parsed HTTP request through the full ASP pipeline.
+    ///
+    /// Pipeline phases:
+    /// 1. **Path resolution** — canonicalize, enforce folder sandbox (403 on escape)
+    /// 2. **Dir config** — resolve per-directory `AspDirConfig` from `DirConfigCache`
+    /// 3. **Default document** — if path is a directory, try `default_documents` list,
+    ///    then directory listing, then 404
+    /// 4. **Read & type-check** — read file bytes; non-`.asp` files served as static
+    /// 5. **Include expansion** — resolve `<!-- #include -->` directives
+    /// 6. **Parse & preprocess** — `AspParser` → `Preprocessor` (directives like `@LANGUAGE`)
+    /// 7. **Execute** — build `ExecutionContext`, inject intrinsics, run handler chain
     pub async fn process_request(
         request: HttpRequest,
         handler_chain: &Arc<dyn Handler + Send + Sync>,
@@ -387,7 +395,7 @@ impl AspServer {
         store: &Arc<Store>,
         debugger: Option<Arc<Debugger>>,
     ) -> Result<HttpResponse, ASPError> {
-        // Build raw path — no default document substitution yet
+        // ---------- Phase 1: Path resolution & sandbox ----------
         let raw_path = format!("{}/{}", folder, request.path);
 
         let canonical_path = match Path::new(&raw_path).canonicalize() {
@@ -417,7 +425,7 @@ impl AspServer {
             });
         }
 
-        // Resolve per-directory config from the cache
+        // ---------- Phase 2: Per-directory config ----------
         let request_dir = if canonical_path.is_dir() {
             canonical_path.as_path()
         } else {
@@ -425,9 +433,7 @@ impl AspServer {
         };
         let dir_config = dir_cache.resolve(request_dir);
 
-        // Determine the actual file path:
-        // - If it's a directory, try default documents in order, then directory listing, else 404
-        // - If it's a file, use raw_path directly
+        // ---------- Phase 3: Default document resolution ----------
         let file_path = if canonical_path.is_dir() {
             let mut found = None;
             for doc in &dir_config.default_documents {
@@ -473,6 +479,7 @@ impl AspServer {
         };
         let path_obj = Path::new(&file_path);
 
+        // ---------- Phase 4: Read & type check ----------
         let content = match std::fs::read(&file_path) {
             Ok(content) => content,
             Err(_) => {
@@ -485,6 +492,7 @@ impl AspServer {
             }
         };
 
+        // Non-.asp files are served as static content
         if !file_path.ends_with(".asp") {
             let content_type = match path_obj.extension().and_then(|e| e.to_str()) {
                 Some("html") | Some("htm") => "text/html",
@@ -504,7 +512,7 @@ impl AspServer {
         let content = String::from_utf8(content)
             .map_err(|e| ASPError::new(500, format!("Non-UTF8 content in ASP file: {}", e)))?;
 
-        // ASP file processing
+        // ---------- Phase 5: Include expansion ----------
         let file_dir = Path::new(&file_path).parent().unwrap_or(Path::new(folder));
         let root_dir = Path::new(folder);
 
@@ -522,12 +530,14 @@ impl AspServer {
             }
         };
 
+        // ---------- Phase 6: Parse & preprocess ----------
         let parser = AspParser::new(expanded);
         let blocks = parser.parse();
 
         let preprocessor = crate::asp::preprocessor::Preprocessor::new();
         let (directive_config, filtered_blocks) = preprocessor.process(&blocks);
 
+        // ---------- Phase 7: Execute ----------
         let mut context = ExecutionContext::new();
         context.script_path = file_path.clone();
         context.store = Some(Arc::clone(store));
@@ -717,7 +727,10 @@ impl AspServer {
         }
     }
 
-    /// Handle a single HTTP connection: read request, process it, and write the response.
+    /// Legacy single-connection handler (used by the DAP debug server).
+    ///
+    /// Reads one HTTP request, runs it through `process_request` (no debugger),
+    /// and writes the response back.  Not used by the Axum production server.
     pub async fn handle_connection(
         handler_chain: &Arc<dyn Handler + Send + Sync>,
         stream: &mut tokio::net::TcpStream,
@@ -972,8 +985,12 @@ struct AxumServerState {
     dir_cache: DirConfigCache,
 }
 
-/// Axum request handler: converts axum Request → internal HttpRequest,
-/// calls process_request, then converts internal HttpResponse → axum Response.
+/// Axum request handler — bridge between axum's HTTP types and the internal pipeline.
+///
+/// 1. Decompose the axum `Request` into headers, body, URI parts.
+/// 2. Convert to internal `HttpRequest` (cookie parsing, CGI variable population).
+/// 3. Delegate to `AspServer::process_request`.
+/// 4. Map the internal `HttpResponse` status/content-type/body back to an axum `Response`.
 async fn axum_handler(
     Extension(state): Extension<Arc<AxumServerState>>,
     req: Request,

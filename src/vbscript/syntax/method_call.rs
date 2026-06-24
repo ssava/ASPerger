@@ -5,6 +5,14 @@ use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
 use super::VBSyntax;
 
+/// AST node for `obj.Method(args)` statements.
+///
+/// Dispatches to one of several call paths depending on the object:
+/// - `Response.End`, `Response.Redirect`, etc. — short-circuits with side effects
+/// - `Server.Execute` / `Server.Transfer` — calls the `execute_file_callback`
+/// - `obj.Property(args)` — tries property access + indexed_get pattern first
+/// - `With obj ... .Method(args)` — uses `context.scope.with_object`
+/// - Generic `obj.Method(args)` — swaps the object out of context, calls `call_method`, puts it back
 #[derive(Clone)]
 pub struct MethodCall {
     object_name: String,
@@ -22,6 +30,14 @@ impl MethodCall {
     }
 }
 
+/// Try the ASP intrinsic pattern `obj.Property(args)`.
+///
+/// Some ASP objects expose collections through a property that itself
+/// supports indexed access — e.g. `Request.QueryString("id")` or
+/// `Session.Contents("key")`.  This helper peels off one level of
+/// property access then applies `indexed_get` with the first argument.
+///
+/// Returns `Some(value)` on success, `None` if the pattern doesn't match.
 fn try_property_indexed_access(
     object_name: &str,
     property: &str,

@@ -9,6 +9,11 @@ use super::vbs_error::{VBSError, VBSErrorType};
 use regex::Regex;
 use regex::Match as RegexMatch;
 
+/// `VBScript.RegExp` — regular expression matching and replacement.
+///
+/// Properties: `Pattern`, `IgnoreCase`, `Global`.
+/// Methods: `Test(string)` → Boolean, `Execute(string)` → Matches,
+/// `Replace(string, replacement)` → String.
 #[derive(Debug, Clone)]
 pub struct RegExpObject {
     pattern: String,
@@ -159,6 +164,7 @@ impl VBScriptObject for RegExpObject {
 // ===== MatchObject =====
 
 #[derive(Debug, Clone)]
+/// A single `RegExp` match result.  Properties: `Value`, `FirstIndex`, `Length`, `SubMatches`.
 pub struct MatchObject {
     value: String,
     first_index: usize,
@@ -235,6 +241,7 @@ impl VBScriptObject for MatchObject {
 // ===== SubMatchesObject =====
 
 #[derive(Debug, Clone)]
+/// Collection of `RegExp` submatch strings, indexed by position.
 pub struct SubMatchesObject {
     items: Vec<String>,
 }

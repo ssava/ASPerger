@@ -12,6 +12,10 @@ use ahash::AHashMap;
 // ---- Connection ----
 
 #[derive(Debug, Clone)]
+/// `ADODB.Connection` — database connection stub.
+///
+/// Provides basic `Open`, `Close`, `Execute` methods and a `ConnectionString`
+/// / `State` property.  Currently stubbed with minimal real DB integration.
 pub struct Connection {
     connection_string: String,
     state: i32,

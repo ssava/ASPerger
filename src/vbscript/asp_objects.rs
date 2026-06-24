@@ -1,3 +1,10 @@
+//! ASP intrinsic object implementations: `Request`, `Response`, `Session`,
+//! `Server`, `Application`, and their sub-collections (`QueryString`, `Form`,
+//! `ServerVariables`, `Cookies`, `Contents`, `StaticObjects`).
+//!
+//! These objects are injected into `ExecutionContext` as global variables
+//! before any script runs (see `AspServer::inject_asp_intrinsic_objects`).
+
 use ahash::AHashMap;
 
 use super::execution_context::{CookieEntry, ExecutionContext};
@@ -8,6 +15,11 @@ use super::vbs_error::{VBSError, VBSErrorType};
 
 // ===== RequestObject =====
 
+/// ASP intrinsic `Request` object.
+///
+/// Properties: `Request.QueryString`, `Request.Form`, `Request.ServerVariables`,
+/// `Request.Cookies`, `Request.TotalBytes`.
+/// Methods: `Request.BinaryRead`.
 #[derive(Debug, Clone)]
 pub struct RequestObject;
 
@@ -60,6 +72,7 @@ impl VBScriptObject for RequestObject {
 // ===== Request Sub-Collections =====
 
 #[derive(Debug, Clone)]
+/// `Request.QueryString` — read-only indexed collection of URL query parameters.
 pub struct RequestQueryString(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestQueryString {
@@ -102,6 +115,7 @@ impl VBScriptObject for RequestQueryString {
 }
 
 #[derive(Debug, Clone)]
+/// `Request.Form` — read-only indexed collection of POST form fields.
 pub struct RequestForm(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestForm {
@@ -142,6 +156,8 @@ impl VBScriptObject for RequestForm {
 }
 
 #[derive(Debug, Clone)]
+/// `Request.ServerVariables` — read-only indexed collection of
+/// CGI-style server variables (HTTP headers, connection info).
 pub struct RequestServerVariables(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestServerVariables {
@@ -188,6 +204,7 @@ impl VBScriptObject for RequestServerVariables {
 }
 
 #[derive(Debug, Clone)]
+/// `Request.Cookies` — read-only indexed collection of cookie values.
 pub struct RequestCookies(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestCookies {
@@ -231,6 +248,13 @@ impl VBScriptObject for RequestCookies {
 
 // ===== ResponseObject =====
 
+/// ASP intrinsic `Response` object.
+///
+/// Methods: `Response.Write`, `Response.End`, `Response.Clear`,
+/// `Response.Flush`, `Response.Redirect`, `Response.AddHeader`,
+/// `Response.BinaryWrite`.
+/// Properties: `Response.Buffer`, `Response.ContentType`, `Response.Status`,
+/// `Response.Cookies`, `Response.IsClientConnected`.
 #[derive(Debug, Clone)]
 pub struct ResponseObject;
 
@@ -314,6 +338,8 @@ impl VBScriptObject for ResponseObject {
 
 // ===== ResponseCookies =====
 
+/// `Response.Cookies` — collection proxy for `Response.Cookies("name")` access.
+/// Writes go through `ResponseCookiesSet` / `ResponseCookiesSetProp` syntax nodes.
 #[derive(Debug, Clone)]
 pub struct ResponseCookies;
 
@@ -336,6 +362,9 @@ fn get_or_create_entry<'a>(context: &'a mut ExecutionContext, name: &str) -> &'a
 /// A single cookie with its attributes and subkeys.
 /// Stateless — reads/writes through `context.response.cookies[cookie_name]`.
 #[derive(Debug, Clone)]
+/// `Response.Cookies(key)` — handles indexed get/set on the cookies
+/// collection, returning a `CookieEntry` wrapper for sub-property access
+/// like `Response.Cookies("name").Expires = ...`.
 pub struct CookieObject {
     cookie_name: String,
 }
@@ -346,6 +375,7 @@ impl CookieObject {
     }
 }
 
+/// Serialise a cookie name+entry into a `Set-Cookie` header value.
 pub(crate) fn to_cookie_string(name: &str, entry: &CookieEntry) -> String {
     let mut s = format!("{}={}", name, entry.value);
     if !entry.expires.is_empty() {
@@ -496,6 +526,11 @@ impl VBScriptObject for ResponseCookies {
 
 // ===== SessionObject =====
 
+/// ASP intrinsic `Session` object.
+///
+/// Properties: `Session.SessionID`, `Session.Timeout`.
+/// Indexed access: `Session("key")` — reads/writes session variables
+/// via the shared `Store`.
 #[derive(Debug, Clone)]
 pub struct SessionObject {
     pub session_id: String,
@@ -627,6 +662,7 @@ impl VBScriptObject for SessionObject {
 }
 
 #[derive(Debug, Clone)]
+/// `Session.Contents` — read-only indexed collection of session variables.
 pub struct SessionContents {
     session_id: String,
 }
@@ -791,6 +827,11 @@ impl VBScriptObject for SessionContents {
 
 // ===== ServerObject =====
 
+/// ASP intrinsic `Server` object.
+///
+/// Methods: `Server.HTMLEncode`, `Server.URLEncode`, `Server.Execute`,
+/// `Server.Transfer`, `Server.CreateObject`.
+/// Properties: `Server.ScriptTimeout`.
 #[derive(Debug, Clone)]
 pub struct ServerObject;
 
@@ -915,6 +956,12 @@ impl VBScriptObject for ServerObject {
 
 // ===== ApplicationObject =====
 
+/// ASP intrinsic `Application` object.
+///
+/// Methods: `Application.Lock`, `Application.Unlock`.
+/// Indexed access: `Application("key")` — reads/writes application-scoped
+/// variables via the shared `Store` with `Condvar`-based locking.
+/// Sub-collections: `Application.Contents`, `Application.StaticObjects`.
 #[derive(Debug, Clone)]
 pub struct ApplicationObject;
 
@@ -939,6 +986,16 @@ impl VBScriptObject for ApplicationObject {
         }
     }
 
+    /// Application.Lock / Unlock / Contents
+    ///
+    /// VBScript concurrency model: `Application.Lock` blocks the calling thread
+    /// until the lock is available.  While locked, **other** requests are parked
+    /// by `Condvar` when they try to read or write `Application` variables.
+    /// The locking request reads/writes freely (reentrant).
+    ///
+    /// - `lock_app_blocking` — used by `Application.Lock` (writer side)
+    /// - `wait_for_app_unlock` — used by every `Application("key")` access
+    ///   (reader side — must wait for any outstanding writer lock to clear)
     fn call_method(
         &mut self,
         name: &str,
@@ -970,6 +1027,7 @@ impl VBScriptObject for ApplicationObject {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
+            // Wait for any outstanding Application.Lock from another request
             store.wait_for_app_unlock(context.request_id);
             let apps = store.lock_apps();
             return Ok(apps
@@ -1006,6 +1064,8 @@ impl VBScriptObject for ApplicationContents {
     fn clone_box(&self) -> Box<dyn VBScriptObject> {
         Box::new(self.clone())
     }
+    /// Mirror of `ApplicationObject` locking: every access waits for the
+    /// writer lock (`Application.Lock`) held by another request to clear.
     fn get_property(
         &self,
         name: &str,

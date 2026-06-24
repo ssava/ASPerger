@@ -3,6 +3,11 @@ use crate::vbscript::expr::{evaluate, BinOp, Expr};
 use crate::vbscript::value_utils;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
+/// AST node for simple variable assignment: `var = expr`.
+///
+/// Contains an optimisation for the `var = var & expr` pattern (string
+/// concatenation to self) that uses `String::push_str` to avoid O(n²)
+/// behaviour when building up a string in a loop.
 #[derive(Clone)]
 pub struct Assignment {
     var_name: String,

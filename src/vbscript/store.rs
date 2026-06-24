@@ -11,8 +11,16 @@ use super::value::VBValue;
 use crate::asp::global_asa::GlobalAsa;
 
 /// State tracked for the Application.Lock/Unlock mechanism.
+///
+/// VBScript's `Application.Lock` blocks the calling thread until the
+/// lock is released.  Since we serve requests from a thread pool, we
+/// use a `Condvar` to park the thread instead of spinning.
+/// Each request gets a unique `owner_id` so the lock is reentrant
+/// (the same request can lock multiple times without deadlocking).
 struct AppLockInfo {
+    /// Whether any request currently holds the lock.
     locked: bool,
+    /// The request_id of the holder (or 0 if unlocked).
     owner_id: u64,
 }
 
@@ -67,8 +75,14 @@ impl Store {
     }
 
     /// Block until the application lock is released by another request, then return.
-    /// If the lock is held by the current owner_id, returns immediately.
-    /// Must be called before every Application variable access (indexed_get/set, CONTENTS methods).
+    ///
+    /// This is the "readers" side of the lock: every `Application("key")` access
+    /// must wait for any outstanding `Application.Lock` from a *different* request
+    /// to be released before reading.  The same request that holds the lock may
+    /// read freely (reentrant).
+    ///
+    /// Must be called before every Application variable access
+    /// (indexed_get/set, CONTENTS methods).
     pub fn wait_for_app_unlock(&self, my_owner_id: u64) {
         let mut info = self.app_lock_mtx.lock().unwrap();
         while info.locked && info.owner_id != my_owner_id {
@@ -77,7 +91,11 @@ impl Store {
     }
 
     /// Acquire the application lock (blocks until available).
-    /// Returns true if the lock was acquired, false if already held by this owner.
+    ///
+    /// This is the "writer" side: only one request may hold
+    /// `Application.Lock` at a time.  Returns `true` if the lock
+    /// was freshly acquired, `false` if already held by this owner
+    /// (reentrant).
     pub fn lock_app_blocking(&self, my_owner_id: u64) -> bool {
         let mut info = self.app_lock_mtx.lock().unwrap();
         while info.locked {
@@ -92,7 +110,11 @@ impl Store {
     }
 
     /// Release the application lock if held by this owner.
-    /// Returns true if the lock was released, false if not held.
+    /// Returns `true` if the lock was released, `false` if not held.
+    ///
+    /// Wakes all waiters (both `wait_for_app_unlock` and
+    /// `lock_app_blocking`).  The first waiter to re-acquire
+    /// the mutex will see the unlocked state and proceed.
     pub fn unlock_app(&self, my_owner_id: u64) -> bool {
         let mut info = self.app_lock_mtx.lock().unwrap();
         if info.locked && info.owner_id == my_owner_id {

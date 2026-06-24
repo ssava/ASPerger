@@ -89,12 +89,21 @@ pub enum TokenType {
     EOF,
 }
 
+/// A single lexical token produced by the `Tokenizer`.
 #[derive(Debug, Clone)]
 pub struct Token {
+    /// The kind of token (keyword, operator, literal, etc.).
     pub token_type: TokenType,
+    /// The source text of this token (shared via `Arc<str>`).
     pub value: Arc<str>,
 }
 
+/// VBScript lexer.  Converts source text into a sequence of `Token` values.
+///
+/// Handles string literals (with `""` escaping), numeric literals (integer,
+/// float, hex, octal), date literals (`#...#`), identifiers, keywords
+/// (case-insensitive), operators, comments (`'` / `REM`), and line
+/// continuations (`_` + newline).
 pub struct Tokenizer<'a> {
     input: Peekable<Chars<'a>>,
     current_line: usize,

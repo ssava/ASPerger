@@ -2,6 +2,11 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, to_number, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
+/// AST node for `Dim var` / `Dim var(5)` / `Dim var(2, 3)` declarations.
+///
+/// Each entry in `var_names` is a `(name, optional_dimension_bounds)` pair.
+/// When dimension bounds are given, an `Array` of `Empty` values is allocated
+/// with the corresponding size.  Without bounds, the variable is set to `Empty`.
 #[derive(Clone)]
 pub struct Dim {
     var_names: Vec<(String, Option<Vec<Expr>>)>,

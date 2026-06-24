@@ -4,6 +4,11 @@ use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
 use super::VBSyntax;
 
+/// AST node for `Set obj.Property = value` statements.
+///
+/// Evaluates the value expression, then swaps the object out of context
+/// to call `set_property` on it, and puts the (possibly mutated) object
+/// back into context.  Supports `With` blocks via the `__with_obj__` key.
 #[derive(Clone)]
 pub struct PropertySet {
     object_name: String,

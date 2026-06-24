@@ -2,6 +2,10 @@ use super::VBSyntax;
 use crate::vbscript::expr::{evaluate, Expr};
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
+/// AST node for `Response.Write expr` statements.
+///
+/// Evaluates the expression at runtime and appends the string
+/// representation to the response buffer.
 #[derive(Clone)]
 pub struct ResponseWrite {
     expr: Expr,

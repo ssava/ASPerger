@@ -13,6 +13,11 @@ use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 use ahash::AHashMap;
 
+/// Parsed VBScript statement, produced by `parse_blocks`.
+///
+/// Each variant corresponds to a VBScript control-flow or declaration construct.
+/// The `line` field (present on all compound variants) stores the source line
+/// number used for debugger breakpoint matching.
 pub enum BlockStatement {
     Syntax(Box<dyn VBSyntax>, usize),
     Unrecognized(String, usize),
@@ -177,12 +182,15 @@ impl Clone for BlockStatement {
     }
 }
 
+/// A single `ElseIf condition Then` clause inside an `If` block.
 #[derive(Clone)]
 pub struct ElseIfBlock {
     pub condition: Expr,
     pub body: Vec<BlockStatement>,
 }
 
+/// A single `Case values` clause inside a `Select Case` block.
+/// `Case Is operator value` is encoded as `Expr::CaseComparison`.
 #[derive(Clone)]
 pub struct CaseClause {
     pub values: Vec<Expr>,
@@ -212,6 +220,11 @@ impl BlockStatement {
     }
 }
 
+/// A user-defined `Sub` or `Function` parsed from source.
+///
+/// Function bodies are stored as raw token lines so they can be re-parsed
+/// into `BlockStatement`s on each call (VBScript allows redefinition).
+/// The cached parsed bodies are stored separately in `Scope::function_bodies`.
 #[derive(Clone)]
 pub struct UserDefinedFunction {
     pub name: String,
@@ -540,45 +553,39 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         .filter(|t| t.token_type != TokenType::WhiteSpace)
         .collect();
 
-    // 1a. Response.End, Response.Clear, Response.Flush
+    // 1a. Response.End, Response.Clear, Response.Flush, Response.AddHeader, Response.Redirect
+    //
+    // These are parsed as synthetic MethodCall nodes because the general
+    // expression parser does not handle `obj.Method(args)` at the statement
+    // level (that would require a function-call production rule).  Instead
+    // we short-circuit known Response method invocations here.
     if non_ws.len() >= 3
         && non_ws[0].value.eq_ignore_ascii_case("response")
         && non_ws[1].token_type == TokenType::Dot
     {
         let method_name = non_ws[2].value.to_string();
         let method_upper = method_name.to_uppercase();
+
+        // Zero-argument methods: End, Clear, Flush
         if method_upper == "END" || method_upper == "CLEAR" || method_upper == "FLUSH" {
-            let args = Vec::new();
-            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
+            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, Vec::new())));
         }
-        // Response.AddHeader "name", "value"
-        if method_upper == "ADDHEADER" {
-            let arg_tokens: Vec<Token> = tokens.iter()
-                .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("addheader")))
-                .skip(1)
-                .filter(|t| t.token_type != TokenType::WhiteSpace)
-                .cloned()
-                .collect();
-            let args = if arg_tokens.is_empty() {
-                Vec::new()
-            } else {
-                parse_comma_args(&arg_tokens)?
-            };
-            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
-        }
-        // Response.Redirect "url"
-        if method_upper == "REDIRECT" {
-            let arg_tokens: Vec<Token> = tokens.iter()
-                .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("redirect")))
-                .skip(1)
-                .filter(|t| t.token_type != TokenType::WhiteSpace)
-                .cloned()
-                .collect();
-            let args = if arg_tokens.is_empty() {
-                Vec::new()
-            } else {
-                parse_comma_args(&arg_tokens)?
-            };
+
+        // Multi-argument methods: extract the argument token range after the method name
+        let arg_tokens: Vec<Token> = tokens.iter()
+            .skip_while(|t| !(t.token_type == TokenType::Identifier
+                && t.value.eq_ignore_ascii_case(&method_name)))
+            .skip(1)
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .cloned()
+            .collect();
+        let args = if arg_tokens.is_empty() {
+            Vec::new()
+        } else {
+            parse_comma_args(&arg_tokens)?
+        };
+
+        if method_upper == "ADDHEADER" || method_upper == "REDIRECT" {
             return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
         }
     }

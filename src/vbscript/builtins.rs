@@ -14,6 +14,13 @@ thread_local! {
     static RNG_LAST: RefCell<f64> = const { RefCell::new(0.0f64) };
 }
 
+/// Dispatch a built-in VBScript function call by name.
+///
+/// Matches case-insensitively against ~80 built-in functions covering
+/// string manipulation (`Len`, `Mid`, `Replace`), math (`Abs`, `Sqr`, `Rnd`),
+/// date/time (`Now`, `DateAdd`, `DateDiff`), type conversion (`CInt`, `CStr`),
+/// array operations (`UBound`, `LBound`, `Split`, `Join`),
+/// and I/O (`CreateObject`, `FetchURL`).
 pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError> {
     match name {
         n if n.eq_ignore_ascii_case("ARRAY") => builtin_array(&args),

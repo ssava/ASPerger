@@ -1,12 +1,20 @@
 //! ASP-level error type used throughout the server layer.
 
+/// HTTP-level error used across the server layer.
+///
+/// Unlike `VBSError` (which carries VBScript-level error codes and
+/// control-flow signals), `ASPError` represents an HTTP response status
+/// with a human-readable message intended for the client.
 #[derive(Debug)]
 pub struct ASPError {
+    /// HTTP status code (e.g. 404, 403, 500).
     pub code: u16,
+    /// Human-readable error description.
     pub message: String,
 }
 
 impl ASPError {
+    /// Create a new ASP error with the given HTTP status code and message.
     pub fn new(code: u16, message: impl Into<String>) -> Self {
         ASPError {
             code,
@@ -16,6 +24,7 @@ impl ASPError {
 }
 
 impl ASPError {
+    /// Render the error as a styled HTML page suitable for returning to the browser.
     pub fn render_html(&self) -> String {
         format!(
             "<html><head><title>ASP Error {}</title><style>\

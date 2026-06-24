@@ -95,6 +95,27 @@ impl Debugger {
         state.step_mode = mode;
     }
 
+    /// Evaluate whether execution should pause at the given source location.
+    ///
+    /// Called by the interpreter after every statement.  If `should_stop` is true
+    /// the method:
+    /// 1. Captures current variables into the top stack frame.
+    /// 2. Sends a `Stopped` event to the DAP client.
+    /// 3. **Blocks** on `command_rx.recv()` until the user issues a debug command
+    ///    (Continue / Next / StepIn / StepOut / Disconnect).
+    /// 4. Updates `step_mode` and `step_frame_depth` according to the command,
+    ///    then returns so the interpreter can resume.
+    ///
+    /// If `should_stop` is false the method just records the current position
+    /// (used by StepOver to detect line changes) and returns immediately.
+    ///
+    /// ## Step-mode rules (`should_stop` logic)
+    /// | Mode      | Stop condition                                       |
+    /// |-----------|------------------------------------------------------|
+    /// | Continue  | Line is in the breakpoint list for this file          |
+    /// | StepOver  | frame ≤ stored depth AND line changed                |
+    /// | StepIn    | Always stop                                           |
+    /// | StepOut   | frame < stored depth (returning from a call)         |
     pub fn check(
         &self,
         file: &str,
@@ -118,13 +139,13 @@ impl Debugger {
         };
 
         if should_stop {
+            // -- snapshot state and send Stopped event --
             {
                 let mut s = self.state.lock().unwrap();
                 s.paused = true;
                 s.current_file = file.to_string();
                 s.current_line = line;
 
-                // Capture variables into the current frame
                 if let Some(vars) = vars {
                     let cloned = vars.clone();
                     if s.stack_frames.is_empty() {
@@ -155,7 +176,7 @@ impl Debugger {
                 })
                 .unwrap_or(());
 
-            // Wait for a debugger command (blocks until received)
+            // -- block until the DAP client sends a command --
             match self.command_rx.lock().unwrap().recv() {
                 Ok(DebugCommand::Continue) => {
                     let mut s = self.state.lock().unwrap();
@@ -164,6 +185,7 @@ impl Debugger {
                     s.stack_frames.clear();
                 }
                 Ok(DebugCommand::Next) => {
+                    // Next = StepOver at current depth until the line changes
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::StepOver;
                     s.step_frame_depth = frame_depth;
@@ -180,6 +202,7 @@ impl Debugger {
                     s.stack_frames.clear();
                 }
                 Ok(DebugCommand::StepOut) => {
+                    // StepOut = stop when frame_depth drops below the current depth
                     let mut s = self.state.lock().unwrap();
                     s.step_mode = StepMode::StepOut;
                     s.step_frame_depth = frame_depth;
@@ -194,6 +217,7 @@ impl Debugger {
                 Err(_) => {}
             }
         } else if line != 0 {
+            // No stop — just remember the current position for StepOver tracking
             let mut s = self.state.lock().unwrap();
             s.current_file = file.to_string();
             s.current_line = line;

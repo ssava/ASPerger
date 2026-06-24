@@ -13,6 +13,14 @@ use crate::vbscript::vbobject::VBScriptObject;
 
 // ---- FileSystemObject ----
 
+/// VBScript `Scripting.FileSystemObject` — provides file I/O,
+/// directory traversal, and drive enumeration.
+///
+/// Methods: `CreateTextFile`, `OpenTextFile`, `GetFile`, `GetFolder`,
+/// `GetDrive`, `FileExists`, `FolderExists`, `DriveExists`, `DeleteFile`,
+/// `DeleteFolder`, `CopyFile`, `CopyFolder`, `MoveFile`, `MoveFolder`,
+/// `CreateFolder`, `GetTempName`, `GetParentFolderName`,
+/// `GetFileName`, `GetExtensionName`, `GetBaseName`, `BuildPath`.
 #[derive(Debug, Clone)]
 pub struct FileSystemObject;
 
@@ -28,6 +36,9 @@ impl FileSystemObject {
     }
 }
 
+/// Resolve a VBScript-style path to an absolute `PathBuf`.
+/// If the path is already absolute, returns it unchanged;
+/// otherwise joins it with the current working directory.
 fn resolve_path(path: &str) -> PathBuf {
     let p = Path::new(path);
     if p.is_absolute() {
@@ -429,6 +440,11 @@ impl VBScriptObject for FileSystemObject {
 // ---- FileObject ----
 
 #[derive(Debug)]
+/// `Scripting.File` — represents a single file, returned by
+/// `FileSystemObject.GetFile`.  Provides read-only properties
+/// (`Name`, `Path`, `Size`, `DateCreated`, `DateLastModified`,
+/// `DateLastAccessed`, `Type`, `ParentFolder`) and methods
+/// (`Delete`, `Copy`, `Move`, `OpenAsTextStream`).
 pub struct FileObject {
     path: PathBuf,
     name: String,
@@ -699,6 +715,10 @@ impl VBScriptObject for FileObject {
 // ---- FolderObject ----
 
 #[derive(Debug)]
+/// `Scripting.Folder` — represents a directory, returned by
+/// `FileSystemObject.GetFolder`.  Provides properties (`Name`, `Path`,
+/// `Size`, `DateCreated`, `Files`, `SubFolders`, `ParentFolder`, `IsRootFolder`)
+/// and methods (`Delete`, `Copy`, `Move`, `CreateTextFile`).
 pub struct FolderObject {
     path: PathBuf,
     name: String,
