@@ -948,21 +948,14 @@ impl VBScriptObject for ApplicationObject {
         match name.to_uppercase().as_str() {
             "LOCK" => {
                 if let Some(ref store) = context.store {
-                    let mut lock_state = store.lock_app();
-                    if !*lock_state {
-                        *lock_state = true;
-                        context.app_locked = true;
-                    }
-                    // Guard dropped here — lock released, but app_locked flag tracks it
+                    store.lock_app_blocking(context.request_id);
                 }
                 Ok(VBValue::Empty)
             }
             "UNLOCK" => {
                 if let Some(ref store) = context.store {
-                    let mut lock_state = store.lock_app();
-                    *lock_state = false;
+                    store.unlock_app(context.request_id);
                 }
-                context.app_locked = false;
                 Ok(VBValue::Empty)
             }
             _ => Err(VBSErrorType::RuntimeError
@@ -977,6 +970,7 @@ impl VBScriptObject for ApplicationObject {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
+            store.wait_for_app_unlock(context.request_id);
             let apps = store.lock_apps();
             return Ok(apps
                 .get(&key.to_uppercase())
@@ -994,6 +988,7 @@ impl VBScriptObject for ApplicationObject {
     ) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
+            store.wait_for_app_unlock(context.request_id);
             let mut apps = store.lock_apps();
             apps.insert(key.to_uppercase(), value);
         }
@@ -1016,24 +1011,18 @@ impl VBScriptObject for ApplicationContents {
         name: &str,
         context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        match name.to_uppercase().as_str() {
-            "COUNT" => {
-                if let Some(ref store) = context.store {
-                    let apps = store.lock_apps();
-                    return Ok(VBValue::Number(apps.len() as f64));
-                }
-                Ok(VBValue::Number(0.0))
+        if let Some(ref store) = context.store {
+            store.wait_for_app_unlock(context.request_id);
+            let apps = store.lock_apps();
+            match name.to_uppercase().as_str() {
+                "COUNT" => Ok(VBValue::Number(apps.len() as f64)),
+                _ => Ok(apps
+                    .get(&name.to_uppercase())
+                    .cloned()
+                    .unwrap_or(VBValue::Empty)),
             }
-            _ => {
-                if let Some(ref store) = context.store {
-                    let apps = store.lock_apps();
-                    return Ok(apps
-                        .get(&name.to_uppercase())
-                        .cloned()
-                        .unwrap_or(VBValue::Empty));
-                }
-                Ok(VBValue::Empty)
-            }
+        } else {
+            Ok(VBValue::Number(0.0))
         }
     }
     fn call_method(
@@ -1051,6 +1040,7 @@ impl VBScriptObject for ApplicationContents {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
+            store.wait_for_app_unlock(context.request_id);
             let apps = store.lock_apps();
             return Ok(apps
                 .get(&key.to_uppercase())
@@ -1067,6 +1057,7 @@ impl VBScriptObject for ApplicationContents {
     ) -> Result<(), VBSError> {
         let key = value_utils::to_arg_string(index);
         if let Some(ref store) = context.store {
+            store.wait_for_app_unlock(context.request_id);
             let mut apps = store.lock_apps();
             apps.insert(key.to_uppercase(), value);
         }

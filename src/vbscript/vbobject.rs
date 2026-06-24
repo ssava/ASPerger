@@ -199,6 +199,103 @@ impl VBScriptObject for Dictionary {
     }
 }
 
+#[cfg(test)]
+mod dictionary_tests {
+    use super::*;
+    use crate::vbscript::execution_context::ExecutionContext;
+
+    fn ctx() -> ExecutionContext {
+        ExecutionContext::new()
+    }
+
+    #[test]
+    fn test_dictionary_new_empty() {
+        let d = Dictionary::new();
+        assert_eq!(d.items.len(), 0);
+    }
+
+    #[test]
+    fn test_dictionary_add_and_indexed_get() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("key1".into()), VBValue::String("val1".into())], &mut c).unwrap();
+        let val = d.indexed_get(&VBValue::String("key1".into()), &mut c).unwrap();
+        assert_eq!(val, VBValue::String("val1".into()));
+    }
+
+    #[test]
+    fn test_dictionary_add_duplicate_key_overwrites() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(1.0)], &mut c).unwrap();
+        d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(2.0)], &mut c).unwrap();
+        let val = d.indexed_get(&VBValue::String("k".into()), &mut c).unwrap();
+        assert_eq!(val, VBValue::Number(2.0));
+    }
+
+    #[test]
+    fn test_dictionary_count() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        assert_eq!(d.get_property("COUNT", &mut c).unwrap(), VBValue::Number(0.0));
+        d.call_method("ADD", &[VBValue::String("a".into()), VBValue::Empty], &mut c).unwrap();
+        assert_eq!(d.get_property("COUNT", &mut c).unwrap(), VBValue::Number(1.0));
+    }
+
+    #[test]
+    fn test_dictionary_exists() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Empty], &mut c).unwrap();
+        let exists = d.call_method("EXISTS", &[VBValue::String("k".into())], &mut c).unwrap();
+        assert_eq!(exists, VBValue::Boolean(true));
+        let not_exists = d.call_method("EXISTS", &[VBValue::String("missing".into())], &mut c).unwrap();
+        assert_eq!(not_exists, VBValue::Boolean(false));
+    }
+
+    #[test]
+    fn test_dictionary_keys() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("x".into()), VBValue::Number(1.0)], &mut c).unwrap();
+        let keys = d.get_property("KEYS", &mut c).unwrap();
+        match keys {
+            VBValue::Array(ref v, _) => {
+                assert_eq!(v.len(), 1);
+                assert_eq!(v[0], VBValue::String("x".into()));
+            }
+            _ => panic!("expected Array"),
+        }
+    }
+
+    #[test]
+    fn test_dictionary_remove_all() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("a".into()), VBValue::Empty], &mut c).unwrap();
+        d.call_method("ADD", &[VBValue::String("b".into()), VBValue::Empty], &mut c).unwrap();
+        d.call_method("REMOVEALL", &[], &mut c).unwrap();
+        assert_eq!(d.get_property("COUNT", &mut c).unwrap(), VBValue::Number(0.0));
+    }
+
+    #[test]
+    fn test_dictionary_remove() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(1.0)], &mut c).unwrap();
+        d.call_method("REMOVE", &[VBValue::String("k".into())], &mut c).unwrap();
+        assert_eq!(d.get_property("COUNT", &mut c).unwrap(), VBValue::Number(0.0));
+    }
+
+    #[test]
+    fn test_dictionary_add_requires_two_args() {
+        let mut d = Dictionary::new();
+        let mut c = ctx();
+        let result = d.call_method("ADD", &[VBValue::String("k".into())], &mut c);
+        assert!(result.is_err());
+    }
+}
+
 // ---- ClassInstance ----
 
 #[derive(Debug)]

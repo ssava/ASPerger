@@ -17,7 +17,7 @@ async fn main() {
         Some(&cli.host),
         Some(cli.port),
         Some(folder),
-        None, // default_document not settable from CLI yet
+        cli.default_documents.as_deref(),
         Some(cli.enable_directory_listing),
     );
 

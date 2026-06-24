@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut script_path = String::new();
     let mut launch_folder: Option<String> = None;
     let mut launch_port: Option<u16> = None;
-    let mut launch_default_doc: Option<String> = None;
+    let mut launch_default_documents: Option<String> = None;
     let mut launch_directory_listing: Option<bool> = None;
     let mut debugger_state: Option<Arc<Mutex<asperger::vbscript::debugger::DebuggerState>>> = None;
     let mut command_tx: Option<std::sync::mpsc::Sender<DebugCommand>> = None;
@@ -106,9 +106,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     if let Some(port) = extra.get("port").and_then(|v| v.as_u64()) {
                         launch_port = Some(port as u16);
                     }
-                    if let Some(doc) = extra.get("defaultDocument").and_then(|v| v.as_str()) {
+                    // Accept both defaultDocuments (array) and defaultDocument (string, compat)
+                    if let Some(docs) = extra.get("defaultDocuments").and_then(|v| v.as_array()) {
+                        let joined: Vec<String> = docs
+                            .iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if !joined.is_empty() {
+                            launch_default_documents = Some(joined.join(","));
+                        }
+                    } else if let Some(doc) = extra.get("defaultDocument").and_then(|v| v.as_str()) {
                         if !doc.is_empty() {
-                            launch_default_doc = Some(doc.to_string());
+                            launch_default_documents = Some(doc.to_string());
                         }
                     }
                     if let Some(dl) = extra.get("directoryListing").and_then(|v| v.as_bool()) {
@@ -253,12 +263,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     None,                           // host — not settable from DAP yet
                     launch_port,
                     Some(&folder),                   // folder (always set)
-                    launch_default_doc.as_deref(),
+                    launch_default_documents.as_deref(),
                     launch_directory_listing,
                 );
 
+                let dir_cache = config.build_dir_cache();
+
                 let handle = std::thread::spawn(move || {
-                    start_debug_http_server(&config, debugger, so);
+                    start_debug_http_server(&config, dir_cache, debugger, so);
                 });
                 interpreter_handle = Some(handle);
             }
@@ -523,12 +535,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn start_debug_http_server<W: Write + Send + 'static>(
     config: &asperger::asp::config::AspServerConfig,
+    dir_cache: asperger::asp::config::DirConfigCache,
     debugger: Arc<Debugger>,
     server_output: Arc<Mutex<dap::server::ServerOutput<W>>>,
 ) {
     let bind_addr = format!("{}:{}", config.host, config.port);
     let folder = config.folder.clone();
-    let default_document = config.default_document.clone();
 
     let asp_cfg = AspConfig {
         host: config.host.clone(),
@@ -536,6 +548,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
         folder: folder.clone(),
         program: None,
         enable_directory_listing: config.directory_listing,
+        default_documents: None,
     };
     let server = AspServer::new(asp_cfg);
 
@@ -565,8 +578,8 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                 let mut so = server_output.lock().unwrap();
                 let _ = so.send_event(Event::Output(events::OutputEventBody {
                     output: format!(
-                        "ASP Debug Server started on http://{}:{}/ (folder={:?}, default={:?})\n",
-                        config.host, config.port, folder, default_document
+                        "ASP Debug Server started on http://{}:{}/ (folder={:?}, default_documents={:?})\n",
+                        config.host, config.port, folder, config.default_documents
                     ),
                     category: Some(types::OutputEventCategory::Stdout),
                     ..Default::default()
@@ -624,10 +637,9 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                         request,
                         &server.handler_chain,
                         &folder,
-                        &default_document,
+                        &dir_cache,
                         &server.store,
                         Some(Arc::clone(&debugger)),
-                        config.directory_listing,
                     ),
                 )
                 .await

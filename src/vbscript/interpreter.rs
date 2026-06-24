@@ -178,3 +178,54 @@ impl VBScriptInterpreter {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execute_empty_code() {
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(crate::vbscript::store::Store::new());
+        let result = VBScriptInterpreter.execute("", &mut ctx);
+        assert!(result.is_ok());
+
+        // Whitespace-only
+        let result = VBScriptInterpreter.execute("   \n  \t  ", &mut ctx);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_execute_simple_assignment() {
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(crate::vbscript::store::Store::new());
+        let result = VBScriptInterpreter.execute("x = 42", &mut ctx);
+        assert!(result.is_ok());
+        let val = ctx.get_variable("x").cloned().unwrap_or(VBValue::Empty);
+        match val {
+            VBValue::Number(n) => assert!((n - 42.0).abs() < 1e-10),
+            _ => panic!("expected Number"),
+        }
+    }
+
+    #[test]
+    fn test_execute_expression() {
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(crate::vbscript::store::Store::new());
+        let result = VBScriptInterpreter.execute("x = 2 + 3", &mut ctx);
+        assert!(result.is_ok());
+        let val = ctx.get_variable("x").cloned().unwrap_or(VBValue::Empty);
+        match val {
+            VBValue::Number(n) => assert!((n - 5.0).abs() < 1e-10),
+            _ => panic!("expected Number"),
+        }
+    }
+
+    #[test]
+    fn test_execute_syntax_error() {
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(crate::vbscript::store::Store::new());
+        let result = VBScriptInterpreter.execute("if x then", &mut ctx);
+        assert!(result.is_err());
+    }
+}

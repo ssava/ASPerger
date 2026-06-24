@@ -1,5 +1,5 @@
 use crate::asp::asp_error::ASPError;
-use crate::asp::config::{AspServerConfig, Config};
+use crate::asp::config::{AspServerConfig, Config, DirConfigCache};
 use crate::asp::handler::{CodeHandler, Handler, HtmlHandler};
 use crate::asp::parser::AspParser;
 use crate::vbscript::debugger::Debugger;
@@ -93,14 +93,13 @@ impl AspServer {
         } else {
             asp_cfg.folder.trim_end_matches('/').to_string()
         };
-        let default_doc = asp_cfg.default_document.clone();
-        let dir_listing = asp_cfg.directory_listing;
+        let dir_cache = Arc::new(asp_cfg.build_dir_cache());
 
         let bind_addr = format!("{}:{}", host, port);
         let listener = TcpListener::bind(&bind_addr).await?;
         println!(
-            "Server listening on {} serving files from {} (default document: {})",
-            bind_addr, folder, default_doc
+            "Server listening on {} serving files from {} (default documents: {:?})",
+            bind_addr, folder, asp_cfg.default_documents
         );
 
         loop {
@@ -108,11 +107,11 @@ impl AspServer {
             let handler_chain = Arc::clone(&self.handler_chain);
             let store = Arc::clone(&self.store);
             let folder = folder.clone();
-            let default_doc = default_doc.clone();
+            let dir_cache = Arc::clone(&dir_cache);
 
             tokio::spawn(async move {
                 if let Err(e) =
-                    Self::handle_connection(&handler_chain, &mut stream, &folder, &default_doc, &store, dir_listing).await
+                    Self::handle_connection(&handler_chain, &mut stream, &folder, &dir_cache, &store).await
                 {
                     eprintln!("Connection handling error: {}", e);
                 }
@@ -384,10 +383,9 @@ impl AspServer {
         request: HttpRequest,
         handler_chain: &Arc<dyn Handler + Send + Sync>,
         folder: &str,
-        default_document: &str,
+        dir_cache: &DirConfigCache,
         store: &Arc<Store>,
         debugger: Option<Arc<Debugger>>,
-        directory_listing: bool,
     ) -> Result<HttpResponse, ASPError> {
         // Build raw path — no default document substitution yet
         let raw_path = format!("{}/{}", folder, request.path);
@@ -419,38 +417,56 @@ impl AspServer {
             });
         }
 
+        // Resolve per-directory config from the cache
+        let request_dir = if canonical_path.is_dir() {
+            canonical_path.as_path()
+        } else {
+            canonical_path.parent().unwrap_or(&canonical_path)
+        };
+        let dir_config = dir_cache.resolve(request_dir);
+
         // Determine the actual file path:
-        // - If it's a directory, try default document, then directory listing, else 404
+        // - If it's a directory, try default documents in order, then directory listing, else 404
         // - If it's a file, use raw_path directly
         let file_path = if canonical_path.is_dir() {
-            let default_path = canonical_path.join(default_document);
-            if default_path.is_file() {
-                default_path.to_string_lossy().to_string()
-            } else if directory_listing {
-                return Ok(Self::generate_directory_listing(&canonical_path, &canonical_folder, &request.path));
-            } else {
-            return Ok(HttpResponse {
-                status_line: "404 Not Found".to_string(),
-                content_type: "text/html".to_string(),
-                body: format!(
-                    "<html><head><title>404 Not Found</title>\
-                     <style>body{{font-family:monospace;background:#f8f8f8;padding:2em}}\
-                     h1{{color:#c00;font-size:1.5em}}\
-                     .code{{color:#666}}\
-                     .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\
-                     </style></head><body>\
-                     <h1>404 Not Found</h1>\
-                     <p class=\"code\">{}</p>\
-                     <div class=\"msg\">{}</div>\
-                     </body></html>",
-                    Self::html_escape(&request.path),
-                    Self::html_escape(&format!(
-                        "No default document ({}) found",
-                        default_document
-                    ))
-                ).into_bytes(),
-                extra_headers: Vec::new(),
-            });
+            let mut found = None;
+            for doc in &dir_config.default_documents {
+                let candidate = canonical_path.join(doc);
+                if candidate.is_file() {
+                    found = Some(candidate.to_string_lossy().to_string());
+                    break;
+                }
+            }
+            match found {
+                Some(fp) => fp,
+                None if dir_config.directory_listing => {
+                    return Ok(Self::generate_directory_listing(&canonical_path, &canonical_folder, &request.path));
+                }
+                None => {
+                    let tried = dir_config.default_documents.join(", ");
+                    return Ok(HttpResponse {
+                        status_line: "404 Not Found".to_string(),
+                        content_type: "text/html".to_string(),
+                        body: format!(
+                            "<html><head><title>404 Not Found</title>\
+                             <style>body{{font-family:monospace;background:#f8f8f8;padding:2em}}\
+                             h1{{color:#c00;font-size:1.5em}}\
+                             .code{{color:#666}}\
+                             .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\
+                             </style></head><body>\
+                             <h1>404 Not Found</h1>\
+                             <p class=\"code\">{}</p>\
+                             <div class=\"msg\">{}</div>\
+                             </body></html>",
+                            Self::html_escape(&request.path),
+                            Self::html_escape(&format!(
+                                "No default document found. Tried: {}",
+                                tried
+                            ))
+                        ).into_bytes(),
+                        extra_headers: Vec::new(),
+                    });
+                }
             }
         } else {
             raw_path
@@ -515,6 +531,7 @@ impl AspServer {
         let mut context = ExecutionContext::new();
         context.script_path = file_path.clone();
         context.store = Some(Arc::clone(store));
+        context.request_id = store.allocate_request_id();
         context.session.enabled = directive_config.enable_session_state;
         if let Some(cp) = directive_config.code_page {
             context.request.code_page = cp;
@@ -705,12 +722,11 @@ impl AspServer {
         handler_chain: &Arc<dyn Handler + Send + Sync>,
         stream: &mut tokio::net::TcpStream,
         folder: &str,
-        default_document: &str,
+        dir_cache: &DirConfigCache,
         store: &Arc<Store>,
-        directory_listing: bool,
     ) -> Result<(), ASPError> {
         let request = Self::read_request(stream).await?;
-        let response = Self::process_request(request, handler_chain, folder, default_document, store, None, directory_listing).await?;
+        let response = Self::process_request(request, handler_chain, folder, dir_cache, store, None).await?;
         Self::write_response(stream, &response).await
     }
 
@@ -724,14 +740,13 @@ impl AspServer {
         } else {
             asp_cfg.folder.trim_end_matches('/').to_string()
         };
-        let default_doc = asp_cfg.default_document.clone();
+        let dir_cache = asp_cfg.build_dir_cache();
 
         let state = Arc::new(AxumServerState {
             handler_chain: Arc::clone(&self.handler_chain),
             store: Arc::clone(&self.store),
             folder: folder.clone(),
-            default_document: default_doc.clone(),
-            directory_listing: asp_cfg.directory_listing,
+            dir_cache,
         });
 
         let app = Router::new()
@@ -742,8 +757,8 @@ impl AspServer {
             .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
         println!(
-            "Server listening on {} serving files from {} (default document: {})",
-            addr, folder, default_doc
+            "Server listening on {} serving files from {} (default documents: {:?})",
+            addr, folder, asp_cfg.default_documents
         );
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -954,8 +969,7 @@ struct AxumServerState {
     handler_chain: Arc<dyn Handler + Send + Sync>,
     store: Arc<Store>,
     folder: String,
-    default_document: String,
-    directory_listing: bool,
+    dir_cache: DirConfigCache,
 }
 
 /// Axum request handler: converts axum Request → internal HttpRequest,
@@ -1000,10 +1014,9 @@ async fn axum_handler(
         http_request,
         &state.handler_chain,
         &state.folder,
-        &state.default_document,
+        &state.dir_cache,
         &state.store,
         None,
-        state.directory_listing,
     )
     .await
     {
@@ -1053,4 +1066,158 @@ fn parse_status_code(status_line: &str) -> StatusCode {
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(500);
     StatusCode::from_u16(code).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_url_decode_basic() {
+        let result = AspServer::url_decode("hello%20world");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_url_decode_plus_to_space() {
+        let result = AspServer::url_decode("a+b+c");
+        assert_eq!(result, "a b c");
+    }
+
+    #[test]
+    fn test_url_decode_hex() {
+        let result = AspServer::url_decode("%48%65%6C%6C%6F");
+        assert_eq!(result, "Hello");
+    }
+
+    #[test]
+    fn test_url_decode_mixed() {
+        let result = AspServer::url_decode("a%20b%20c");
+        assert_eq!(result, "a b c");
+    }
+
+    #[test]
+    fn test_url_encode_basic() {
+        let result = AspServer::url_encode("hello world");
+        assert_eq!(result, "hello%20world");
+    }
+
+    #[test]
+    fn test_url_encode_special_chars() {
+        let result = AspServer::url_encode("a<b>c");
+        assert!(result.contains("%3C")); // <
+        assert!(result.contains("%3E")); // >
+    }
+
+    #[test]
+    fn test_url_encode_safe_chars_unchanged() {
+        let result = AspServer::url_encode("abc123-_.");
+        assert_eq!(result, "abc123-_.");
+    }
+
+    #[test]
+    fn test_parse_query_string_simple() {
+        let result = AspServer::parse_query_string("a=1&b=2");
+        assert_eq!(result.get("a").unwrap(), "1");
+        assert_eq!(result.get("b").unwrap(), "2");
+    }
+
+    #[test]
+    fn test_parse_query_string_duplicate_keys() {
+        let result = AspServer::parse_query_string("a=1&a=2");
+        assert_eq!(result.get("a").unwrap(), "2"); // last wins
+    }
+
+    #[test]
+    fn test_parse_query_string_empty() {
+        let result = AspServer::parse_query_string("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_query_string_no_value() {
+        let result = AspServer::parse_query_string("key");
+        assert_eq!(result.get("key").unwrap(), "");
+    }
+
+    #[test]
+    fn test_parse_cookies_basic() {
+        let result = AspServer::parse_cookies("name=value; name2=value2");
+        assert_eq!(result.get("name").unwrap(), "value");
+        assert_eq!(result.get("name2").unwrap(), "value2");
+    }
+
+    #[test]
+    fn test_parse_cookies_empty() {
+        let result = AspServer::parse_cookies("");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_cookies_trim_spaces() {
+        let result = AspServer::parse_cookies(" name = val ");
+        assert_eq!(result.get("name").unwrap(), "val");
+    }
+
+    #[test]
+    fn test_parse_form_body_simple() {
+        let result = AspServer::parse_form_body(b"a=1&b=2");
+        assert_eq!(result.get("a").unwrap(), "1");
+        assert_eq!(result.get("b").unwrap(), "2");
+    }
+
+    #[test]
+    fn test_parse_form_body_empty() {
+        let result = AspServer::parse_form_body(b"");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_generate_session_id_starts_with_asperger() {
+        let id = AspServer::generate_session_id();
+        assert!(id.starts_with("ASPERGER"));
+        assert!(id.len() > 12);
+        assert!(id[8..].chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_html_escape_ampersand() {
+        let result = AspServer::html_escape("a&b");
+        assert_eq!(result, "a&amp;b");
+    }
+
+    #[test]
+    fn test_html_escape_lt_gt() {
+        let result = AspServer::html_escape("<tag>");
+        assert_eq!(result, "&lt;tag&gt;");
+    }
+
+    #[test]
+    fn test_html_escape_quotes() {
+        let result = AspServer::html_escape("\"'");
+        assert_eq!(result, "&quot;&#x27;");
+    }
+
+    #[test]
+    fn test_html_escape_plain_text() {
+        let result = AspServer::html_escape("hello world");
+        assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_parse_multipart_form_data() {
+        let boundary = "----WebKitFormBoundary";
+        let body = format!(
+            "------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field2\"\r\n\r\nvalue2\r\n------WebKitFormBoundary--\r\n"
+        );
+        let result = AspServer::parse_multipart_form_data(body.as_bytes(), boundary);
+        assert_eq!(result.get("field1").unwrap(), "value1");
+        assert_eq!(result.get("field2").unwrap(), "value2");
+    }
+
+    #[test]
+    fn test_parse_multipart_form_data_empty() {
+        let result = AspServer::parse_multipart_form_data(b"", "boundary");
+        assert!(result.is_empty());
+    }
 }

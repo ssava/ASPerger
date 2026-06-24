@@ -91,3 +91,138 @@ impl FromStr for VBValue {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vb_value_clone_string() {
+        let v = VBValue::String("hello".to_string());
+        let c = v.clone();
+        assert_eq!(v, c);
+    }
+
+    #[test]
+    fn test_vb_value_clone_number() {
+        let v = VBValue::Number(42.5);
+        let c = v.clone();
+        assert_eq!(v, c);
+    }
+
+    #[test]
+    fn test_vb_value_clone_boolean() {
+        let v = VBValue::Boolean(true);
+        let c = v.clone();
+        assert_eq!(v, c);
+    }
+
+    #[test]
+    fn test_vb_value_clone_null() {
+        let v = VBValue::Null;
+        let c = v.clone();
+        assert_eq!(v, c);
+    }
+
+    #[test]
+    fn test_vb_value_clone_empty() {
+        let v = VBValue::Empty;
+        let c = v.clone();
+        assert_eq!(v, c);
+    }
+
+    #[test]
+    fn test_vb_value_partial_eq_different_types() {
+        assert_ne!(VBValue::Number(1.0), VBValue::String("1".to_string()));
+        assert_ne!(VBValue::Empty, VBValue::Null);
+        assert_ne!(VBValue::Boolean(true), VBValue::Number(1.0));
+    }
+
+    #[test]
+    fn test_vb_value_from_str_true() {
+        let v: VBValue = "True".parse().unwrap();
+        assert_eq!(v, VBValue::Boolean(true));
+    }
+
+    #[test]
+    fn test_vb_value_from_str_false() {
+        let v: VBValue = "false".parse().unwrap();
+        assert_eq!(v, VBValue::Boolean(false));
+    }
+
+    #[test]
+    fn test_vb_value_from_str_null() {
+        let v: VBValue = "Null".parse().unwrap();
+        assert_eq!(v, VBValue::Null);
+    }
+
+    #[test]
+    fn test_vb_value_from_str_number() {
+        let v: VBValue = "42".parse().unwrap();
+        match v {
+            VBValue::Number(n) => assert!((n - 42.0).abs() < 1e-10),
+            _ => panic!("expected Number"),
+        }
+    }
+
+    #[test]
+    fn test_vb_value_from_str_string() {
+        let v: VBValue = "\"hello\"".parse().unwrap();
+        assert_eq!(v, VBValue::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_vb_value_from_str_invalid() {
+        let result: Result<VBValue, String> = "not a value".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vb_value_display_string() {
+        let v = VBValue::String("test".to_string());
+        assert_eq!(v.to_string(), "test");
+    }
+
+    #[test]
+    fn test_vb_value_display_number() {
+        let v = VBValue::Number(42.0);
+        assert_eq!(v.to_string(), "42");
+    }
+
+    #[test]
+    fn test_vb_value_display_boolean_true() {
+        let v = VBValue::Boolean(true);
+        assert_eq!(v.to_string(), "True");
+    }
+
+    #[test]
+    fn test_vb_value_display_boolean_false() {
+        let v = VBValue::Boolean(false);
+        assert_eq!(v.to_string(), "False");
+    }
+
+    #[test]
+    fn test_vb_value_display_null() {
+        let v = VBValue::Null;
+        assert_eq!(v.to_string(), "null");
+    }
+
+    #[test]
+    fn test_vb_value_display_empty() {
+        let v = VBValue::Empty;
+        assert_eq!(v.to_string(), "Empty");
+    }
+
+    #[test]
+    fn test_vb_value_display_array() {
+        let v = VBValue::Array(Arc::new(vec![VBValue::Number(1.0)]), vec![]);
+        assert_eq!(v.to_string(), "Array(1)");
+    }
+
+    #[test]
+    fn test_vb_value_number_partial_eq() {
+        let a = VBValue::Number(1.0);
+        let b = VBValue::Number(1.0 + f64::EPSILON / 2.0);
+        assert_eq!(a, b);
+    }
+}

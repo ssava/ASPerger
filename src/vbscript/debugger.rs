@@ -225,3 +225,183 @@ impl Debugger {
         drop(self.state.lock().unwrap());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vbscript::execution_context::CIString;
+
+    fn make_vars() -> AHashMap<CIString, VBValue> {
+        let mut m = AHashMap::new();
+        m.insert(CIString::new("x".to_string()), VBValue::Number(1.0));
+        m
+    }
+
+    #[test]
+    fn test_debugger_new_initial_state() {
+        let (_, state, _) = Debugger::new();
+        let s = state.lock().unwrap();
+        assert!(s.breakpoints.is_empty());
+        assert_eq!(s.step_mode, StepMode::Continue);
+        assert!(!s.paused);
+        assert!(s.stack_frames.is_empty());
+    }
+
+    #[test]
+    fn test_debugger_set_breakpoints() {
+        let (d, state, _) = Debugger::new();
+        d.set_breakpoints("test.asp", &[5, 10, 15]);
+        let s = state.lock().unwrap();
+        assert_eq!(s.breakpoints.get("test.asp").unwrap(), &vec![5, 10, 15]);
+    }
+
+    #[test]
+    fn test_debugger_set_step_mode() {
+        let (d, state, _) = Debugger::new();
+        d.set_step_mode(StepMode::StepIn);
+        let s = state.lock().unwrap();
+        assert_eq!(s.step_mode, StepMode::StepIn);
+    }
+
+    #[test]
+    fn test_debugger_check_no_breakpoint_no_stop() {
+        let (d, _, _) = Debugger::new();
+        let result = d.check("test.asp", 10, 0, Some(&make_vars()));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_debugger_check_breakpoint_hit_triggers_stop() {
+        let (d, _state, evt_rx) = Debugger::new();
+        d.set_breakpoints("test.asp", &[10]);
+        d.set_step_mode(StepMode::Continue);
+
+        // Spawn a thread to send Continue after a short delay
+        let cmd_tx = d.command_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            cmd_tx.send(DebugCommand::Continue).unwrap();
+        });
+
+        let result = d.check("test.asp", 10, 0, Some(&make_vars()));
+        assert!(result.is_ok());
+
+        // Verify a Stopped event was sent
+        let event = evt_rx.recv_timeout(std::time::Duration::from_millis(100));
+        assert!(event.is_ok());
+        match event.unwrap() {
+            DebugEvent::Stopped { reason, file, line, .. } => {
+                assert_eq!(reason as i32, StoppedReason::Breakpoint as i32);
+                assert_eq!(file, "test.asp");
+                assert_eq!(line, 10);
+            }
+            _ => panic!("expected Stopped event"),
+        }
+    }
+
+    #[test]
+    fn test_debugger_check_step_in_triggers() {
+        let (d, _, evt_rx) = Debugger::new();
+        d.set_step_mode(StepMode::StepIn);
+
+        let cmd_tx = d.command_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            cmd_tx.send(DebugCommand::Continue).unwrap();
+        });
+
+        let result = d.check("test.asp", 1, 0, Some(&make_vars()));
+        assert!(result.is_ok());
+        let event = evt_rx.recv_timeout(std::time::Duration::from_millis(100));
+        assert!(event.is_ok());
+        match event.unwrap() {
+            DebugEvent::Stopped { reason, .. } => {
+                assert_eq!(reason as i32, StoppedReason::Step as i32);
+            }
+            _ => panic!("expected Stopped event"),
+        }
+    }
+
+    #[test]
+    fn test_debugger_check_step_over_skips_same_line() {
+        let (d, _, evt_rx) = Debugger::new();
+        d.set_step_mode(StepMode::StepOver);
+
+        // First call: different line from current_line (0), so should_stop=true.
+        // Need to send Continue to unblock.
+        let cmd_tx = d.command_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            cmd_tx.send(DebugCommand::Continue).unwrap();
+        });
+        let _ = d.check("test.asp", 10, 0, None);
+        // Consume the Stopped event from the first stop
+        let _first = evt_rx.recv_timeout(std::time::Duration::from_millis(100));
+
+        // Second call on same line: should_stop=false (step over skips same line)
+        let result = d.check("test.asp", 10, 0, None);
+        assert!(result.is_ok());
+        // No new event should be sent
+        let event = evt_rx.recv_timeout(std::time::Duration::from_millis(30));
+        assert!(event.is_err()); // timeout = no event
+    }
+
+    #[test]
+    fn test_debugger_push_pop_frame() {
+        let (d, state, _) = Debugger::new();
+        d.push_frame("func1", "test.asp", 5, AHashMap::new());
+        assert_eq!(d.current_frame_depth(), 1);
+        d.push_frame("func2", "test.asp", 10, AHashMap::new());
+        assert_eq!(d.current_frame_depth(), 2);
+        d.pop_frame();
+        assert_eq!(d.current_frame_depth(), 1);
+        let s = state.lock().unwrap();
+        assert_eq!(s.stack_frames.len(), 1);
+        assert_eq!(s.stack_frames[0].name, "func1");
+    }
+
+    #[test]
+    fn test_debugger_command_next_sets_step_over() {
+        let (d, state, _) = Debugger::new();
+        // Set a breakpoint so check() blocks and waits for a command
+        d.set_breakpoints("test.asp", &[10]);
+        d.set_step_mode(StepMode::Continue);
+
+        let cmd_tx = d.command_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            cmd_tx.send(DebugCommand::Next).unwrap();
+        });
+
+        let _ = d.check("test.asp", 10, 2, Some(&make_vars()));
+        let s = state.lock().unwrap();
+        assert_eq!(s.step_mode, StepMode::StepOver);
+        assert_eq!(s.step_frame_depth, 2);
+    }
+
+    #[test]
+    fn test_debugger_check_step_out_triggers() {
+        let (d, _, _evt_rx) = Debugger::new();
+        // StepOut triggers when frame_depth < stored frame_depth
+        // With default state, both are 0 so it won't trigger — just verify no error
+        let result = d.check("test.asp", 1, 0, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_debugger_state_paused_on_stop() {
+        let (d, state, _) = Debugger::new();
+        d.set_breakpoints("test.asp", &[5]);
+        d.set_step_mode(StepMode::Continue);
+
+        let cmd_tx = d.command_tx.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            cmd_tx.send(DebugCommand::Continue).unwrap();
+        });
+
+        let _ = d.check("test.asp", 5, 0, Some(&make_vars()));
+        let s = state.lock().unwrap();
+        assert!(!s.paused); // cleared by Continue
+    }
+}

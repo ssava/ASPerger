@@ -540,7 +540,50 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         .filter(|t| t.token_type != TokenType::WhiteSpace)
         .collect();
 
-    // 1. Response.Write expr
+    // 1a. Response.End, Response.Clear, Response.Flush
+    if non_ws.len() >= 3
+        && non_ws[0].value.eq_ignore_ascii_case("response")
+        && non_ws[1].token_type == TokenType::Dot
+    {
+        let method_name = non_ws[2].value.to_string();
+        let method_upper = method_name.to_uppercase();
+        if method_upper == "END" || method_upper == "CLEAR" || method_upper == "FLUSH" {
+            let args = Vec::new();
+            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
+        }
+        // Response.AddHeader "name", "value"
+        if method_upper == "ADDHEADER" {
+            let arg_tokens: Vec<Token> = tokens.iter()
+                .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("addheader")))
+                .skip(1)
+                .filter(|t| t.token_type != TokenType::WhiteSpace)
+                .cloned()
+                .collect();
+            let args = if arg_tokens.is_empty() {
+                Vec::new()
+            } else {
+                parse_comma_args(&arg_tokens)?
+            };
+            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
+        }
+        // Response.Redirect "url"
+        if method_upper == "REDIRECT" {
+            let arg_tokens: Vec<Token> = tokens.iter()
+                .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("redirect")))
+                .skip(1)
+                .filter(|t| t.token_type != TokenType::WhiteSpace)
+                .cloned()
+                .collect();
+            let args = if arg_tokens.is_empty() {
+                Vec::new()
+            } else {
+                parse_comma_args(&arg_tokens)?
+            };
+            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
+        }
+    }
+
+    // 1b. Response.Write expr
     if non_ws.len() >= 3
         && non_ws[0].value.eq_ignore_ascii_case("response")
         && non_ws[1].token_type == TokenType::Dot

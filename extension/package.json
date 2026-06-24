@@ -70,8 +70,14 @@
                             },
                             "defaultDocument": {
                                 "type": "string",
-                                "default": "index.asp",
-                                "description": "Default file served when requesting the root path"
+                                "default": "",
+                                "description": "(Deprecated) Use defaultDocuments instead. Single default file served when requesting a directory."
+                            },
+                            "defaultDocuments": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "default": ["default.asp", "default.htm", "default.html", "index.asp", "index.htm", "index.html", "iisstart.htm"],
+                                "description": "Prioritized list of default files to try when requesting a directory (IIS-like fallback chain)"
                             },
                             "directoryListing": {
                                 "type": "boolean",

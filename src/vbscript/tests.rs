@@ -5273,6 +5273,7 @@ mod tests {
             folder: asp_dir.to_string(),
             program: None,
             enable_directory_listing: false,
+            default_documents: None,
         };
         let server = crate::asp::server::AspServer::new(config);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -5293,9 +5294,17 @@ mod tests {
                         let folder = folder.clone();
                         tokio::spawn(async move {
                             let mut stream = stream;
-                            let default_doc = "index.asp".to_string();
+                            let dir_cache = crate::asp::config::DirConfigCache::new(
+                                crate::asp::config::AspDirConfig {
+                                    default_documents: vec!["index.asp".to_string()],
+                                    directory_listing: false,
+                                },
+                                std::path::Path::new(&folder)
+                                    .canonicalize()
+                                    .unwrap_or_else(|_| std::path::Path::new(&folder).to_path_buf()),
+                            );
                             let _ = crate::asp::server::AspServer::handle_connection(
-                                &handler, &mut stream, &folder, &default_doc, &store, false,
+                                &handler, &mut stream, &folder, &dir_cache, &store,
                             ).await;
                         });
                     }

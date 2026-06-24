@@ -17,6 +17,7 @@ thread_local! {
 pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError> {
     match name {
         n if n.eq_ignore_ascii_case("ARRAY") => builtin_array(&args),
+        n if n.eq_ignore_ascii_case("FETCHURL") => builtin_fetchurl(&args),
         n if n.eq_ignore_ascii_case("CREATEOBJECT") => builtin_createobject(&args),
         n if n.eq_ignore_ascii_case("LEN") => builtin_len(&args),
         n if n.eq_ignore_ascii_case("UCASE") => builtin_ucase(&args),
@@ -148,6 +149,31 @@ fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
         _ => Err(VBSErrorType::NotImplementedError
             .into_error(format!("CreateObject('{}') is not implemented", prog_id))),
     }
+}
+
+fn builtin_fetchurl(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "FetchURL")?;
+    let url = value_utils::to_arg_string(&args[0]);
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| VBSErrorType::RuntimeError
+            .into_error(format!("FetchURL: failed to create client: {e}")))?;
+    let rt_handle = tokio::runtime::Handle::current();
+    let result = tokio::task::block_in_place(move || {
+        rt_handle.block_on(async {
+            match client.get(&url).send().await {
+                Ok(resp) => match resp.text().await {
+                    Ok(body) => Ok(VBValue::String(body)),
+                    Err(e) => Err(VBSErrorType::RuntimeError
+                        .into_error(format!("FetchURL: failed to read response body: {e}"))),
+                },
+                Err(e) => Err(VBSErrorType::RuntimeError
+                    .into_error(format!("FetchURL: request failed: {e}"))),
+            }
+        })
+    });
+    result
 }
 
 fn builtin_len(args: &[VBValue]) -> Result<VBValue, VBSError> {
