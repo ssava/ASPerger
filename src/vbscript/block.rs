@@ -2416,7 +2416,9 @@ pub fn execute_blocks(
     blocks: &[BlockStatement],
     context: &mut ExecutionContext,
 ) -> Result<(), VBSError> {
+    tracing::trace!(block_count = blocks.len(), "Executing VB blocks");
     for block in blocks {
+        tracing::trace!(line = block.line(), "Executing block");
         // Check if Response.End or Response.Redirect was called
         if context.response.ended {
             break;

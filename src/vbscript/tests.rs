@@ -5274,6 +5274,7 @@ mod tests {
             program: None,
             enable_directory_listing: false,
             default_documents: None,
+            log_level: None,
         };
         let server = crate::asp::server::AspServer::new(config);
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

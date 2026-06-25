@@ -31,6 +31,8 @@ impl VBScriptInterpreter {
             return Ok(());
         }
 
+        tracing::trace!(token_count = tokens.len(), "Tokenized code block");
+
         let lines = self.group_tokens_into_lines(&tokens)?;
 
         if context.get_variable("ERR").is_none() {
@@ -38,6 +40,7 @@ impl VBScriptInterpreter {
         }
 
         let blocks = block::parse_blocks(&lines)?;
+        tracing::trace!(block_count = blocks.len(), "Parsed VBScript blocks");
         block::execute_blocks(&blocks, context)
     }
 

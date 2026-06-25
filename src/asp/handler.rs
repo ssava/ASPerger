@@ -40,6 +40,7 @@ impl Handler for HtmlHandler {
 
     fn handle(&self, block: &AspBlock, context: &mut ExecutionContext) -> Result<(), ASPError> {
         if let AspBlock::Html(html) = block {
+            tracing::trace!(html_len = html.len(), "Writing HTML block");
             context.write(html);
             return Ok(());
         }
@@ -79,6 +80,7 @@ impl Handler for CodeHandler {
     fn handle(&self, block: &AspBlock, context: &mut ExecutionContext) -> Result<(), ASPError> {
         if let AspBlock::Code(code, start_line) = block {
             context.code_start_line = *start_line;
+            tracing::trace!(start_line = *start_line, "Executing code block");
             self.interpreter
                 .execute(code, context)
                 .map_err(|e| ASPError::new(500, e.to_string()))

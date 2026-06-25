@@ -30,6 +30,10 @@ pub struct Config {
     /// Comma-separated list of default documents to try when requesting a directory.
     #[clap(long, env = "ASPERGER_DEFAULT_DOCUMENTS")]
     pub default_documents: Option<String>,
+
+    /// Log level (error, warn, info, debug, trace).
+    #[clap(long, env = "ASPERGER_LOG_LEVEL")]
+    pub log_level: Option<String>,
 }
 
 /// Per-directory settings for an ASP request.
@@ -154,6 +158,7 @@ pub struct AspServerConfig {
     /// Prioritized list of default documents (IIS-like fallback chain).
     pub default_documents: Vec<String>,
     pub directory_listing: bool,
+    pub log_level: String,
 }
 
 impl Default for AspServerConfig {
@@ -172,6 +177,7 @@ impl Default for AspServerConfig {
                 "iisstart.htm".into(),
             ],
             directory_listing: false,
+            log_level: "info".to_string(),
         }
     }
 }
@@ -221,6 +227,11 @@ impl AspServerConfig {
                         }
                         "enable_directory_listing" => {
                             cfg.directory_listing = value.eq_ignore_ascii_case("true");
+                        }
+                        "log_level" => {
+                            if !value.is_empty() {
+                                cfg.log_level = value.to_string();
+                            }
                         }
                         _ => {}
                     }
@@ -276,6 +287,15 @@ impl AspServerConfig {
         }
         if let Some(dl) = directory_listing {
             self.directory_listing = dl;
+        }
+    }
+
+    /// Apply log level from CLI override (higher priority than ini).
+    pub fn apply_log_level(&mut self, log_level: Option<&str>) {
+        if let Some(ll) = log_level {
+            if !ll.is_empty() {
+                self.log_level = ll.to_string();
+            }
         }
     }
 }

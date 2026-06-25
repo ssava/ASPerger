@@ -115,6 +115,7 @@ impl AspParser {
             blocks.push(AspBlock::Html(html.to_string()));
         }
 
+        tracing::trace!(count = blocks.len(), "Parsed ASP blocks");
         blocks
     }
 }

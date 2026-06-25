@@ -22,6 +22,14 @@ struct Cli {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_target(false)
+        .init();
+
     let cli = Cli::parse();
 
     let stdin = std::io::stdin();
@@ -549,6 +557,7 @@ fn start_debug_http_server<W: Write + Send + 'static>(
         program: None,
         enable_directory_listing: config.directory_listing,
         default_documents: None,
+        log_level: None,
     };
     let server = AspServer::new(asp_cfg);
 

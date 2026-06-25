@@ -97,9 +97,12 @@ impl AspServer {
 
         let bind_addr = format!("{}:{}", host, port);
         let listener = TcpListener::bind(&bind_addr).await?;
-        println!(
-            "Server listening on {} serving files from {} (default documents: {:?})",
-            bind_addr, folder, asp_cfg.default_documents
+        tracing::info!(
+            host = %host,
+            port = %port,
+            folder = %folder,
+            default_documents = ?asp_cfg.default_documents,
+            "Server started"
         );
 
         loop {
@@ -113,7 +116,7 @@ impl AspServer {
                 if let Err(e) =
                     Self::handle_connection(&handler_chain, &mut stream, &folder, &dir_cache, &store).await
                 {
-                    eprintln!("Connection handling error: {}", e);
+                    tracing::error!(error = %e, "Connection handling error");
                 }
             });
         }
@@ -395,6 +398,9 @@ impl AspServer {
         store: &Arc<Store>,
         debugger: Option<Arc<Debugger>>,
     ) -> Result<HttpResponse, ASPError> {
+        let _span = tracing::info_span!("request", method = %request.method, path = %request.path).entered();
+        tracing::debug!(query = %request.query_string, "Processing request");
+
         // ---------- Phase 1: Path resolution & sandbox ----------
         let raw_path = format!("{}/{}", folder, request.path);
 
@@ -711,19 +717,23 @@ impl AspServer {
         // Build response based on context state
         if !context.response.redirect_url.is_empty() {
             response_content.clear();
-            Ok(HttpResponse {
+            let response = HttpResponse {
                 status_line: "302 Found".to_string(),
                 content_type: "text/html".to_string(),
                 body: Vec::new(),
                 extra_headers: context.response.extra_headers,
-            })
+            };
+            tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
+            Ok(response)
         } else {
-            Ok(HttpResponse {
+            let response = HttpResponse {
                 status_line: context.response.status,
                 content_type: "text/html".to_string(),
                 body: response_content.into_bytes(),
                 extra_headers: context.response.extra_headers,
-            })
+            };
+            tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
+            Ok(response)
         }
     }
 
@@ -769,9 +779,12 @@ impl AspServer {
         let addr: std::net::SocketAddr = format!("{}:{}", host, port)
             .parse()
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
-        println!(
-            "Server listening on {} serving files from {} (default documents: {:?})",
-            addr, folder, asp_cfg.default_documents
+        tracing::info!(
+            host = %host,
+            port = %port,
+            folder = %folder,
+            default_documents = ?asp_cfg.default_documents,
+            "Server started"
         );
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
