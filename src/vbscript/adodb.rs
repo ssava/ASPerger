@@ -7,7 +7,6 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
-use ahash::AHashMap;
 
 // ---- Connection ----
 
@@ -116,8 +115,6 @@ impl VBScriptObject for Connection {
 #[derive(Debug, Clone)]
 pub struct Recordset {
     eof: bool,
-    #[allow(dead_code)]
-    fields: AHashMap<String, VBValue>,
     field_names: Vec<String>,
     current_index: usize,
 }
@@ -126,20 +123,7 @@ impl Recordset {
     pub fn empty() -> Self {
         Recordset {
             eof: true,
-            fields: AHashMap::new(),
             field_names: Vec::new(),
-            current_index: 0,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn with_fields(fields: AHashMap<String, VBValue>) -> Self {
-        let field_names: Vec<String> = fields.keys().cloned().collect();
-        let eof = field_names.is_empty();
-        Recordset {
-            eof,
-            fields,
-            field_names,
             current_index: 0,
         }
     }

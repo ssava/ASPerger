@@ -3,7 +3,7 @@
 
 use super::vbobject::VBScriptObject;
 use std::sync::Arc;
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 #[derive(Debug)]
 pub enum VBValue {
@@ -12,7 +12,6 @@ pub enum VBValue {
     Boolean(bool),
     Null,
     Empty,
-    #[allow(dead_code)]
     Array(Arc<Vec<VBValue>>, Vec<usize>),
     Object(Box<dyn VBScriptObject>),
 }
@@ -66,35 +65,31 @@ impl fmt::Display for VBValue {
     }
 }
 
-/// Implements the `FromStr` trait to parse a string into a `VBValue`.
-impl FromStr for VBValue {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Trim whitespace and handle different types
-        let trimmed = s.trim();
-
-        if trimmed.eq_ignore_ascii_case("true") {
-            Ok(VBValue::Boolean(true))
-        } else if trimmed.eq_ignore_ascii_case("false") {
-            Ok(VBValue::Boolean(false))
-        } else if trimmed.eq_ignore_ascii_case("null") {
-            Ok(VBValue::Null)
-        } else if let Ok(num) = trimmed.parse::<f64>() {
-            // Parse as a number if possible
-            Ok(VBValue::Number(num))
-        } else if trimmed.starts_with('"') && trimmed.ends_with('"') {
-            // Parse as a string (remove surrounding quotes)
-            Ok(VBValue::String(trimmed[1..trimmed.len() - 1].to_string()))
-        } else {
-            Err(format!("Cannot interpret '{}' as a valid value", s))
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
+
+    impl FromStr for VBValue {
+        type Err = String;
+
+        fn from_str(s: &str) -> Result<Self, Self::Err> {
+            let trimmed = s.trim();
+            if trimmed.eq_ignore_ascii_case("true") {
+                Ok(VBValue::Boolean(true))
+            } else if trimmed.eq_ignore_ascii_case("false") {
+                Ok(VBValue::Boolean(false))
+            } else if trimmed.eq_ignore_ascii_case("null") {
+                Ok(VBValue::Null)
+            } else if let Ok(num) = trimmed.parse::<f64>() {
+                Ok(VBValue::Number(num))
+            } else if trimmed.starts_with('"') && trimmed.ends_with('"') {
+                Ok(VBValue::String(trimmed[1..trimmed.len() - 1].to_string()))
+            } else {
+                Err(format!("Cannot interpret '{}' as a valid value", s))
+            }
+        }
+    }
 
     #[test]
     fn test_vb_value_clone_string() {

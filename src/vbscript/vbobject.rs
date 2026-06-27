@@ -7,7 +7,6 @@ use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use ahash::AHashMap;
 
-#[allow(dead_code)]
 /// Trait for VBScript COM / intrinsic objects that can expose properties,
 /// methods, and indexed access to scripts.
 ///

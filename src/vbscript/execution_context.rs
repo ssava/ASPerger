@@ -84,18 +84,14 @@ pub enum ErrorMode {
 }
 
 /// Parsed definition of a VBScript `Property Get/Let/Set` block.
-#[allow(dead_code)]
 pub struct PropertyDef {
     pub name: String,
     pub get_body: Option<Vec<Vec<Token>>>,
     pub let_body: Option<Vec<Vec<Token>>>,
     pub let_param: Option<String>,
-    pub set_body: Option<Vec<Vec<Token>>>,
-    pub set_param: Option<String>,
 }
 
 /// Parsed definition of a `Sub` or `Function` method.
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct MethodDef {
     pub name: String,
@@ -105,7 +101,6 @@ pub struct MethodDef {
 }
 
 /// Parsed `Class` definition with its properties and methods.
-#[allow(dead_code)]
 pub struct ClassDefinition {
     pub name: String,
     pub properties: AHashMap<String, PropertyDef>,

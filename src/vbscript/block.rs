@@ -2210,15 +2210,7 @@ fn extract_properties_from_class_body(
                 let is_let = get_let_set
                     .map(|t| t.token_type == TokenType::Let || t.value.eq_ignore_ascii_case("let"))
                     .unwrap_or(false);
-                let is_set = get_let_set
-                    .map(|t| {
-                        t.token_type == TokenType::Set
-                            && t.token_type != TokenType::Get
-                            && t.token_type != TokenType::Let
-                    })
-                    .unwrap_or(false);
-
-                if is_get || is_let || is_set {
+                if is_get || is_let {
                     let name_tok = match name_tok {
                         Some(t) if t.token_type == TokenType::Identifier => t,
                         _ => {
@@ -2230,7 +2222,7 @@ fn extract_properties_from_class_body(
                     i += 1;
 
                     let mut param = None;
-                    if (is_let || is_set) && no_ws.len() > p_idx + 3 {
+                    if is_let && no_ws.len() > p_idx + 3 {
                         let paren_open = no_ws.get(p_idx + 3);
                         if paren_open
                             .map(|t| t.token_type == TokenType::LeftParen)
@@ -2280,8 +2272,6 @@ fn extract_properties_from_class_body(
                             get_body: None,
                             let_body: None,
                             let_param: None,
-                            set_body: None,
-                            set_param: None,
                         });
 
                     if is_get {
@@ -2289,9 +2279,6 @@ fn extract_properties_from_class_body(
                     } else if is_let {
                         entry.let_body = Some(body);
                         entry.let_param = param;
-                    } else if is_set {
-                        entry.set_body = Some(body);
-                        entry.set_param = param;
                     }
                     continue;
                 }

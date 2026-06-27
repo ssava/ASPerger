@@ -173,15 +173,6 @@ pub struct MatchObject {
 }
 
 impl MatchObject {
-    pub fn new(m: RegexMatch, _input: &str) -> Self {
-        MatchObject {
-            value: m.as_str().to_string(),
-            first_index: m.start(),
-            length: m.len(),
-            sub_matches: Vec::new(),
-        }
-    }
-
     pub fn with_submatches(m: RegexMatch, _input: &str, sub_matches: Vec<String>) -> Self {
         MatchObject {
             value: m.as_str().to_string(),
