@@ -93,13 +93,15 @@ pub struct CookieEntry {
 
 /// Response state accumulated during script execution.
 ///
-/// Written to by `Response.Write`, `Response.Redirect`, `Response.End`,
-/// and the cookie setters.  After the handler chain finishes, the server
-/// flattens this into an HTTP response line, headers, and body.
+/// Written to by `Response.Write`, `Response.BinaryWrite`, `Response.Redirect`,
+/// `Response.End`, and the cookie setters.  After the handler chain finishes,
+/// the server flattens this into an HTTP response line, headers, and body.
 #[derive(Default)]
 pub struct ResponseContext {
     /// Response body content built by `Response.Write` calls.
     pub buffer: String,
+    /// Binary content built by `Response.BinaryWrite` calls.
+    pub binary_buffer: Vec<u8>,
     /// HTTP status line (e.g. `"200 OK"`, `"302 Found"`).
     pub status: String,
     /// Extra headers to append to the response (e.g. `Set-Cookie`, `Location`).
@@ -118,6 +120,10 @@ pub struct ResponseContext {
 impl ResponseContext {
     pub fn write(&mut self, content: &str) {
         self.buffer.push_str(content);
+    }
+
+    pub fn write_binary(&mut self, data: &[u8]) {
+        self.binary_buffer.extend_from_slice(data);
     }
 
     pub fn flush_buffer(&mut self) {

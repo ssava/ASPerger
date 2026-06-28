@@ -92,6 +92,20 @@ fn try_property_indexed_access(
     Ok(None)
 }
 
+fn write_binary_value(value: &VBValue) -> Vec<u8> {
+    match value {
+        VBValue::Array(items, _dims) => {
+            items.iter().map(|v| match v {
+                VBValue::Number(n) => *n as u8,
+                VBValue::Boolean(b) => *b as u8,
+                other => other.to_string().as_bytes().first().copied().unwrap_or(0),
+            }).collect()
+        }
+        VBValue::Null | VBValue::Empty => Vec::new(),
+        other => other.to_string().into_bytes(),
+    }
+}
+
 impl VBSyntax for MethodCall {
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
         let args: Result<Vec<VBValue>, VBSError> =
@@ -132,6 +146,13 @@ impl VBSyntax for MethodCall {
                         let name = value_utils::to_arg_string(&args[0]);
                         let value = value_utils::to_arg_string(&args[1]);
                         context.response.extra_headers.push((name, value));
+                    }
+                    return Ok(());
+                }
+                "BINARYWRITE" => {
+                    if let Some(arg) = args.first() {
+                        let bytes = write_binary_value(arg);
+                        context.response.write_binary(&bytes);
                     }
                     return Ok(());
                 }

@@ -498,6 +498,28 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     }
 
     #[test]
+    fn test_asp_response_binarywrite_with_array() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("data = Array(72, 101, 108, 108, 111): Response.BinaryWrite data", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.response.binary_buffer, vec![72, 101, 108, 108, 111]);
+    }
+
+    #[test]
+    fn test_asp_response_binarywrite_with_string() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Response.BinaryWrite \"Hello\"", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.response.binary_buffer, b"Hello");
+    }
+
+    #[test]
     fn test_asp_response_ended() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);

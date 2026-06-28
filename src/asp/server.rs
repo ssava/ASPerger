@@ -516,7 +516,7 @@ impl AspServer {
         })
     }
 
-    fn build_http_response(context: &ExecutionContext, response_content: &str) -> HttpResponse {
+    fn build_http_response(context: &ExecutionContext, response_body: Vec<u8>) -> HttpResponse {
         if !context.response.redirect_url.is_empty() {
             HttpResponse {
                 status_line: "302 Found".to_string(),
@@ -528,7 +528,7 @@ impl AspServer {
             HttpResponse {
                 status_line: context.response.status.clone(),
                 content_type: "text/html".to_string(),
-                body: response_content.as_bytes().to_vec(),
+                body: response_body,
                 extra_headers: context.response.extra_headers.clone(),
             }
         }
@@ -697,7 +697,15 @@ impl AspServer {
             response_content = format!("{}{}", context.response.flushed, response_content);
         }
 
-        let response = Self::build_http_response(&context, &response_content);
+        let body = if context.response.binary_buffer.is_empty() {
+            response_content.into_bytes()
+        } else {
+            let mut bytes = response_content.into_bytes();
+            bytes.extend_from_slice(&context.response.binary_buffer);
+            bytes
+        };
+
+        let response = Self::build_http_response(&context, body);
         tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
         Ok(response)
     }
