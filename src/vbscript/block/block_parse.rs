@@ -1,239 +1,14 @@
-//! VBScript block / control-flow parsing and execution.
-//! Handles If/ElseIf/Else, For/While/Do loops, Select Case,
-//! With/End With, Class/Property definitions, Function/Sub declarations,
-//! and top-level statement dispatch.
-
-use super::execution_context::{ClassDefinition, ErrorMode, MethodDef, PropertyDef};
-use super::expr::{evaluate, parse_expression, BinOp, Expr};
-use super::syntax::{
+use super::block_exec::execute_user_defined_function;
+use super::block_types::{BlockStatement, CaseClause, ElseIfBlock};
+use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr};
+use crate::vbscript::syntax::{
     ArrayAssignment, Assignment, Const, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext,
     PropertySet, ReDim, ResponseCookiesSet, ResponseCookiesSetProp, ResponseWrite, VBSyntax,
 };
-use super::vbs_error::{VBSError, VBSErrorType};
-use super::{ExecutionContext, Token, TokenType, VBValue};
-use ahash::AHashMap;
+use crate::vbscript::vbs_error::{VBSError, VBSErrorType};
+use crate::vbscript::{ExecutionContext, Token, TokenType, VBValue};
 
-/// Parsed VBScript statement, produced by `parse_blocks`.
-///
-/// Each variant corresponds to a VBScript control-flow or declaration construct.
-/// The `line` field (present on all compound variants) stores the source line
-/// number used for debugger breakpoint matching.
-pub enum BlockStatement {
-    Syntax(Box<dyn VBSyntax>, usize),
-    Unrecognized(VBSError, String, usize),
-    If {
-        line: usize,
-        condition: Expr,
-        then_body: Vec<BlockStatement>,
-        else_if_blocks: Vec<ElseIfBlock>,
-        else_body: Option<Vec<BlockStatement>>,
-    },
-    For {
-        line: usize,
-        counter: String,
-        start: Expr,
-        end: Expr,
-        step: Option<Expr>,
-        body: Vec<BlockStatement>,
-    },
-    While {
-        line: usize,
-        condition: Expr,
-        body: Vec<BlockStatement>,
-    },
-    Do {
-        line: usize,
-        body: Vec<BlockStatement>,
-        condition: Option<Expr>,
-        is_until: bool,
-        is_post_test: bool,
-    },
-    ForEach {
-        line: usize,
-        element: String,
-        group: Expr,
-        body: Vec<BlockStatement>,
-    },
-    FunctionDef {
-        line: usize,
-        name: String,
-        params: Vec<String>,
-        body_lines: Vec<Vec<Token>>,
-    },
-    SubDef {
-        line: usize,
-        name: String,
-        params: Vec<String>,
-        body_lines: Vec<Vec<Token>>,
-    },
-    SelectCase {
-        line: usize,
-        expression: Expr,
-        cases: Vec<CaseClause>,
-        else_body: Option<Vec<BlockStatement>>,
-    },
-    ClassDef {
-        line: usize,
-        name: String,
-        body_lines: Vec<Vec<Token>>,
-    },
-    With {
-        line: usize,
-        object: Expr,
-        body: Vec<BlockStatement>,
-    },
-    ExitFor(usize),
-    ExitDo(usize),
-    ExitFunction(usize),
-    ExitSub(usize),
-}
-
-impl Clone for BlockStatement {
-    fn clone(&self) -> Self {
-        match self {
-            BlockStatement::Syntax(s, line) => BlockStatement::Syntax(s.clone_box(), *line),
-            BlockStatement::Unrecognized(err, s, line) => BlockStatement::Unrecognized(err.clone(), s.clone(), *line),
-            BlockStatement::If { line, condition, then_body, else_if_blocks, else_body } => {
-                BlockStatement::If {
-                    line: *line,
-                    condition: condition.clone(),
-                    then_body: then_body.clone(),
-                    else_if_blocks: else_if_blocks.clone(),
-                    else_body: else_body.clone(),
-                }
-            }
-            BlockStatement::For { line, counter, start, end, step, body } => {
-                BlockStatement::For {
-                    line: *line,
-                    counter: counter.clone(),
-                    start: start.clone(),
-                    end: end.clone(),
-                    step: step.clone(),
-                    body: body.clone(),
-                }
-            }
-            BlockStatement::While { line, condition, body } => {
-                BlockStatement::While {
-                    line: *line,
-                    condition: condition.clone(),
-                    body: body.clone(),
-                }
-            }
-            BlockStatement::Do { line, body, condition, is_until, is_post_test } => {
-                BlockStatement::Do {
-                    line: *line,
-                    body: body.clone(),
-                    condition: condition.clone(),
-                    is_until: *is_until,
-                    is_post_test: *is_post_test,
-                }
-            }
-            BlockStatement::ForEach { line, element, group, body } => {
-                BlockStatement::ForEach {
-                    line: *line,
-                    element: element.clone(),
-                    group: group.clone(),
-                    body: body.clone(),
-                }
-            }
-            BlockStatement::FunctionDef { line, name, params, body_lines } => {
-                BlockStatement::FunctionDef {
-                    line: *line,
-                    name: name.clone(),
-                    params: params.clone(),
-                    body_lines: body_lines.clone(),
-                }
-            }
-            BlockStatement::SubDef { line, name, params, body_lines } => {
-                BlockStatement::SubDef {
-                    line: *line,
-                    name: name.clone(),
-                    params: params.clone(),
-                    body_lines: body_lines.clone(),
-                }
-            }
-            BlockStatement::SelectCase { line, expression, cases, else_body } => {
-                BlockStatement::SelectCase {
-                    line: *line,
-                    expression: expression.clone(),
-                    cases: cases.clone(),
-                    else_body: else_body.clone(),
-                }
-            }
-            BlockStatement::ClassDef { line, name, body_lines } => {
-                BlockStatement::ClassDef {
-                    line: *line,
-                    name: name.clone(),
-                    body_lines: body_lines.clone(),
-                }
-            }
-            BlockStatement::With { line, object, body } => {
-                BlockStatement::With {
-                    line: *line,
-                    object: object.clone(),
-                    body: body.clone(),
-                }
-            }
-            BlockStatement::ExitFor(l) => BlockStatement::ExitFor(*l),
-            BlockStatement::ExitDo(l) => BlockStatement::ExitDo(*l),
-            BlockStatement::ExitFunction(l) => BlockStatement::ExitFunction(*l),
-            BlockStatement::ExitSub(l) => BlockStatement::ExitSub(*l),
-        }
-    }
-}
-
-/// A single `ElseIf condition Then` clause inside an `If` block.
-#[derive(Clone)]
-pub struct ElseIfBlock {
-    pub condition: Expr,
-    pub body: Vec<BlockStatement>,
-}
-
-/// A single `Case values` clause inside a `Select Case` block.
-/// `Case Is operator value` is encoded as `Expr::CaseComparison`.
-#[derive(Clone)]
-pub struct CaseClause {
-    pub values: Vec<Expr>,
-    pub body: Vec<BlockStatement>,
-}
-
-impl BlockStatement {
-    pub fn line(&self) -> usize {
-        match self {
-            BlockStatement::Syntax(_, l) => *l,
-            BlockStatement::Unrecognized(_, _, l) => *l,
-            BlockStatement::If { line: l, .. } => *l,
-            BlockStatement::For { line: l, .. } => *l,
-            BlockStatement::While { line: l, .. } => *l,
-            BlockStatement::Do { line: l, .. } => *l,
-            BlockStatement::ForEach { line: l, .. } => *l,
-            BlockStatement::FunctionDef { line: l, .. } => *l,
-            BlockStatement::SubDef { line: l, .. } => *l,
-            BlockStatement::SelectCase { line: l, .. } => *l,
-            BlockStatement::ClassDef { line: l, .. } => *l,
-            BlockStatement::With { line: l, .. } => *l,
-            BlockStatement::ExitFor(l) => *l,
-            BlockStatement::ExitDo(l) => *l,
-            BlockStatement::ExitFunction(l) => *l,
-            BlockStatement::ExitSub(l) => *l,
-        }
-    }
-}
-
-/// A user-defined `Sub` or `Function` parsed from source.
-///
-/// Function bodies are stored as raw token lines so they can be re-parsed
-/// into `BlockStatement`s on each call (VBScript allows redefinition).
-/// The cached parsed bodies are stored separately in `ExecutionContext::function_bodies`.
-#[derive(Clone)]
-pub struct UserDefinedFunction {
-    pub name: String,
-    pub params: Vec<String>,
-    pub body_lines: Vec<Vec<Token>>,
-    pub is_function: bool,
-}
-
-fn first_non_ws(tokens: &[Token]) -> Option<&Token> {
+pub(crate) fn first_non_ws(tokens: &[Token]) -> Option<&Token> {
     tokens
         .iter()
         .find(|t| t.token_type != TokenType::WhiteSpace)
@@ -250,8 +25,6 @@ fn find_keyword_or_type(tokens: &[Token], keyword: &str, token_type: TokenType) 
     })
 }
 
-// ===== Line-level parsing (migrated from VBScriptInterpreter) =====
-
 fn tokens_to_string(tokens: &[Token]) -> String {
     tokens
         .iter()
@@ -260,8 +33,9 @@ fn tokens_to_string(tokens: &[Token]) -> String {
         .join(" ")
 }
 
-#[allow(clippy::type_complexity)]
-fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>>)>, VBSError> {
+type DimDeclarations = Vec<(String, Option<Vec<Expr>>)>;
+
+fn parse_dim_statement(tokens: &[Token]) -> Result<DimDeclarations, VBSError> {
     let mut var_names = Vec::new();
     let mut i = 1;
 
@@ -284,7 +58,6 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>
         }
         let dims = if i < tokens.len() && tokens[i].token_type == TokenType::LeftParen {
             i += 1;
-            // Collect tokens until matching RightParen
             let paren_start = i;
             let mut depth = 1;
             while i < tokens.len() && depth > 0 {
@@ -306,7 +79,7 @@ fn parse_dim_statement(tokens: &[Token]) -> Result<Vec<(String, Option<Vec<Expr>
                 .filter(|t| t.token_type != TokenType::WhiteSpace)
                 .cloned()
                 .collect();
-            i += 1; // skip RightParen
+            i += 1;
 
             if inner_tokens.is_empty() {
                 Some(Vec::new())
@@ -429,7 +202,6 @@ fn parse_redim_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError
         i += 1;
     }
 
-    // Check for Preserve
     let preserve = if i < tokens.len() && tokens[i].token_type == TokenType::Preserve {
         i += 1;
         while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
@@ -536,37 +308,57 @@ fn parse_comma_args(tokens: &[Token]) -> Result<Vec<Expr>, VBSError> {
     Ok(args)
 }
 
-/// Disambiguate an ambiguous token sequence into one of several syntax node types.
-///
-/// Tries patterns in order of specificity:
-///  1. Response.Write(expr)
-///  2. Response.Cookies("key") = value
-///  3. var = expr           (assignment)
-///  4. arr(idx) = expr      (array element assignment)
-///  5. obj.Property = expr  (property set)
-///  6. obj.Method(args)     (method call)
-///  7. .Property = value    (With-block property set)
-///  8. .Method(args)        (With-block method call)
-fn try_parse_response_method(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
-    if non_ws.len() < 3 || !non_ws[0].value.eq_ignore_ascii_case("response") || non_ws[1].token_type != TokenType::Dot {
+fn try_parse_response_method(
+    tokens: &[Token],
+    non_ws: &[&Token],
+) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() < 3
+        || !non_ws[0].value.eq_ignore_ascii_case("response")
+        || non_ws[1].token_type != TokenType::Dot
+    {
         return None;
     }
     let method_name = non_ws[2].value.to_string();
     let method_upper = method_name.to_uppercase();
     if method_upper == "END" || method_upper == "CLEAR" || method_upper == "FLUSH" {
-        return Some(Ok(Box::new(MethodCall::new("response".to_string(), method_name, Vec::new()))));
+        return Some(Ok(Box::new(MethodCall::new(
+            "response".to_string(),
+            method_name,
+            Vec::new(),
+        ))));
     }
     if method_upper == "ADDHEADER" || method_upper == "REDIRECT" {
-        let arg_tokens: Vec<Token> = tokens.iter()
-            .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case(&method_name)))
-            .skip(1).filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
-        let args = if arg_tokens.is_empty() { Vec::new() } else { match parse_comma_args(&arg_tokens) { Ok(a) => a, Err(e) => return Some(Err(e)) } };
-        return Some(Ok(Box::new(MethodCall::new("response".to_string(), method_name, args))));
+        let arg_tokens: Vec<Token> = tokens
+            .iter()
+            .skip_while(|t| {
+                !(t.token_type == TokenType::Identifier
+                    && t.value.eq_ignore_ascii_case(&method_name))
+            })
+            .skip(1)
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .cloned()
+            .collect();
+        let args = if arg_tokens.is_empty() {
+            Vec::new()
+        } else {
+            match parse_comma_args(&arg_tokens) {
+                Ok(a) => a,
+                Err(e) => return Some(Err(e)),
+            }
+        };
+        return Some(Ok(Box::new(MethodCall::new(
+            "response".to_string(),
+            method_name,
+            args,
+        ))));
     }
     None
 }
 
-fn try_parse_response_write(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+fn try_parse_response_write(
+    tokens: &[Token],
+    non_ws: &[&Token],
+) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
     if non_ws.len() < 3
         || !non_ws[0].value.eq_ignore_ascii_case("response")
         || non_ws[1].token_type != TokenType::Dot
@@ -581,7 +373,10 @@ fn try_parse_response_write(tokens: &[Token], non_ws: &[&Token]) -> Option<Resul
             found_write = true;
             continue;
         }
-        if found_write { expr_start = i; break; }
+        if found_write {
+            expr_start = i;
+            break;
+        }
     }
     let expr = if expr_start < tokens.len() {
         parse_expression(&tokens[expr_start..])
@@ -591,7 +386,10 @@ fn try_parse_response_write(tokens: &[Token], non_ws: &[&Token]) -> Option<Resul
     Some(expr.map(|e| Box::new(ResponseWrite::new(e)) as Box<dyn VBSyntax>))
 }
 
-fn try_parse_response_cookies(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+fn try_parse_response_cookies(
+    tokens: &[Token],
+    non_ws: &[&Token],
+) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
     if non_ws.len() < 7
         || !non_ws[0].value.eq_ignore_ascii_case("response")
         || non_ws[1].token_type != TokenType::Dot
@@ -601,7 +399,10 @@ fn try_parse_response_cookies(tokens: &[Token], non_ws: &[&Token]) -> Option<Res
         return None;
     }
     let mut i = 0;
-    while i < tokens.len() && !(tokens[i].token_type == TokenType::Identifier && tokens[i].value.eq_ignore_ascii_case("cookies")) {
+    while i < tokens.len()
+        && !(tokens[i].token_type == TokenType::Identifier
+            && tokens[i].value.eq_ignore_ascii_case("cookies"))
+    {
         i += 1;
     }
     i += 1;
@@ -610,66 +411,122 @@ fn try_parse_response_cookies(tokens: &[Token], non_ws: &[&Token]) -> Option<Res
     while i < tokens.len() && depth > 0 {
         i += 1;
         if i < tokens.len() {
-            if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
-            else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
+            if tokens[i].token_type == TokenType::LeftParen {
+                depth += 1;
+            } else if tokens[i].token_type == TokenType::RightParen {
+                depth -= 1;
+            }
         }
     }
     let key_expr = match parse_expression(&tokens[paren_start..i]) {
-        Ok(e) => e, Err(e) => return Some(Err(e)),
+        Ok(e) => e,
+        Err(e) => return Some(Err(e)),
     };
     i += 1;
-    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+        i += 1;
+    }
     if i < tokens.len() && tokens[i].token_type == TokenType::Dot {
         i += 1;
-        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+            i += 1;
+        }
         if i < tokens.len() && tokens[i].token_type == TokenType::Identifier {
             let property_name = tokens[i].value.to_string();
             i += 1;
-            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
+                i += 1;
+            }
             if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
                 i += 1;
-                return Some(parse_expression(&tokens[i..]).map(|v| Box::new(ResponseCookiesSetProp::new(key_expr, property_name, v)) as Box<dyn VBSyntax>));
+                return Some(parse_expression(&tokens[i..]).map(|v| {
+                    Box::new(ResponseCookiesSetProp::new(key_expr, property_name, v))
+                        as Box<dyn VBSyntax>
+                }));
             }
         }
     }
     if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
         i += 1;
-        return Some(parse_expression(&tokens[i..]).map(|v| Box::new(ResponseCookiesSet::new(key_expr, v)) as Box<dyn VBSyntax>));
+        return Some(
+            parse_expression(&tokens[i..])
+                .map(|v| Box::new(ResponseCookiesSet::new(key_expr, v)) as Box<dyn VBSyntax>),
+        );
     }
-    Some(Err(VBSErrorType::SyntaxError.into_error("Invalid Response.Cookies syntax".to_string())))
+    Some(Err(
+        VBSErrorType::SyntaxError.into_error("Invalid Response.Cookies syntax".to_string()),
+    ))
 }
 
-fn try_parse_call_statement(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
-    if non_ws.len() >= 2 && non_ws[0].token_type == TokenType::Identifier && non_ws[1].token_type != TokenType::Assign && non_ws[1].token_type != TokenType::Dot {
+fn try_parse_call_statement(
+    tokens: &[Token],
+    non_ws: &[&Token],
+) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type != TokenType::Assign
+        && non_ws[1].token_type != TokenType::Dot
+    {
         let name = non_ws[0].value.to_string();
         if !tokens.iter().any(|t| t.token_type == TokenType::Assign) {
-            let name_pos = tokens.iter().position(|t| t.token_type == TokenType::Identifier && t.value.as_ref() == name).unwrap_or(0);
+            let name_pos = tokens
+                .iter()
+                .position(|t| t.token_type == TokenType::Identifier && t.value.as_ref() == name)
+                .unwrap_or(0);
             let arg_tokens = &tokens[name_pos + 1..];
-            let filtered: Vec<Token> = arg_tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
-            let args = if filtered.is_empty() { Vec::new() } else { match parse_comma_args(&filtered) { Ok(a) => a, Err(e) => return Some(Err(e)) } };
+            let filtered: Vec<Token> = arg_tokens
+                .iter()
+                .filter(|t| t.token_type != TokenType::WhiteSpace)
+                .cloned()
+                .collect();
+            let args = if filtered.is_empty() {
+                Vec::new()
+            } else {
+                match parse_comma_args(&filtered) {
+                    Ok(a) => a,
+                    Err(e) => return Some(Err(e)),
+                }
+            };
             return Some(Ok(Box::new(CallStatement::new(name, args))));
         }
     }
-    if non_ws.len() >= 2 && non_ws[0].token_type == TokenType::Identifier && non_ws[1].token_type == TokenType::LeftParen {
+    if non_ws.len() >= 2
+        && non_ws[0].token_type == TokenType::Identifier
+        && non_ws[1].token_type == TokenType::LeftParen
+    {
         let name = non_ws[0].value.to_string();
         let mut i = 0;
-        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen { i += 1; }
+        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
+            i += 1;
+        }
         if i < tokens.len() {
             i += 1;
             let paren_start = i;
             let mut depth = 1;
             while i < tokens.len() && depth > 0 {
-                if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
-                else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
-                if depth > 0 { i += 1; }
+                if tokens[i].token_type == TokenType::LeftParen {
+                    depth += 1;
+                } else if tokens[i].token_type == TokenType::RightParen {
+                    depth -= 1;
+                }
+                if depth > 0 {
+                    i += 1;
+                }
             }
             let arg_expr = match parse_expression(&tokens[paren_start..i]) {
-                Ok(e) => e, Err(e) => return Some(Err(e)),
+                Ok(e) => e,
+                Err(e) => return Some(Err(e)),
             };
             return Some(match arg_expr {
-                Expr::FunctionCall { ref name, ref args } => Ok(Box::new(CallStatement::new(name.clone(), args.clone()))),
+                Expr::FunctionCall { ref name, ref args } => {
+                    Ok(Box::new(CallStatement::new(name.clone(), args.clone())))
+                }
                 _ => {
-                    let args = if paren_start < i { parse_comma_args(&tokens[paren_start..i]) } else { Ok(Vec::new()) };
+                    let args = if paren_start < i {
+                        parse_comma_args(&tokens[paren_start..i])
+                    } else {
+                        Ok(Vec::new())
+                    };
                     args.map(|a| Box::new(CallStatement::new(name, a)) as Box<dyn VBSyntax>)
                 }
             });
@@ -694,7 +551,6 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return result;
     }
 
-    // var = expr (bare assignment, no Set keyword)
     if non_ws.len() >= 2
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Assign
@@ -708,7 +564,6 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(Assignment::new(var_name, expr)));
     }
 
-    // 4. arr(idx) = expr (array element assignment)
     if non_ws.len() >= 4
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::LeftParen
@@ -771,12 +626,9 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         }
         i += 1;
         let value_expr = parse_expression(&tokens[i..])?;
-        return Ok(Box::new(ArrayAssignment::new(
-            var_name, index_exprs, value_expr,
-        )));
+        return Ok(Box::new(ArrayAssignment::new(var_name, index_exprs, value_expr)));
     }
 
-    // obj.Property = expr (property set)
     if non_ws.len() >= 4
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Dot
@@ -797,7 +649,6 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         )));
     }
 
-    // obj.Method arg1, arg2, ... (method call)
     if non_ws.len() >= 3
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Dot
@@ -816,7 +667,6 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         return Ok(Box::new(MethodCall::new(object_name, method_name, args)));
     }
 
-    // With-block: .Property = value (property set)
     if non_ws.len() >= 3
         && non_ws[0].token_type == TokenType::Dot
         && non_ws[1].token_type == TokenType::Identifier
@@ -835,7 +685,6 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         )));
     }
 
-    // With-block: .Method arg1, arg2, ... (method call)
     if non_ws.len() >= 2
         && non_ws[0].token_type == TokenType::Dot
         && non_ws[1].token_type == TokenType::Identifier
@@ -844,7 +693,8 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         let remaining: Vec<Token> = tokens
             .iter()
             .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .skip(2).cloned()
+            .skip(2)
+            .cloned()
             .collect();
         let args = if remaining.is_empty() {
             Vec::new()
@@ -897,10 +747,6 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         _ => parse_expression_or_assignment(tokens),
     }
 }
-
-// ===== Token-to-Expr helpers =====
-
-// ===== Function/Sub parsing =====
 
 fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatement, VBSError> {
     let line = &lines[*pos];
@@ -987,15 +833,10 @@ fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStat
     }
 }
 
-// ===== Select Case parsing =====
-
-/// Parse a single Case value expression, handling `Is <op> expr` syntax.
 fn parse_case_value(tokens: &[Token]) -> Result<Expr, VBSError> {
-    if tokens.len() >= 3
-        && tokens[0].token_type == TokenType::Is
-    {
+    if tokens.len() >= 3 && tokens[0].token_type == TokenType::Is {
         let op_token = &tokens[1];
-        if let Some(op) = super::expr::token_to_binop(op_token) {
+        if let Some(op) = crate::vbscript::expr::token_to_binop(op_token) {
             if matches!(
                 op,
                 BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge
@@ -1193,8 +1034,6 @@ fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
                 *pos += 1;
             }
             Some(t) if t.token_type == TokenType::Public || t.token_type == TokenType::Private => {
-                // Check if followed by Property or Class — need depth tracking
-                // for End Property / End Class matching
                 let second = next_line
                     .iter()
                     .skip_while(|t| t.token_type == TokenType::WhiteSpace)
@@ -1222,9 +1061,6 @@ fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
     })
 }
 
-// ===== Block parsing =====
-
-/// Parse a sequence of tokenized lines into a tree of `BlockStatement` nodes.
 pub fn parse_blocks(lines: &[Vec<Token>]) -> Result<Vec<BlockStatement>, VBSError> {
     let mut pos = 0;
     parse_blocks_inner(lines, &mut pos)
@@ -1287,7 +1123,6 @@ fn parse_blocks_inner(
                 blocks.push(parse_exit_statement(lines, pos)?);
             }
             _ => {
-                // Skip comment lines
                 if line.iter().any(|t| {
                     t.token_type == TokenType::Comment
                         || (t.token_type == TokenType::Identifier
@@ -1336,11 +1171,15 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
         let line_text = tokens_to_string(&inline_tokens);
         let syntax = match parse_line_into_syntax(&inline_tokens) {
             Ok(s) => s,
-            Err(e) => {
+            Err(_) => {
                 return Ok(BlockStatement::If {
                     line: line_num,
                     condition,
-                    then_body: vec![BlockStatement::Unrecognized(e, line_text, line_num)],
+                    then_body: vec![BlockStatement::Unrecognized(
+                        VBSErrorType::SyntaxError.into_error(line_text.clone()),
+                        line_text,
+                        line_num,
+                    )],
                     else_if_blocks: Vec::new(),
                     else_body: None,
                 })
@@ -1771,7 +1610,6 @@ fn parse_with_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatem
                         break;
                     }
                 }
-                // Not End With; skip line to avoid infinite loop
                 *pos += 1;
             }
             _ => {
@@ -1813,97 +1651,6 @@ fn parse_exit_statement(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockSt
         _ => Err(VBSErrorType::SyntaxError
             .into_error(format!("Invalid Exit statement: Exit {}", exit_type))),
     }
-}
-
-// ===== Execution =====
-
-/// Fast-path: evaluate a simple `Variable <op> Literal` condition using native f64 ops.
-/// Returns `None` if the condition doesn't match the simple pattern.
-fn try_fast_condition(expr: &Expr, context: &mut ExecutionContext) -> Option<Result<bool, VBSError>> {
-    use std::cmp::Ordering;
-    let (var_name, lit_val, op, swap) = match expr {
-        Expr::BinaryOp { left, op, right } => {
-            match (left.as_ref(), right.as_ref()) {
-                (Expr::Variable(v), Expr::Literal(VBValue::Number(n))) => {
-                    (v.clone(), *n, op, false)
-                }
-                (Expr::Literal(VBValue::Number(n)), Expr::Variable(v)) => {
-                    (v.clone(), *n, op, true)
-                }
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
-    let var_val = match context.get_variable(&var_name) {
-        Some(VBValue::Number(n)) => *n,
-        Some(VBValue::Empty | VBValue::Null) => 0.0,
-        _ => return None,
-    };
-    let cmp = if var_val < lit_val {
-        Ordering::Less
-    } else if var_val > lit_val {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
-    };
-    let result = if swap {
-        match op {
-            BinOp::Eq => cmp == Ordering::Equal,
-            BinOp::Ne => cmp != Ordering::Equal,
-            BinOp::Le => cmp != Ordering::Less,
-            BinOp::Ge => cmp != Ordering::Greater,
-            BinOp::Lt => cmp == Ordering::Greater,
-            BinOp::Gt => cmp == Ordering::Less,
-            _ => return None,
-        }
-    } else {
-        match op {
-            BinOp::Eq => cmp == Ordering::Equal,
-            BinOp::Ne => cmp != Ordering::Equal,
-            BinOp::Le => cmp != Ordering::Greater,
-            BinOp::Ge => cmp != Ordering::Less,
-            BinOp::Lt => cmp == Ordering::Less,
-            BinOp::Gt => cmp == Ordering::Greater,
-            _ => return None,
-        }
-    };
-    Some(Ok(result))
-}
-
-fn evaluate_condition(expr: &Expr, context: &mut ExecutionContext) -> Result<bool, VBSError> {
-    // Try fast path for simple variable <op> literal comparisons
-    if let Some(result) = try_fast_condition(expr, context) {
-        return result;
-    }
-    let val = evaluate(expr, context)?;
-    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
-        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
-    }
-    Ok(match val {
-        VBValue::Boolean(b) => b,
-        VBValue::Number(n) => n != 0.0,
-        VBValue::String(s) => !s.is_empty(),
-        VBValue::Null | VBValue::Empty => false,
-        VBValue::Array(..) => unreachable!(),
-        VBValue::Object(_) => unreachable!(),
-    })
-}
-
-fn evaluate_numeric(expr: &Expr, context: &mut ExecutionContext) -> Result<f64, VBSError> {
-    let val = evaluate(expr, context)?;
-    if matches!(val, VBValue::Array(..) | VBValue::Object(_)) {
-        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
-    }
-    Ok(match val {
-        VBValue::Number(n) => n,
-        VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        VBValue::Boolean(true) => -1.0,
-        VBValue::Boolean(false) => 0.0,
-        VBValue::Null | VBValue::Empty => 0.0,
-        VBValue::Array(..) => unreachable!(),
-        VBValue::Object(_) => unreachable!(),
-    })
 }
 
 #[derive(Clone)]
@@ -2019,7 +1766,8 @@ fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError>
         .iter()
         .skip_while(|t| {
             t.token_type == TokenType::WhiteSpace
-                || (t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case("call"))
+                || (t.token_type == TokenType::Identifier
+                    && t.value.eq_ignore_ascii_case("call"))
         })
         .cloned()
         .collect();
@@ -2027,12 +1775,21 @@ fn parse_call_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError>
     let expr = parse_expression(&rest)?;
     match expr {
         Expr::FunctionCall { name, args } => Ok(Box::new(CallStatement::new(name, args))),
-        Expr::MethodCall { ref object, ref method, ref args } => {
+        Expr::MethodCall {
+            ref object,
+            ref method,
+            ref args,
+        } => {
             let object_name = expr_to_object_name(object).ok_or_else(|| {
-                VBSErrorType::SyntaxError
-                    .into_error("Invalid Call statement: unsupported object expression".to_string())
+                VBSErrorType::SyntaxError.into_error(
+                    "Invalid Call statement: unsupported object expression".to_string(),
+                )
             })?;
-            Ok(Box::new(MethodCall::new(object_name, method.clone(), args.clone())))
+            Ok(Box::new(MethodCall::new(
+                object_name,
+                method.clone(),
+                args.clone(),
+            )))
         }
         _ => Err(VBSErrorType::SyntaxError
             .into_error("Invalid Call statement: expected function call".to_string())),
@@ -2065,611 +1822,4 @@ fn parse_on_error_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSEr
         "Invalid On Error statement: {}",
         tokens_to_string(tokens)
     )))
-}
-
-pub(crate) fn execute_user_defined_function(
-    func: &UserDefinedFunction,
-    args: &[VBValue],
-    context: &mut ExecutionContext,
-) -> Result<VBValue, VBSError> {
-    // Push stack frame for debugger
-    if let Some(ref debugger) = context.debugger {
-        let vars: AHashMap<String, VBValue> = func
-            .params
-            .iter()
-            .enumerate()
-            .map(|(i, p)| (p.to_lowercase(), args.get(i).cloned().unwrap_or(VBValue::Empty)))
-            .collect();
-        debugger.push_frame(&func.name, &context.script_path, 0, vars);
-    }
-
-    for (i, param) in func.params.iter().enumerate() {
-        let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
-        context.set_variable(param, val);
-    }
-
-    if func.is_function {
-        context.set_variable(&func.name, VBValue::Empty);
-    }
-
-    let _guard = crate::vbscript::execution_context::CodeStartLineGuard::new(&mut context.code_start_line);
-
-    let body_blocks = match context.get_function_body(&func.name) {
-        Some(cached) => cached.clone(),
-        None => {
-            let blocks = parse_blocks(&func.body_lines)?;
-            let name = func.name.clone();
-            context.set_function_body(&name, blocks.clone());
-            blocks
-        }
-    };
-    match execute_blocks(&body_blocks, context) {
-        Ok(()) => {}
-        Err(e) if e.is_exit_function() || e.is_exit_sub() => {}
-        Err(e) => return Err(e),
-    }
-
-    // Pop stack frame for debugger
-    if let Some(ref debugger) = context.debugger {
-        debugger.pop_frame();
-    }
-
-    if func.is_function {
-        Ok(context
-            .get_variable(&func.name)
-            .cloned()
-            .unwrap_or(VBValue::Empty))
-    } else {
-        Ok(VBValue::Empty)
-    }
-}
-
-fn extract_properties_from_class_body(
-    body_lines: &[Vec<Token>],
-) -> Result<AHashMap<String, PropertyDef>, VBSError> {
-    let mut properties: AHashMap<String, PropertyDef> = AHashMap::new();
-    let mut i = 0;
-
-    while i < body_lines.len() {
-        let line = &body_lines[i];
-        let no_ws: Vec<&Token> = line
-            .iter()
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .collect();
-
-        if no_ws.is_empty()
-            || (no_ws[0].token_type == TokenType::Public
-                || no_ws[0].token_type == TokenType::Private)
-        {
-            let property_idx = no_ws
-                .iter()
-                .position(|t| t.token_type == TokenType::Property);
-            if let Some(p_idx) = property_idx {
-                let get_let_set = no_ws.get(p_idx + 1);
-                let name_tok = no_ws.get(p_idx + 2);
-                let is_get = get_let_set
-                    .map(|t| t.token_type == TokenType::Get || t.value.eq_ignore_ascii_case("get"))
-                    .unwrap_or(false);
-                let is_let = get_let_set
-                    .map(|t| t.token_type == TokenType::Let || t.value.eq_ignore_ascii_case("let"))
-                    .unwrap_or(false);
-                if is_get || is_let {
-                    let name_tok = match name_tok {
-                        Some(t) if t.token_type == TokenType::Identifier => t,
-                        _ => {
-                            i += 1;
-                            continue;
-                        }
-                    };
-                    let prop_name = name_tok.value.to_lowercase();
-                    i += 1;
-
-                    let mut param = None;
-                    if is_let && no_ws.len() > p_idx + 3 {
-                        let paren_open = no_ws.get(p_idx + 3);
-                        if paren_open
-                            .map(|t| t.token_type == TokenType::LeftParen)
-                            .unwrap_or(false)
-                        {
-                            if let Some(param_tok) = no_ws.get(p_idx + 4) {
-                                if param_tok.token_type == TokenType::Identifier {
-                                    param = Some(param_tok.value.to_lowercase());
-                                }
-                            }
-                        }
-                    }
-
-                    let mut body: Vec<Vec<Token>> = Vec::new();
-                    loop {
-                        if i >= body_lines.len() {
-                            return Err(VBSErrorType::SyntaxError
-                                .into_error("Property without End Property".to_string()));
-                        }
-                        let bline = &body_lines[i];
-                        let first = first_non_ws(bline);
-                        if let Some(f) = first {
-                            if f.token_type == TokenType::End {
-                                let second = bline
-                                    .iter()
-                                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
-                                    .skip(1)
-                                    .find(|t| t.token_type != TokenType::WhiteSpace);
-                                if let Some(s) = second {
-                                    if s.value.eq_ignore_ascii_case("property")
-                                        || s.token_type == TokenType::Property
-                                    {
-                                        i += 1;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                        body.push(bline.clone());
-                        i += 1;
-                    }
-
-                    let entry = properties
-                        .entry(prop_name.clone())
-                        .or_insert(PropertyDef {
-                            name: prop_name.clone(),
-                            get_body: None,
-                            let_body: None,
-                            let_param: None,
-                        });
-
-                    if is_get {
-                        entry.get_body = Some(body);
-                    } else if is_let {
-                        entry.let_body = Some(body);
-                        entry.let_param = param;
-                    }
-                    continue;
-                }
-            }
-        }
-        i += 1;
-    }
-
-    Ok(properties)
-}
-
-fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String, MethodDef> {
-    let mut methods: AHashMap<String, MethodDef> = AHashMap::new();
-    let mut i = 0;
-
-    while i < body_lines.len() {
-        let line = &body_lines[i];
-        let no_ws: Vec<&Token> = line
-            .iter()
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .collect();
-
-        if no_ws.is_empty() {
-            i += 1;
-            continue;
-        }
-
-        let start_idx = if no_ws[0].token_type == TokenType::Public
-            || no_ws[0].token_type == TokenType::Private
-        {
-            if no_ws.len() < 2 {
-                i += 1;
-                continue;
-            }
-            1
-        } else {
-            0
-        };
-
-        let is_func = no_ws[start_idx].token_type == TokenType::Function
-            || no_ws[start_idx].value.eq_ignore_ascii_case("function");
-        let is_sub = no_ws[start_idx].token_type == TokenType::Sub
-            || no_ws[start_idx].value.eq_ignore_ascii_case("sub");
-
-        if !is_func && !is_sub {
-            i += 1;
-            continue;
-        }
-
-        let name_idx = start_idx + 1;
-        if name_idx >= no_ws.len() || no_ws[name_idx].token_type != TokenType::Identifier {
-            i += 1;
-            continue;
-        }
-        let method_name = no_ws[name_idx].value.to_lowercase();
-
-        let mut params = Vec::new();
-        if no_ws.len() > name_idx + 1 && no_ws[name_idx + 1].token_type == TokenType::LeftParen {
-            let mut p = name_idx + 2;
-            while p < no_ws.len() && no_ws[p].token_type != TokenType::RightParen {
-                if no_ws[p].token_type == TokenType::Identifier {
-                    params.push(no_ws[p].value.to_lowercase());
-                }
-                p += 1;
-            }
-        }
-
-        i += 1;
-        let mut body: Vec<Vec<Token>> = Vec::new();
-
-        loop {
-            if i >= body_lines.len() {
-                break;
-            }
-            let bline = &body_lines[i];
-            let first = first_non_ws(bline);
-            if let Some(f) = first {
-                if f.token_type == TokenType::End {
-                    let second = bline
-                        .iter()
-                        .skip_while(|t| t.token_type == TokenType::WhiteSpace)
-                        .skip(1)
-                        .find(|t| t.token_type != TokenType::WhiteSpace);
-                    if let Some(s) = second {
-                        if (is_func
-                            && (s.value.eq_ignore_ascii_case("function")
-                                || s.token_type == TokenType::Function))
-                            || (is_sub
-                                && (s.value.eq_ignore_ascii_case("sub")
-                                    || s.token_type == TokenType::Sub))
-                        {
-                            i += 1;
-                            break;
-                        }
-                    }
-                }
-            }
-            body.push(bline.clone());
-            i += 1;
-        }
-
-        let key = method_name.to_uppercase();
-        if !methods.contains_key(&key) {
-            methods.insert(
-                key,
-                MethodDef {
-                    name: method_name,
-                    params,
-                    body_lines: body,
-                    is_function: is_func,
-                },
-            );
-        }
-    }
-
-    methods
-}
-
-/// Execute a slice of `BlockStatement` nodes in order, handling control flow
-/// (Exit For/Do/Function/Sub) and debugger hooks.
-pub fn execute_blocks(
-    blocks: &[BlockStatement],
-    context: &mut ExecutionContext,
-) -> Result<(), VBSError> {
-    tracing::trace!(block_count = blocks.len(), "Executing VB blocks");
-    for block in blocks {
-        tracing::trace!(line = block.line(), "Executing block");
-        // Check if Response.End or Response.Redirect was called
-        if context.response.ended {
-            break;
-        }
-
-        // Debugger hook: check breakpoints and stepping
-        if let Some(ref debugger) = context.debugger {
-            let frame_depth = debugger.current_frame_depth();
-            let file_line = if context.code_start_line > 0 {
-                block.line() + context.code_start_line - 1
-            } else {
-                block.line()
-            };
-            debugger.check(
-                &context.script_path,
-                file_line,
-                frame_depth,
-                Some(context.variables()),
-            )?;
-        }
-
-        match block {
-            // --- Function/Sub definitions: register for later use ---
-            BlockStatement::FunctionDef {
-                name,
-                params,
-                body_lines,
-                ..
-            } => {
-                if context.get_function_body(name).is_none() {
-                    let bodies = parse_blocks(body_lines)?;
-                    context.set_function_body(name, bodies);
-                }
-                context.define_function(UserDefinedFunction {
-                    name: name.clone(),
-                    params: params.clone(),
-                    body_lines: body_lines.clone(),
-                    is_function: true,
-                });
-            }
-            BlockStatement::SubDef {
-                name,
-                params,
-                body_lines,
-                ..
-            } => {
-                if context.get_function_body(name).is_none() {
-                    let bodies = parse_blocks(body_lines)?;
-                    context.set_function_body(name, bodies);
-                }
-                context.define_function(UserDefinedFunction {
-                    name: name.clone(),
-                    params: params.clone(),
-                    body_lines: body_lines.clone(),
-                    is_function: false,
-                });
-            }
-            // --- Syntax nodes (assignment, method call, dim, etc.) ---
-            BlockStatement::Syntax(syntax, _line) => {
-                // On Error Resume Next: record error and continue
-                let result = syntax.execute(context);
-                if let Err(e) = result {
-                    if *context.get_error_mode() == ErrorMode::ResumeNext {
-                        context.set_err(e);
-                    } else {
-                        return Err(e);
-                    }
-                }
-            }
-            // --- Parse failure: unrecognised statement ---
-            BlockStatement::Unrecognized(err, _line_text, _line) => {
-                return Err(err.clone());
-            }
-            // --- If / ElseIf / Else ---
-            BlockStatement::If {
-                condition,
-                then_body,
-                else_if_blocks,
-                else_body,
-                ..
-            } => {
-                if evaluate_condition(condition, context)? {
-                    execute_blocks(then_body, context)?;
-                } else {
-                    let mut handled = false;
-                    for elseif in else_if_blocks {
-                        if evaluate_condition(&elseif.condition, context)? {
-                            execute_blocks(&elseif.body, context)?;
-                            handled = true;
-                            break;
-                        }
-                    }
-                    if !handled {
-                        if let Some(body) = else_body {
-                            execute_blocks(body, context)?;
-                        }
-                    }
-                }
-            }
-            // --- For (numeric counter step) ---
-            BlockStatement::For {
-                counter,
-                start,
-                end,
-                step,
-                body,
-                ..
-            } => {
-                let start_val = evaluate_numeric(start, context)?;
-                let end_val = evaluate_numeric(end, context)?;
-                let step_val = step
-                    .as_ref()
-                    .map(|s| evaluate_numeric(s, context))
-                    .unwrap_or(Ok(1.0))?;
-
-                let mut i = start_val;
-                if step_val > 0.0 {
-                    while i <= end_val {
-                        context.set_variable(counter, VBValue::Number(i));
-                        match execute_blocks(body, context) {
-                            Ok(()) => {}
-                            Err(e) if e.is_exit_for() => break,
-                            Err(e) => return Err(e),
-                        }
-                        i += step_val;
-                    }
-                } else if step_val < 0.0 {
-                    while i >= end_val {
-                        context.set_variable(counter, VBValue::Number(i));
-                        match execute_blocks(body, context) {
-                            Ok(()) => {}
-                            Err(e) if e.is_exit_for() => break,
-                            Err(e) => return Err(e),
-                        }
-                        i += step_val;
-                    }
-                }
-                context.set_variable(counter, VBValue::Number(i));
-            }
-            // --- For Each (array/collection iteration) ---
-            BlockStatement::ForEach {
-                element,
-                group,
-                body,
-                ..
-            } => {
-                let group_val = evaluate(group, context)?;
-                match group_val {
-                    VBValue::Array(ref items, _) => {
-                        for item in items.iter() {
-                            context.set_variable(element, item.clone());
-                            match execute_blocks(body, context) {
-                                Ok(()) => {}
-                                Err(e) if e.is_exit_for() => break,
-                                Err(e) => return Err(e),
-                            }
-                        }
-                    }
-                    _ => {
-                        return Err(VBSErrorType::RuntimeError.into_error(
-                            "Object doesn't support this property or method".to_string(),
-                        ));
-                    }
-                }
-            }
-            // --- While condition loop ---
-            BlockStatement::While {
-                condition, body, ..
-            } => {
-                while evaluate_condition(condition, context)? {
-                    match execute_blocks(body, context) {
-                        Ok(()) => {}
-                        Err(e) if e.is_exit_do() => break,
-                        Err(e) => return Err(e),
-                    }
-                }
-            }
-            // --- Do [While/Until] [condition] / Loop [While/Until] [condition] ---
-            BlockStatement::Do {
-                body,
-                condition,
-                is_until,
-                is_post_test,
-                ..
-            } => {
-                if *is_post_test {
-                    loop {
-                        match execute_blocks(body, context) {
-                            Ok(()) => {}
-                            Err(e) if e.is_exit_do() => break,
-                            Err(e) => return Err(e),
-                        }
-                        if let Some(cond) = condition {
-                            let result = evaluate_condition(cond, context)?;
-                            if *is_until {
-                                if result {
-                                    break;
-                                }
-                            } else if !result {
-                                break;
-                            }
-                        } else {
-                            break;
-                        }
-                    }
-                } else {
-                    loop {
-                        if let Some(cond) = condition {
-                            let result = evaluate_condition(cond, context)?;
-                            if *is_until {
-                                if result {
-                                    break;
-                                }
-                            } else if !result {
-                                break;
-                            }
-                        }
-                        match execute_blocks(body, context) {
-                            Ok(()) => {}
-                            Err(e) if e.is_exit_do() => break,
-                            Err(e) => return Err(e),
-                        }
-                    }
-                }
-            }
-            // --- Select Case ---
-            BlockStatement::SelectCase {
-                expression,
-                cases,
-                else_body,
-                ..
-            } => {
-                let expr_val = evaluate(expression, context)?;
-                context.select_value = Some(expr_val.clone());
-                let mut matched = false;
-
-                for case in cases {
-                    for val_expr in &case.values {
-                        let case_val = evaluate(val_expr, context)?;
-                        let is_match = match val_expr {
-                            Expr::CaseComparison { .. } => {
-                                matches!(case_val, VBValue::Boolean(true))
-                            }
-                            _ => val_equal(&expr_val, &case_val),
-                        };
-                        if is_match {
-                            execute_blocks(&case.body, context)?;
-                            matched = true;
-                            break;
-                        }
-                    }
-                    if matched {
-                        break;
-                    }
-                }
-                context.select_value = None;
-
-                if !matched {
-                    if let Some(body) = else_body {
-                        execute_blocks(body, context)?;
-                    }
-                }
-            }
-            // --- Class definition: extract properties and register ---
-            BlockStatement::ClassDef {
-                name, body_lines, ..
-            } => {
-                if name.is_empty() {
-                    return Err(
-                        VBSErrorType::SyntaxError.into_error("Class name is empty".to_string())
-                    );
-                }
-                if let Ok(properties) = extract_properties_from_class_body(body_lines) {
-                    let methods = extract_methods_from_class_body(body_lines);
-                    let class_def = ClassDefinition {
-                        name: name.clone(),
-                        properties,
-                        methods,
-                    };
-                    context.define_class(class_def);
-                }
-            }
-            // --- With block: swap scope with-object, restore after body ---
-            BlockStatement::With { object, body, .. } => {
-                let obj_val = evaluate(object, context)?;
-                let prev_with = context.with_object.replace(obj_val);
-                let result = execute_blocks(body, context);
-                context.with_object = prev_with;
-                result?
-            }
-            // --- Control-flow sentinels propagated as errors ---
-            BlockStatement::ExitFor(_) => {
-                return Err(VBSErrorType::ExitFor.into_error("Exit For".to_string()));
-            }
-            BlockStatement::ExitDo(_) => {
-                return Err(VBSErrorType::ExitDo.into_error("Exit Do".to_string()));
-            }
-            BlockStatement::ExitFunction(_) => {
-                return Err(VBSErrorType::ExitFunction.into_error("Exit Function".to_string()));
-            }
-            BlockStatement::ExitSub(_) => {
-                return Err(VBSErrorType::ExitSub.into_error("Exit Sub".to_string()));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn val_equal(a: &VBValue, b: &VBValue) -> bool {
-    match (a, b) {
-        (VBValue::Number(an), VBValue::Number(bn)) => an == bn,
-        (VBValue::String(as_), VBValue::String(bs)) => as_ == bs,
-        (VBValue::Boolean(ab), VBValue::Boolean(bb)) => ab == bb,
-        (VBValue::Empty, VBValue::Empty) => true,
-        (VBValue::Null, VBValue::Null) => true,
-        (VBValue::Number(an), VBValue::String(bs)) => {
-            bs.parse::<f64>().map(|bn| an == &bn).unwrap_or(false)
-        }
-        (VBValue::String(as_), VBValue::Number(bn)) => {
-            as_.parse::<f64>().map(|an| &an == bn).unwrap_or(false)
-        }
-        _ => false,
-    }
 }

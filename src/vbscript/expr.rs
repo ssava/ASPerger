@@ -513,6 +513,134 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
 /// Handles all `Expr` variants: literals, variables (including `__with_obj__`),
 /// binary/unary ops, function calls (builtin + user-defined), property/method
 /// access on objects, `New`, and `CaseComparison`.
+fn evaluate_function_call(
+    name: &str,
+    evaluated_args: Vec<VBValue>,
+    context: &mut ExecutionContext,
+) -> Result<VBValue, VBSError> {
+    if evaluated_args.len() == 1
+        && matches!(context.get_variable(name), Some(VBValue::Object(_)))
+    {
+        let mut obj_val = match context.get_variable_mut(name) {
+            Some(slot) => {
+                let mut replacement = VBValue::Empty;
+                std::mem::swap(slot, &mut replacement);
+                replacement
+            }
+            None => {
+                return Err(VBSErrorType::RuntimeError
+                    .into_error("Object variable disappeared during evaluation".to_string()))
+            }
+        };
+        match &mut obj_val {
+            VBValue::Object(ref mut obj) => {
+                let result = obj.indexed_get(&evaluated_args[0], context);
+                context.set_variable(name, obj_val);
+                return result;
+            }
+            _ => unreachable!(),
+        }
+    }
+    if !evaluated_args.is_empty() {
+        if let Some(VBValue::Array(ref items, ref dims)) = context.get_variable(name) {
+            let flat_idx = if dims.is_empty() && evaluated_args.len() == 1 {
+                let idx = to_number(&evaluated_args[0]) as usize;
+                if idx >= items.len() {
+                    return Err(VBSErrorType::RuntimeError.into_error(format!(
+                        "Subscript out of range: index {} exceeds array size {}",
+                        idx,
+                        items.len()
+                    )));
+                }
+                idx
+            } else if evaluated_args.len() == dims.len() {
+                let mut idx = 0usize;
+                let mut out_of_range = false;
+                for (i, dim) in dims.iter().enumerate() {
+                    let d = to_number(&evaluated_args[i]) as usize;
+                    if d > *dim {
+                        out_of_range = true;
+                        break;
+                    }
+                    idx = idx * (dim + 1) + d;
+                }
+                if out_of_range || idx >= items.len() {
+                    return Err(VBSErrorType::RuntimeError
+                        .into_error("Subscript out of range".to_string()));
+                }
+                idx
+            } else {
+                return Err(VBSErrorType::RuntimeError.into_error(format!(
+                    "Array has {} dimensions but {} indices provided",
+                    dims.len(),
+                    evaluated_args.len()
+                )));
+            };
+            return Ok(items[flat_idx].clone());
+        }
+    }
+    if let Some(func) = context.get_function(name).cloned() {
+        if func.is_function {
+            return super::block::execute_user_defined_function(&func, &evaluated_args, context);
+        } else {
+            return Err(VBSErrorType::RuntimeError
+                .into_error(format!("Sub '{}' cannot be used as a function", name)));
+        }
+    }
+    crate::vbscript::builtins::call_builtin(name, evaluated_args)
+}
+
+fn evaluate_method_call(
+    object: &Expr,
+    method: &str,
+    args: &[Expr],
+    context: &mut ExecutionContext,
+) -> Result<VBValue, VBSError> {
+    let obj_val = evaluate(object, context)?;
+    let is_object = matches!(&obj_val, VBValue::Object(_));
+    if is_object && !args.is_empty() {
+        if let VBValue::Object(ref obj) = &obj_val {
+            if let Ok(VBValue::Object(sub_obj)) = obj.get_property(method, context).as_ref() {
+                let evaluated_arg = evaluate(&args[0], context)?;
+                if let Ok(result) = sub_obj.indexed_get(&evaluated_arg, context) {
+                    return Ok(result);
+                }
+            }
+        }
+    }
+    let mut obj_mut = obj_val;
+    match &mut obj_mut {
+        VBValue::Object(ref mut obj) => {
+            let evaluated_args: Result<Vec<VBValue>, VBSError> =
+                args.iter().map(|arg| evaluate(arg, context)).collect();
+            let evaluated_args = evaluated_args?;
+            obj.call_method(method, &evaluated_args, context)
+        }
+        _ => Err(VBSErrorType::RuntimeError.into_error(format!(
+            "Object doesn't support this property or method: '{}'",
+            method
+        ))),
+    }
+}
+
+fn evaluate_new_object(
+    class_name: &str,
+    context: &mut ExecutionContext,
+) -> Result<VBValue, VBSError> {
+    if let Some(class_def) = context.get_class(class_name) {
+        let instance = super::vbobject::ClassInstance::new(&class_def.name);
+        return Ok(VBValue::Object(Box::new(instance)));
+    }
+    match class_name.to_uppercase().as_str() {
+        "REGEXP" => Ok(VBValue::Object(Box::new(super::regexp::RegExpObject::new()))),
+        "DICTIONARY" => Ok(VBValue::Object(Box::new(super::vbobject::Dictionary::new()))),
+        "FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(super::fso::FileSystemObject::new()))),
+        _ => Err(VBSErrorType::RuntimeError.into_error(format!(
+            "Class '{}' not defined", class_name
+        ))),
+    }
+}
+
 pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, VBSError> {
     match expr {
         Expr::Literal(val) => Ok(val.clone()),
@@ -557,82 +685,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
         Expr::FunctionCall { name, args } => {
             let evaluated_args: Result<Vec<VBValue>, VBSError> =
                 args.iter().map(|arg| evaluate(arg, context)).collect();
-            let evaluated_args = evaluated_args?;
-
-            // Check if it's an object with a single arg (indexed get)
-            if evaluated_args.len() == 1
-                && matches!(context.get_variable(name), Some(VBValue::Object(_)))
-            {
-                let mut obj_val = match context.get_variable_mut(name) {
-                    Some(slot) => {
-                        let mut replacement = VBValue::Empty;
-                        std::mem::swap(slot, &mut replacement);
-                        replacement
-                    }
-                    None => return Err(VBSErrorType::RuntimeError
-                        .into_error("Object variable disappeared during evaluation".to_string())),
-                };
-                match &mut obj_val {
-                    VBValue::Object(ref mut obj) => {
-                        let result = obj.indexed_get(&evaluated_args[0], context);
-                        context.set_variable(name, obj_val);
-                        return result;
-                    }
-                    _ => unreachable!(),
-                }
-            }
-            if !evaluated_args.is_empty() {
-                if let Some(VBValue::Array(ref items, ref dims)) = context.get_variable(name) {
-                    let flat_idx = if dims.is_empty() && evaluated_args.len() == 1 {
-                        // Dynamic array — use first index directly
-                        let idx = to_number(&evaluated_args[0]) as usize;
-                        if idx >= items.len() {
-                            return Err(VBSErrorType::RuntimeError.into_error(format!(
-                                "Subscript out of range: index {} exceeds array size {}",
-                                idx,
-                                items.len()
-                            )));
-                        }
-                        idx
-                    } else if evaluated_args.len() == dims.len() {
-                        let mut idx = 0usize;
-                        let mut out_of_range = false;
-                        for (i, dim) in dims.iter().enumerate() {
-                            let d = to_number(&evaluated_args[i]) as usize;
-                            if d > *dim {
-                                out_of_range = true;
-                                break;
-                            }
-                            idx = idx * (dim + 1) + d;
-                        }
-                        if out_of_range || idx >= items.len() {
-                            return Err(VBSErrorType::RuntimeError
-                                .into_error("Subscript out of range".to_string()));
-                        }
-                        idx
-                    } else {
-                        return Err(VBSErrorType::RuntimeError.into_error(format!(
-                            "Array has {} dimensions but {} indices provided",
-                            dims.len(),
-                            evaluated_args.len()
-                        )));
-                    };
-                    return Ok(items[flat_idx].clone());
-                }
-            }
-            if let Some(func) = context.get_function(name).cloned() {
-                if func.is_function {
-                    return super::block::execute_user_defined_function(
-                        &func,
-                        &evaluated_args,
-                        context,
-                    );
-                } else {
-                    return Err(VBSErrorType::RuntimeError
-                        .into_error(format!("Sub '{}' cannot be used as a function", name)));
-                }
-            }
-            crate::vbscript::builtins::call_builtin(name, evaluated_args)
+            evaluate_function_call(name, evaluated_args?, context)
         }
         Expr::PropertyAccess { object, property } => {
             let obj_val = evaluate(object, context)?;
@@ -644,53 +697,10 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                 ))),
             }
         }
-        Expr::MethodCall {
-            object,
-            method,
-            args,
-        } => {
-            let obj_val = evaluate(object, context)?;
-            let is_object = matches!(&obj_val, VBValue::Object(_));
-            if is_object && !args.is_empty() {
-                if let VBValue::Object(ref obj) = &obj_val {
-                    if let Ok(VBValue::Object(sub_obj)) = obj.get_property(method, context).as_ref() {
-                        let evaluated_arg = evaluate(&args[0], context)?;
-                        if let Ok(result) = sub_obj.indexed_get(&evaluated_arg, context) {
-                            return Ok(result);
-                        }
-                    }
-                }
-            }
-            let mut obj_mut = obj_val;
-            match &mut obj_mut {
-                VBValue::Object(ref mut obj) => {
-                    let evaluated_args: Result<Vec<VBValue>, VBSError> =
-                        args.iter().map(|arg| evaluate(arg, context)).collect();
-                    let evaluated_args = evaluated_args?;
-                    obj.call_method(method, &evaluated_args, context)
-                }
-                _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                    "Object doesn't support this property or method: '{}'",
-                    method
-                ))),
-            }
+        Expr::MethodCall { object, method, args } => {
+            evaluate_method_call(object, method, args, context)
         }
-        Expr::NewObject(class_name) => {
-            // First try user-defined classes (Class...End Class)
-            if let Some(class_def) = context.get_class(class_name) {
-                let instance = super::vbobject::ClassInstance::new(&class_def.name);
-                return Ok(VBValue::Object(Box::new(instance)));
-            }
-            // Then try built-in COM classes (New RegExp, New Dictionary, etc.)
-            match class_name.to_uppercase().as_str() {
-                "REGEXP" => Ok(VBValue::Object(Box::new(super::regexp::RegExpObject::new()))),
-                "DICTIONARY" => Ok(VBValue::Object(Box::new(super::vbobject::Dictionary::new()))),
-                "FILESYSTEMOBJECT" => Ok(VBValue::Object(Box::new(super::fso::FileSystemObject::new()))),
-                _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                    "Class '{}' not defined", class_name
-                ))),
-            }
-        }
+        Expr::NewObject(class_name) => evaluate_new_object(class_name, context)
     }
 }
 

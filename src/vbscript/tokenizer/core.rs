@@ -1,109 +1,10 @@
-//! Tokenizer / lexer for the VBScript language. Converts source text
-//! into a sequence of `Token` values with associated `TokenType` tags.
-
 use std::iter::Peekable;
 use std::str::Chars;
 use std::sync::Arc;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum TokenType {
-    // Keywords
-    Class,
-    Function,
-    Sub,
-    Dim,
-    If,
-    Then,
-    Else,
-    ElseIf,
-    End,
-    For,
-    Next,
-    Do,
-    Loop,
-    While,
-    WEnd,
-    Select,
-    Case,
-    With,
-    Set,
-    New,
-    True,
-    False,
-    Nothing,
-    Null,
-    Empty,
-    And,
-    Or,
-    Not,
-    Mod,
-    Is,
-    Eqv,
-    Imp,
-    To,
-    Step,
-    ReDim,
-    Preserve,
-    Property,
-    Get,
-    Let,
-    Public,
-    Private,
-    Const,
+use super::types::kw;
+use super::{Token, TokenType};
 
-    // Operators
-    Plus,
-    Minus,
-    Multiply,
-    Divide,
-    IntDivide,
-    Power,
-    Concat,
-    Assign,
-    Dot,
-    Comma,
-    Colon,
-    LeftParen,
-    RightParen,
-    GreaterThan,
-    LessThan,
-    GreaterEqual,
-    LessEqual,
-    NotEqual,
-    Equal,
-
-    // Literals
-    Identifier,
-    StringLiteral,
-    IntegerLiteral,
-    FloatLiteral,
-    DateLiteral,
-    HexLiteral,
-    OctLiteral,
-
-    // Other
-    NewLine,
-    Comment,
-    WhiteSpace,
-    Invalid,
-    EOF,
-}
-
-/// A single lexical token produced by the `Tokenizer`.
-#[derive(Debug, Clone)]
-pub struct Token {
-    /// The kind of token (keyword, operator, literal, etc.).
-    pub token_type: TokenType,
-    /// The source text of this token (shared via `Arc<str>`).
-    pub value: Arc<str>,
-}
-
-/// VBScript lexer.  Converts source text into a sequence of `Token` values.
-///
-/// Handles string literals (with `""` escaping), numeric literals (integer,
-/// float, hex, octal), date literals (`#...#`), identifiers, keywords
-/// (case-insensitive), operators, comments (`'` / `REM`), and line
-/// continuations (`_` + newline).
 pub struct Tokenizer<'a> {
     input: Peekable<Chars<'a>>,
     current_line: usize,
@@ -216,7 +117,7 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_string(&mut self) -> Token {
         let mut value = String::new();
 
-        self.advance(); // consume opening quote
+        self.advance();
 
         while let Some(&c) = self.input.peek() {
             self.advance();
@@ -241,7 +142,6 @@ impl<'a> Tokenizer<'a> {
         let mut is_hex = false;
         let mut is_oct = false;
 
-        // Check for hex/oct prefix
         if self.input.peek() == Some(&'&') {
             self.advance();
             value.push('&');
@@ -315,59 +215,7 @@ impl<'a> Tokenizer<'a> {
             }
         }
 
-        Self::tok(self.get_keyword_type(&value), value)
-    }
-
-    fn kw(word: &str) -> TokenType {
-        match word.to_uppercase().as_str() {
-            "CLASS" => TokenType::Class,
-            "FUNCTION" => TokenType::Function,
-            "SUB" => TokenType::Sub,
-            "DIM" => TokenType::Dim,
-            "IF" => TokenType::If,
-            "THEN" => TokenType::Then,
-            "ELSE" => TokenType::Else,
-            "ELSEIF" => TokenType::ElseIf,
-            "END" => TokenType::End,
-            "FOR" => TokenType::For,
-            "NEXT" => TokenType::Next,
-            "DO" => TokenType::Do,
-            "LOOP" => TokenType::Loop,
-            "WHILE" => TokenType::While,
-            "WEND" => TokenType::WEnd,
-            "SELECT" => TokenType::Select,
-            "CASE" => TokenType::Case,
-            "WITH" => TokenType::With,
-            "SET" => TokenType::Set,
-            "NEW" => TokenType::New,
-            "TRUE" => TokenType::True,
-            "FALSE" => TokenType::False,
-            "NOTHING" => TokenType::Nothing,
-            "NULL" => TokenType::Null,
-            "EMPTY" => TokenType::Empty,
-            "AND" => TokenType::And,
-            "OR" => TokenType::Or,
-            "NOT" => TokenType::Not,
-            "MOD" => TokenType::Mod,
-            "IS" => TokenType::Is,
-            "EQV" => TokenType::Eqv,
-            "IMP" => TokenType::Imp,
-            "TO" => TokenType::To,
-            "STEP" => TokenType::Step,
-            "REDIM" => TokenType::ReDim,
-            "PRESERVE" => TokenType::Preserve,
-            "PROPERTY" => TokenType::Property,
-            "GET" => TokenType::Get,
-            "LET" => TokenType::Let,
-            "PUBLIC" => TokenType::Public,
-            "PRIVATE" => TokenType::Private,
-            "CONST" => TokenType::Const,
-            _ => TokenType::Identifier,
-        }
-    }
-
-    fn get_keyword_type(&self, word: &str) -> TokenType {
-        Self::kw(word)
+        Self::tok(kw(&value), value)
     }
 
     fn is_identifier_start(&self, c: char) -> bool {
@@ -407,7 +255,7 @@ impl<'a> Tokenizer<'a> {
     fn is_line_continuation(&mut self) -> bool {
         if let Some(&'_') = self.input.peek() {
             let mut chars = self.input.clone();
-            chars.next(); // consume '_'
+            chars.next();
             while let Some(&c) = chars.peek() {
                 if c.is_whitespace() {
                     if c == '\n' || c == '\r' {
@@ -423,7 +271,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn consume_line_continuation(&mut self) {
-        self.advance(); // consume '_'
+        self.advance();
         self.consume_whitespace();
         self.handle_newline();
     }
@@ -431,7 +279,7 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_comment(&mut self) -> Token {
         let mut value = String::new();
 
-        self.advance(); // consume the comment character
+        self.advance();
 
         while let Some(&c) = self.input.peek() {
             if c == '\n' || c == '\r' {
@@ -447,7 +295,7 @@ impl<'a> Tokenizer<'a> {
     fn tokenize_date(&mut self) -> Token {
         let mut value = String::new();
 
-        self.advance(); // consume opening #
+        self.advance();
 
         while let Some(&c) = self.input.peek() {
             if c == '#' {

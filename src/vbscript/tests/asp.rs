@@ -1051,6 +1051,62 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         );
     }
 
+    #[test]
+    fn test_class_property_get_returns_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class C\nPublic val\nPublic Property Get Value\n Value = val\nEnd Property\n\
+                 End Class\nSet c = New C\nc.val = 42\nresult = c.Value",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(42.0))
+        );
+    }
+
+    #[test]
+    fn test_class_property_let_sets_value() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class C\nPrivate val\nPublic Property Get Value\n Value = val\nEnd Property\n\
+                 Public Property Let Value(v)\n val = v\nEnd Property\nEnd Class\n\
+                 Set c = New C\nc.Value = 42\nresult = c.Value",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(42.0))
+        );
+    }
+
+    #[test]
+    fn test_class_property_case_insensitive() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute(
+                "Class C\nPrivate val\nPublic Property Get Value\n Value = val\nEnd Property\n\
+                 Public Property Let Value(v)\n val = v\nEnd Property\nEnd Class\n\
+                 Set c = New C\nc.VALUE = 42\nresult = c.VALUE",
+                &mut ctx,
+            )
+            .unwrap();
+        assert_eq!(
+            ctx.get_variable("result"),
+            Some(&VBValue::Number(42.0))
+        );
+    }
+
     // ===== HTTP INTEGRATION TESTS =====
 
 

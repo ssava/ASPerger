@@ -157,7 +157,7 @@ impl VBScriptObject for RegExpObject {
 
 #[derive(Debug, Clone)]
 /// A single `RegExp` match result.  Properties: `Value`, `FirstIndex`, `Length`, `SubMatches`.
-pub struct MatchObject {
+pub(crate) struct MatchObject {
     value: String,
     first_index: usize,
     length: usize,
@@ -218,7 +218,7 @@ impl VBScriptObject for MatchObject {
 
 #[derive(Debug, Clone)]
 /// Collection of `RegExp` submatch strings, indexed by position.
-pub struct SubMatchesObject {
+pub(crate) struct SubMatchesObject {
     items: Vec<String>,
 }
 

@@ -1198,9 +1198,7 @@ mod tests {
     #[test]
     fn test_parse_multipart_form_data() {
         let boundary = "----WebKitFormBoundary";
-        let body = format!(
-            "------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field2\"\r\n\r\nvalue2\r\n------WebKitFormBoundary--\r\n"
-        );
+        let body = "------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field1\"\r\n\r\nvalue1\r\n------WebKitFormBoundary\r\nContent-Disposition: form-data; name=\"field2\"\r\n\r\nvalue2\r\n------WebKitFormBoundary--\r\n".to_string();
         let result = AspServer::parse_multipart_form_data(body.as_bytes(), boundary);
         assert_eq!(result.get("field1").unwrap(), "value1");
         assert_eq!(result.get("field2").unwrap(), "value2");

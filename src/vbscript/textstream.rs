@@ -110,7 +110,7 @@ impl VBScriptObject for TextStream {
         name: &str,
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        let inner = self.inner.lock().unwrap();
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         Self::check_closed(&inner)?;
         match name.to_uppercase().as_str() {
             "ATENDOFSTREAM" => Ok(VBValue::Boolean(inner.at_end_of_stream)),
@@ -127,7 +127,7 @@ impl VBScriptObject for TextStream {
         args: &[VBValue],
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
-        let mut inner = self.inner.lock().unwrap();
+        let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         Self::check_closed(&inner)?;
 
         match name.to_uppercase().as_str() {

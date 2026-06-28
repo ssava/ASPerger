@@ -675,6 +675,7 @@ use super::*;
     }
 
     #[test]
+    #[allow(clippy::approx_constant)]
     fn test_builtin_round() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);

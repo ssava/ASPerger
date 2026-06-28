@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn test_dir_config_cache_resolve_subdir_with_ini() {
         let dir = std::env::temp_dir().join(format!("asp_cache_sub_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir.join("sub"));
+        let _ = std::fs::create_dir_all(dir.join("sub"));
         std::fs::write(
             dir.join("sub").join("asp.ini"),
             "[server]\ndefault_documents = subpage.asp\n",
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn test_dir_config_cache_resolve_nested_merge() {
         let dir = std::env::temp_dir().join(format!("asp_cache_nest_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir.join("sub").join("deep"));
+        let _ = std::fs::create_dir_all(dir.join("sub").join("deep"));
         std::fs::write(
             dir.join("sub").join("asp.ini"),
             "[server]\nenable_directory_listing = true\n",
@@ -444,7 +444,7 @@ mod tests {
     #[test]
     fn test_dir_config_cache_inherits_base_without_ini() {
         let dir = std::env::temp_dir().join(format!("asp_cache_inherit_{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir.join("empty"));
+        let _ = std::fs::create_dir_all(dir.join("empty"));
         let base = AspDirConfig {
             default_documents: vec!["base.asp".to_string()],
             directory_listing: true,

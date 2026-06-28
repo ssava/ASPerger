@@ -37,10 +37,8 @@ pub(crate) fn write_asp(dir: &std::path::Path, name: &str, content: &str) {
 
 pub(crate) fn cleanup_dir(dir: &std::path::Path) {
     if dir.exists() {
-        for entry in std::fs::read_dir(dir).unwrap() {
-            if let Ok(e) = entry {
-                let _ = std::fs::remove_file(e.path());
-            }
+        for e in std::fs::read_dir(dir).unwrap().flatten() {
+            let _ = std::fs::remove_file(e.path());
         }
         let _ = std::fs::remove_dir(dir);
     }

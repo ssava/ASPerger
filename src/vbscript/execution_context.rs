@@ -9,6 +9,9 @@ use super::tokenizer::Token;
 use super::vbs_error::VBSError;
 use super::VBValue;
 
+type ExecuteFileCallback =
+    Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>;
+
 /// VBScript error-handling mode.
 ///
 /// - `Normal`: errors halt execution and propagate up the call stack.
@@ -162,9 +165,7 @@ pub struct ExecutionContext {
     /// Optional DAP debugger (shared across requests via Arc).
     pub debugger: Option<Arc<Debugger>>,
     /// Callback for Server.Execute / Server.Transfer.
-    #[allow(clippy::type_complexity)]
-    pub execute_file_callback:
-        Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
+    pub execute_file_callback: Option<ExecuteFileCallback>,
     /// Physical ASP file line where the current VBScript code block starts.
     pub code_start_line: usize,
     /// Unique per-request ID for Application.Lock ownership tracking.
@@ -175,7 +176,7 @@ pub struct ExecutionContext {
 ///
 /// Used in `execute_user_defined_function` to ensure the field is restored
 /// even on early returns or panics.
-pub struct CodeStartLineGuard {
+pub(crate) struct CodeStartLineGuard {
     code_start_line: *mut usize,
     saved: usize,
 }

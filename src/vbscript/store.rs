@@ -55,12 +55,12 @@ impl Store {
 
     /// Lock and return a mutable guard to the session store.
     pub fn lock_sessions(&self) -> MutexGuard<'_, AHashMap<String, AHashMap<String, VBValue>>> {
-        self.sessions.lock().unwrap()
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Lock and return a mutable guard to the application store.
     pub fn lock_apps(&self) -> MutexGuard<'_, AHashMap<String, VBValue>> {
-        self.apps.lock().unwrap()
+        self.apps.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     /// Block until the application lock is released by another request, then return.
@@ -73,9 +73,9 @@ impl Store {
     /// Must be called before every Application variable access
     /// (indexed_get/set, CONTENTS methods).
     pub fn wait_for_app_unlock(&self, my_owner_id: u64) {
-        let mut info = self.app_lock_mtx.lock().unwrap();
+        let mut info = self.app_lock_mtx.lock().unwrap_or_else(|e| e.into_inner());
         while info.locked && info.owner_id != my_owner_id {
-            info = self.app_lock_cv.wait(info).unwrap();
+            info = self.app_lock_cv.wait(info).unwrap_or_else(|e| e.into_inner());
         }
     }
 
@@ -86,12 +86,12 @@ impl Store {
     /// was freshly acquired, `false` if already held by this owner
     /// (reentrant).
     pub fn lock_app_blocking(&self, my_owner_id: u64) -> bool {
-        let mut info = self.app_lock_mtx.lock().unwrap();
+        let mut info = self.app_lock_mtx.lock().unwrap_or_else(|e| e.into_inner());
         while info.locked {
             if info.owner_id == my_owner_id {
-                return false; // already locked by us
+                return false;
             }
-            info = self.app_lock_cv.wait(info).unwrap();
+            info = self.app_lock_cv.wait(info).unwrap_or_else(|e| e.into_inner());
         }
         info.locked = true;
         info.owner_id = my_owner_id;
@@ -105,7 +105,7 @@ impl Store {
     /// `lock_app_blocking`).  The first waiter to re-acquire
     /// the mutex will see the unlocked state and proceed.
     pub fn unlock_app(&self, my_owner_id: u64) -> bool {
-        let mut info = self.app_lock_mtx.lock().unwrap();
+        let mut info = self.app_lock_mtx.lock().unwrap_or_else(|e| e.into_inner());
         if info.locked && info.owner_id == my_owner_id {
             info.locked = false;
             self.app_lock_cv.notify_all();
@@ -116,12 +116,12 @@ impl Store {
 
     /// Get the number of active sessions.
     pub fn session_count(&self) -> usize {
-        self.sessions.lock().unwrap().len()
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Remove a session (used by Abandon and timeout sweep).
     pub fn remove_session(&self, session_id: &str) {
-        self.sessions.lock().unwrap().remove(&session_id.to_uppercase());
+        self.sessions.lock().unwrap_or_else(|e| e.into_inner()).remove(&session_id.to_uppercase());
     }
 }
 
