@@ -20,7 +20,7 @@ use ahash::AHashMap;
 /// number used for debugger breakpoint matching.
 pub enum BlockStatement {
     Syntax(Box<dyn VBSyntax>, usize),
-    Unrecognized(String, usize),
+    Unrecognized(VBSError, String, usize),
     If {
         line: usize,
         condition: Expr,
@@ -92,7 +92,7 @@ impl Clone for BlockStatement {
     fn clone(&self) -> Self {
         match self {
             BlockStatement::Syntax(s, line) => BlockStatement::Syntax(s.clone_box(), *line),
-            BlockStatement::Unrecognized(s, line) => BlockStatement::Unrecognized(s.clone(), *line),
+            BlockStatement::Unrecognized(err, s, line) => BlockStatement::Unrecognized(err.clone(), s.clone(), *line),
             BlockStatement::If { line, condition, then_body, else_if_blocks, else_body } => {
                 BlockStatement::If {
                     line: *line,
@@ -201,7 +201,7 @@ impl BlockStatement {
     pub fn line(&self) -> usize {
         match self {
             BlockStatement::Syntax(_, l) => *l,
-            BlockStatement::Unrecognized(_, l) => *l,
+            BlockStatement::Unrecognized(_, _, l) => *l,
             BlockStatement::If { line: l, .. } => *l,
             BlockStatement::For { line: l, .. } => *l,
             BlockStatement::While { line: l, .. } => *l,
@@ -1298,7 +1298,7 @@ fn parse_blocks_inner(
                 }
                 blocks.push(match parse_line_into_syntax(line) {
                     Ok(syntax) => BlockStatement::Syntax(syntax, line_num),
-                    Err(_) => BlockStatement::Unrecognized(tokens_to_string(line), line_num),
+                    Err(e) => BlockStatement::Unrecognized(e, tokens_to_string(line), line_num),
                 });
                 *pos += 1;
             }
@@ -1336,11 +1336,11 @@ fn parse_if_block(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStatemen
         let line_text = tokens_to_string(&inline_tokens);
         let syntax = match parse_line_into_syntax(&inline_tokens) {
             Ok(s) => s,
-            Err(_) => {
+            Err(e) => {
                 return Ok(BlockStatement::If {
                     line: line_num,
                     condition,
-                    then_body: vec![BlockStatement::Unrecognized(line_text, line_num)],
+                    then_body: vec![BlockStatement::Unrecognized(e, line_text, line_num)],
                     else_if_blocks: Vec::new(),
                     else_body: None,
                 })
@@ -2428,9 +2428,8 @@ pub fn execute_blocks(
                 }
             }
             // --- Parse failure: unrecognised statement ---
-            BlockStatement::Unrecognized(line_text, _line) => {
-                return Err(VBSErrorType::NotImplementedError
-                    .into_error(format!("Unrecognized command: {}", line_text)));
+            BlockStatement::Unrecognized(err, _line_text, _line) => {
+                return Err(err.clone());
             }
             // --- If / ElseIf / Else ---
             BlockStatement::If {
