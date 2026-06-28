@@ -788,6 +788,59 @@ use super::*;
     }
 
     #[test]
+    fn test_builtin_ubound_multi_dim() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Dim arr(2, 3)\nresult1 = UBound(arr, 1)\nresult2 = UBound(arr, 2)", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.get_variable("result1"), Some(&VBValue::Number(2.0)));
+        assert_eq!(ctx.get_variable("result2"), Some(&VBValue::Number(3.0)));
+    }
+
+    #[test]
+    fn test_builtin_ubound_multi_dim_default_first() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Dim arr(4, 5)\nresult = UBound(arr)", &mut ctx)
+            .unwrap();
+        // No dim arg → defaults to first dimension
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(4.0)));
+    }
+
+    #[test]
+    fn test_builtin_ubound_multi_dim_invalid_dim_error() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        let result = interp.execute("Dim arr(2, 3)\nx = UBound(arr, 3)", &mut ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_builtin_lbound_multi_dim() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Dim arr(2, 3)\nresult = LBound(arr, 2)", &mut ctx)
+            .unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_builtin_lbound_invalid_dim_error() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        let result = interp.execute("Dim arr(2, 3)\nx = LBound(arr, 5)", &mut ctx);
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_builtin_cbool() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);

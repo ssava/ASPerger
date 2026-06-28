@@ -557,17 +557,11 @@ fn evaluate_function_call(
                 }
                 idx
             } else if evaluated_args.len() == dims.len() {
-                let mut idx = 0usize;
-                let mut out_of_range = false;
-                for (i, dim) in dims.iter().enumerate() {
-                    let d = to_number(&evaluated_args[i]) as usize;
-                    if d > *dim {
-                        out_of_range = true;
-                        break;
-                    }
-                    idx = idx * (dim + 1) + d;
-                }
-                if out_of_range || idx >= items.len() {
+                let idx = value_utils::compute_flat_index(&evaluated_args, dims)
+                    .ok_or_else(|| {
+                        VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
+                    })?;
+                if idx >= items.len() {
                     return Err(VBSErrorType::RuntimeError
                         .into_error("Subscript out of range".to_string()));
                 }

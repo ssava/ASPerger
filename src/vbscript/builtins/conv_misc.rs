@@ -97,39 +97,56 @@ pub(super) fn builtin_isarray(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 pub(super) fn builtin_ubound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "UBound")?;
-    let arr = match &args[0] {
-        VBValue::Array(a, _) => a,
+    let (items, dims) = match &args[0] {
+        VBValue::Array(a, d) => (a, d),
         _ => {
             return Err(VBSErrorType::ValueError
                 .into_error("UBound requires an array".to_string()))
         }
     };
-    if arr.is_empty() {
+    if items.is_empty() {
         return Err(
             VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
         );
     }
     if args.len() >= 2 {
-        let _dim = value_utils::to_arg_f64(&args[1]) as usize;
+        let dim = value_utils::to_arg_f64(&args[1]) as usize;
+        if dim < 1 || dim > dims.len() {
+            return Err(VBSErrorType::RuntimeError
+                .into_error("Subscript out of range".to_string()));
+        }
+        if dims.is_empty() {
+            return Ok(VBValue::Number((items.len() - 1) as f64));
+        }
+        return Ok(VBValue::Number(dims[dim - 1] as f64));
     }
-    Ok(VBValue::Number((arr.len() - 1) as f64))
+    if dims.is_empty() {
+        return Ok(VBValue::Number((items.len() - 1) as f64));
+    }
+    Ok(VBValue::Number(dims[0] as f64))
 }
 
 pub(super) fn builtin_lbound(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_min_args(args, 1, "LBound")?;
-    match &args[0] {
-        VBValue::Array(a, _) => {
-            if a.is_empty() {
-                return Err(
-                    VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
-                );
-            }
-        }
+    let (items, dims) = match &args[0] {
+        VBValue::Array(a, d) => (a, d),
         _ => {
             return Err(VBSErrorType::ValueError
                 .into_error("LBound requires an array".to_string()))
         }
     };
+    if items.is_empty() {
+        return Err(
+            VBSErrorType::RuntimeError.into_error("Subscript out of range".to_string())
+        );
+    }
+    if args.len() >= 2 {
+        let dim = value_utils::to_arg_f64(&args[1]) as usize;
+        if dim < 1 || dim > dims.len() {
+            return Err(VBSErrorType::RuntimeError
+                .into_error("Subscript out of range".to_string()));
+        }
+    }
     Ok(VBValue::Number(0.0))
 }
 

@@ -26,6 +26,23 @@ pub fn to_arg_f64(val: &VBValue) -> f64 {
     }
 }
 
+/// Compute the flat index into a row-major array given per-dimension indices.
+/// Returns `None` if the index count mismatches or any index is out of range.
+pub fn compute_flat_index(indices: &[VBValue], dims: &[usize]) -> Option<usize> {
+    if indices.len() != dims.len() {
+        return None;
+    }
+    let mut idx = 0usize;
+    for (i, dim) in dims.iter().enumerate() {
+        let d = to_arg_f64(&indices[i]) as usize;
+        if d > *dim {
+            return None;
+        }
+        idx = idx * (dim + 1) + d;
+    }
+    Some(idx)
+}
+
 pub fn to_boolean(val: &VBValue) -> bool {
     match val {
         VBValue::Boolean(b) => *b,
