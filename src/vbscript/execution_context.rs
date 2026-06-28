@@ -202,8 +202,16 @@ impl ExecutionContext {
         Self::default()
     }
 
+    fn lc_key<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
+        if name.bytes().any(|b| b.is_ascii_uppercase()) {
+            name.to_lowercase().into()
+        } else {
+            name.into()
+        }
+    }
+
     pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
-        self.variables.get(&name.to_lowercase())
+        self.variables.get(self.lc_key(name).as_ref())
     }
 
     pub fn set_variable(&mut self, name: &str, value: VBValue) {
@@ -211,7 +219,7 @@ impl ExecutionContext {
     }
 
     pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
-        self.variables.get_mut(&name.to_lowercase())
+        self.variables.get_mut(self.lc_key(name).as_ref())
     }
 
     pub fn define_function(&mut self, func: UserDefinedFunction) {
@@ -219,11 +227,11 @@ impl ExecutionContext {
     }
 
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
-        self.functions.get(&name.to_lowercase())
+        self.functions.get(self.lc_key(name).as_ref())
     }
 
     pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
-        self.function_bodies.get(&name.to_lowercase())
+        self.function_bodies.get(self.lc_key(name).as_ref())
     }
 
     pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
@@ -235,7 +243,7 @@ impl ExecutionContext {
     }
 
     pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
-        self.classes.get(&name.to_lowercase())
+        self.classes.get(self.lc_key(name).as_ref())
     }
 
     pub fn get_error_mode(&self) -> &ErrorMode {

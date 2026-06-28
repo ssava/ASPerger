@@ -399,7 +399,7 @@ impl VBScriptObject for ClassInstance {
         let class_def = context.get_class(&self.class_name).ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(format!("Class '{}' not found", self.class_name))
         })?;
-        if let Some(prop_def) = class_def.properties.get(name) {
+        if let Some(prop_def) = class_def.properties.get(&name.to_lowercase()) {
             if let Some(ref body_lines) = prop_def.get_body {
                 let body_blocks = super::block::parse_blocks(body_lines).map_err(|_| {
                     VBSErrorType::RuntimeError
@@ -448,7 +448,7 @@ impl VBScriptObject for ClassInstance {
         let class_def = context.get_class(&self.class_name).ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error(format!("Class '{}' not found", self.class_name))
         })?;
-        if let Some(prop_def) = class_def.properties.get(name) {
+        if let Some(prop_def) = class_def.properties.get(&name.to_lowercase()) {
             if let Some(ref body_lines) = prop_def.let_body {
                 let body_blocks = super::block::parse_blocks(body_lines).map_err(|_| {
                     VBSErrorType::RuntimeError

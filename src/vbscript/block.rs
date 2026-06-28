@@ -917,14 +917,14 @@ fn parse_function_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStat
     }
 
     let is_function = no_ws[0].token_type == TokenType::Function;
-    let name = no_ws[1].value.to_string();
+    let name = no_ws[1].value.to_lowercase();
 
     let mut params = Vec::new();
     if no_ws.len() > 2 && no_ws[2].token_type == TokenType::LeftParen {
         let mut i = 3;
         while i < no_ws.len() && no_ws[i].token_type != TokenType::RightParen {
             if no_ws[i].token_type == TokenType::Identifier {
-                params.push(no_ws[i].value.to_string());
+                params.push(no_ws[i].value.to_lowercase());
             }
             i += 1;
         }
@@ -1146,7 +1146,7 @@ fn parse_class_def(lines: &[Vec<Token>], pos: &mut usize) -> Result<BlockStateme
         });
 
     let class_name = name_idx
-        .map(|i| line[i].value.to_string())
+        .map(|i| line[i].value.to_lowercase())
         .unwrap_or_else(|| "".to_string());
 
     let mut body_lines: Vec<Vec<Token>> = Vec::new();
@@ -2161,7 +2161,7 @@ fn extract_properties_from_class_body(
                             continue;
                         }
                     };
-                    let prop_name = name_tok.value.to_string();
+                    let prop_name = name_tok.value.to_lowercase();
                     i += 1;
 
                     let mut param = None;
@@ -2173,7 +2173,7 @@ fn extract_properties_from_class_body(
                         {
                             if let Some(param_tok) = no_ws.get(p_idx + 4) {
                                 if param_tok.token_type == TokenType::Identifier {
-                                    param = Some(param_tok.value.to_string());
+                                    param = Some(param_tok.value.to_lowercase());
                                 }
                             }
                         }
@@ -2209,7 +2209,7 @@ fn extract_properties_from_class_body(
                     }
 
                     let entry = properties
-                        .entry(prop_name.to_uppercase())
+                        .entry(prop_name.clone())
                         .or_insert(PropertyDef {
                             name: prop_name.clone(),
                             get_body: None,
@@ -2276,14 +2276,14 @@ fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String
             i += 1;
             continue;
         }
-        let method_name = no_ws[name_idx].value.to_string();
+        let method_name = no_ws[name_idx].value.to_lowercase();
 
         let mut params = Vec::new();
         if no_ws.len() > name_idx + 1 && no_ws[name_idx + 1].token_type == TokenType::LeftParen {
             let mut p = name_idx + 2;
             while p < no_ws.len() && no_ws[p].token_type != TokenType::RightParen {
                 if no_ws[p].token_type == TokenType::Identifier {
-                    params.push(no_ws[p].value.to_string());
+                    params.push(no_ws[p].value.to_lowercase());
                 }
                 p += 1;
             }
