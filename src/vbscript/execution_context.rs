@@ -203,6 +203,17 @@ impl ExecutionContext {
         Self::default()
     }
 
+    /// Create a minimal execution context populated with the given variables
+    /// and appropriate defaults for all other fields.
+    /// Used by the debug adapter for evaluating expressions in a stack frame.
+    pub fn from_variables(vars: AHashMap<String, VBValue>, script_path: &str) -> Self {
+        ExecutionContext {
+            variables: vars,
+            script_path: script_path.to_string(),
+            ..Self::default()
+        }
+    }
+
     fn lc_key<'a>(&self, name: &'a str) -> std::borrow::Cow<'a, str> {
         if name.bytes().any(|b| b.is_ascii_uppercase()) {
             name.to_lowercase().into()

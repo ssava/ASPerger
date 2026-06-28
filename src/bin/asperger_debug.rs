@@ -9,6 +9,9 @@ use dap::types;
 use asperger::asp::config::Config as AspConfig;
 use asperger::asp::server::AspServer;
 use asperger::vbscript::debugger::{DebugCommand, DebugEvent, Debugger, StoppedReason};
+use asperger::vbscript::execution_context::ExecutionContext;
+use asperger::vbscript::expr::{evaluate, parse_expression};
+use asperger::vbscript::tokenizer::{TokenType, Tokenizer};
 
 #[derive(Parser)]
 #[command(
@@ -51,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut interpreter_handle: Option<std::thread::JoinHandle<()>> = None;
     let mut pending_breakpoints: Vec<(String, Vec<usize>)> = Vec::new();
     let mut debugger_instance: Option<Arc<Debugger>> = None;
+    let mut child_ref_counter: i64 = 10000;
+    let mut child_ref_map: std::collections::HashMap<i64, (usize, String)> = std::collections::HashMap::new();
 
     loop {
         let req = match server.poll_request()? {
@@ -412,33 +417,110 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 let variables: Vec<types::Variable> = if let Some(ref state) = debugger_state {
                     let s = state.lock().unwrap();
-                    let frame_idx = (ref_id.saturating_sub(1000)) as usize;
-                    if let Some(frame) = s.stack_frames.get(frame_idx) {
-                        frame
-                            .variables
-                            .iter()
-                            .map(|(k, v)| types::Variable {
-                                name: k.as_str().to_string(),
-                                value: v.to_string(),
-                                type_field: Some(match v {
-                                    asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
-                                    asperger::vbscript::VBValue::String(_) => "String".to_string(),
-                                    asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
-                                    asperger::vbscript::VBValue::Null => "Null".to_string(),
-                                    asperger::vbscript::VBValue::Empty => "Empty".to_string(),
-                                    asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
-                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
-                                }),
-                                variables_reference: 0,
-                                named_variables: None,
-                                indexed_variables: None,
-                                evaluate_name: None,
-                                memory_reference: None,
-                                presentation_hint: None,
-                            })
-                            .collect()
+
+                    if ref_id >= 10000 {
+                        // Child expansion for an array/object
+                        let variables = if let Some((frame_idx, var_name)) = child_ref_map.get(&ref_id) {
+                            if let Some(frame) = s.stack_frames.get(*frame_idx) {
+                                if let Some(asperger::vbscript::VBValue::Array(ref items, ref dims)) =
+                                    frame.variables.get(var_name)
+                                {
+                                    if !dims.is_empty() {
+                                        // Multi-dim: return as pseudo-1D for now
+                                        items.iter().enumerate().map(|(i, v)| {
+                                            let child_name = i.to_string();
+                                            types::Variable {
+                                                name: child_name,
+                                                value: v.to_string(),
+                                                type_field: Some(match v {
+                                                    asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
+                                                    asperger::vbscript::VBValue::String(_) => "String".to_string(),
+                                                    asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
+                                                    asperger::vbscript::VBValue::Null => "Null".to_string(),
+                                                    asperger::vbscript::VBValue::Empty => "Empty".to_string(),
+                                                    asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
+                                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
+                                                }),
+                                                variables_reference: 0,
+                                                named_variables: None,
+                                                indexed_variables: None,
+                                                evaluate_name: None,
+                                                memory_reference: None,
+                                                presentation_hint: None,
+                                            }
+                                        }).collect()
+                                    } else {
+                                        items.iter().enumerate().map(|(i, v)| {
+                                            let child_name = i.to_string();
+                                            types::Variable {
+                                                name: child_name,
+                                                value: v.to_string(),
+                                                type_field: Some(match v {
+                                                    asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
+                                                    asperger::vbscript::VBValue::String(_) => "String".to_string(),
+                                                    asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
+                                                    asperger::vbscript::VBValue::Null => "Null".to_string(),
+                                                    asperger::vbscript::VBValue::Empty => "Empty".to_string(),
+                                                    asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
+                                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
+                                                }),
+                                                variables_reference: 0,
+                                                named_variables: None,
+                                                indexed_variables: None,
+                                                evaluate_name: None,
+                                                memory_reference: None,
+                                                presentation_hint: None,
+                                            }
+                                        }).collect()
+                                    }
+                                } else {
+                                    vec![]
+                                }
+                            } else {
+                                vec![]
+                            }
+                        } else {
+                            vec![]
+                        };
+                        variables
                     } else {
-                        vec![]
+                        // Frame-level variable list
+                        let frame_idx = (ref_id.saturating_sub(1000)) as usize;
+                        if let Some(frame) = s.stack_frames.get(frame_idx) {
+                            frame
+                                .variables
+                                .iter()
+                                .map(|(k, v)| {
+                                    let (type_str, var_ref) = match v {
+                                        asperger::vbscript::VBValue::Array(..) => {
+                                            let ref_id = child_ref_counter;
+                                            child_ref_counter += 1;
+                                            child_ref_map.insert(ref_id, (frame_idx, k.clone()));
+                                            ("Array".to_string(), ref_id)
+                                        }
+                                        asperger::vbscript::VBValue::Object(_) => ("Object".to_string(), 0),
+                                        asperger::vbscript::VBValue::Number(_) => ("Double".to_string(), 0),
+                                        asperger::vbscript::VBValue::String(_) => ("String".to_string(), 0),
+                                        asperger::vbscript::VBValue::Boolean(_) => ("Boolean".to_string(), 0),
+                                        asperger::vbscript::VBValue::Null => ("Null".to_string(), 0),
+                                        asperger::vbscript::VBValue::Empty => ("Empty".to_string(), 0),
+                                    };
+                                    types::Variable {
+                                        name: k.as_str().to_string(),
+                                        value: v.to_string(),
+                                        type_field: Some(type_str),
+                                        variables_reference: var_ref,
+                                        named_variables: None,
+                                        indexed_variables: None,
+                                        evaluate_name: None,
+                                        memory_reference: None,
+                                        presentation_hint: None,
+                                    }
+                                })
+                                .collect()
+                        } else {
+                            vec![]
+                        }
                     }
                 } else {
                     vec![]
@@ -453,51 +535,55 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let expression = args.expression.trim().to_string();
                 let frame_id = args.frame_id.unwrap_or(0);
 
-                let (result, type_field) = if let Some(ref state) = debugger_state {
+                let (result, type_field, variables_reference) = if let Some(ref state) = debugger_state {
                     let s = state.lock().unwrap();
 
-                    // Look up the expression in the specified frame, then fall back to all frames
-                    let found = s.stack_frames.get(frame_id as usize)
-                        .and_then(|f| f.variables.get(&expression.to_lowercase()))
-                        .or_else(|| {
-                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(&expression.to_lowercase()))
-                        });
+                    let frame = s.stack_frames.get(frame_id as usize);
+                    let vars = frame.map(|f| f.variables.clone()).unwrap_or_default();
+                    let script_path = frame.map(|f| f.file.clone()).unwrap_or_default();
 
-                    match found {
-                        Some(v) => (v.to_string(), Some(match v {
-                            asperger::vbscript::VBValue::Number(_) => "Double".to_string(),
-                            asperger::vbscript::VBValue::String(_) => "String".to_string(),
-                            asperger::vbscript::VBValue::Boolean(_) => "Boolean".to_string(),
-                            asperger::vbscript::VBValue::Null => "Null".to_string(),
-                            asperger::vbscript::VBValue::Empty => "Empty".to_string(),
-                             asperger::vbscript::VBValue::Array(..) => "Array".to_string(),
-                                    asperger::vbscript::VBValue::Object(_) => "Object".to_string(),
-                        })),
-                        None => {
-                            // Try to interpret as a literal
-                            let trimmed = expression.trim();
-                            if trimmed.eq_ignore_ascii_case("true") {
-                                ("True".to_string(), Some("Boolean".to_string()))
-                            } else if trimmed.eq_ignore_ascii_case("false") {
-                                ("False".to_string(), Some("Boolean".to_string()))
-                            } else if trimmed.parse::<f64>().is_ok() {
-                                (trimmed.to_string(), Some("Double".to_string()))
-                            } else if trimmed.starts_with('"') && trimmed.ends_with('"') && trimmed.len() >= 2 {
-                                (trimmed[1..trimmed.len()-1].to_string(), Some("String".to_string()))
-                            } else {
-                                (format!("<error: '{}' not found>", expression), Some("Error".to_string()))
+                    let mut ctx = ExecutionContext::from_variables(vars, &script_path);
+
+                    let tokens = Tokenizer::tokenize(&expression);
+                    let tokens: Vec<_> = tokens.into_iter()
+                        .filter(|t| t.token_type != TokenType::EOF)
+                        .collect();
+
+                    if tokens.is_empty() {
+                        ("<empty expression>".to_string(), Some("Error".to_string()), 0)
+                    } else {
+                        match parse_expression(&tokens) {
+                            Ok(expr) => match evaluate(&expr, &mut ctx) {
+                                Ok(val) => {
+                                    let (type_str, var_ref) = match &val {
+                                        asperger::vbscript::VBValue::Array(..) => ("Array".to_string(), 0),
+                                        asperger::vbscript::VBValue::Object(_) => ("Object".to_string(), 0),
+                                        asperger::vbscript::VBValue::Number(_) => ("Double".to_string(), 0),
+                                        asperger::vbscript::VBValue::String(_) => ("String".to_string(), 0),
+                                        asperger::vbscript::VBValue::Boolean(_) => ("Boolean".to_string(), 0),
+                                        asperger::vbscript::VBValue::Null => ("Null".to_string(), 0),
+                                        asperger::vbscript::VBValue::Empty => ("Empty".to_string(), 0),
+                                    };
+                                    (val.to_string(), Some(type_str), var_ref)
+                                }
+                                Err(e) => {
+                                    (format!("<error: {}>", e.message), Some("Error".to_string()), 0)
+                                }
+                            },
+                            Err(e) => {
+                                (format!("<error: {}>", e.message), Some("Error".to_string()), 0)
                             }
                         }
                     }
                 } else {
-                    ("<error: no debugger state>".to_string(), Some("Error".to_string()))
+                    ("<error: no debugger state>".to_string(), Some("Error".to_string()), 0)
                 };
 
                 let rsp = req.success(ResponseBody::Evaluate(responses::EvaluateResponse {
                     result,
                     type_field,
                     presentation_hint: None,
-                    variables_reference: 0,
+                    variables_reference,
                     named_variables: None,
                     indexed_variables: None,
                     memory_reference: None,
