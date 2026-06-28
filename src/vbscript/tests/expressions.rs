@@ -553,6 +553,78 @@ use super::*;
         );
     }
 
+    // ===== LIKE OPERATOR =====
+
+    #[test]
+    fn test_like_wildcard_matches() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        ctx.set_variable("s", VBValue::String("hello".to_string()));
+        let interp = VBScriptInterpreter;
+        interp.execute("result = s Like \"h*\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        ctx.set_variable("s", VBValue::String("world".to_string()));
+        interp.execute("result = s Like \"h*\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_like_single_char() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = \"cat\" Like \"c?t\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"cot\" Like \"c?t\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"ct\" Like \"c?t\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_like_digit() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = \"a1b\" Like \"a#b\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"axb\" Like \"a#b\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_like_charlist() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = \"cat\" Like \"[c]at\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"bat\" Like \"[c]at\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_like_negated_charlist() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = \"cat\" Like \"[!d]at\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"dat\" Like \"[!d]at\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_like_exact_match() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = \"hello\" Like \"hello\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
+        interp.execute("result = \"hello\" Like \"world\"", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
+    }
+
     // ===== EXPRESSION EVALUATOR — TYPE COERCION =====
 
     #[test]

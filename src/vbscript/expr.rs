@@ -17,6 +17,7 @@ pub enum BinOp {
     Add, Sub, Mul, Div, IntDiv, Pow, Mod, Concat,
     Eq, Ne, Lt, Gt, Le, Ge,
     And, Or, Xor, Eqv, Imp, Is,
+    Like,
 }
 
 /// Unary prefix operators.
@@ -93,7 +94,8 @@ fn precedence(token_type: &TokenType) -> (u8, bool) {
         | TokenType::LessThan
         | TokenType::GreaterThan
         | TokenType::LessEqual
-        | TokenType::GreaterEqual => (30, false),
+        | TokenType::GreaterEqual
+        | TokenType::Like => (30, false),
         TokenType::And => (20, false),
         TokenType::Or => (15, false),
         _ => (0, false),
@@ -119,6 +121,7 @@ pub(crate) fn token_to_binop(token: &Token) -> Option<BinOp> {
         TokenType::Or => Some(BinOp::Or),
         TokenType::Mod => Some(BinOp::Mod),
         TokenType::Is => Some(BinOp::Is),
+        TokenType::Like => Some(BinOp::Like),
         TokenType::Eqv => Some(BinOp::Eqv),
         TokenType::Imp => Some(BinOp::Imp),
         _ => match token.token_type {
@@ -396,7 +399,7 @@ fn parse_binary(tokens: &[&Token], pos: &mut usize, min_prec: u8) -> Result<Expr
 
         let prec = if prec == 0 && token_to_binop(token).is_some() {
             match token_to_binop(token).unwrap() {
-                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge => 30,
+                BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Gt | BinOp::Le | BinOp::Ge | BinOp::Like => 30,
                 BinOp::And => 20,
                 BinOp::Or => 15,
                 BinOp::Mod => 50,
@@ -844,6 +847,7 @@ fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, V
             }
         }
         BinOp::Imp => Ok(VBValue::Boolean(!to_bool(left) || to_bool(right))),
+        BinOp::Like => Ok(VBValue::Boolean(like_match(&to_string_val(left), &to_string_val(right)))),
     }
 }
 
@@ -857,6 +861,95 @@ fn values_equal(left: &VBValue, right: &VBValue) -> bool {
         (VBValue::Array(..), _) | (_, VBValue::Array(..)) => false,
         (VBValue::Object(_), _) | (_, VBValue::Object(_)) => false,
         _ => to_string_val(left) == to_string_val(right),
+    }
+}
+
+/// Match a string against a VBScript `Like` pattern.
+///
+/// Pattern syntax:
+/// - `?` matches any single character
+/// - `#` matches any single digit (0-9)
+/// - `*` matches zero or more characters
+/// - `[charlist]` matches any single character in charlist
+/// - `[!charlist]` matches any single character NOT in charlist
+fn like_match(text: &str, pattern: &str) -> bool {
+    let text_chars: Vec<char> = text.chars().collect();
+    let pat_chars: Vec<char> = pattern.chars().collect();
+    like_match_recursive(&text_chars, 0, &pat_chars, 0)
+}
+
+fn like_match_recursive(
+    text: &[char],
+    ti: usize,
+    pat: &[char],
+    pi: usize,
+) -> bool {
+    // If we've consumed both text and pattern, it's a match
+    if ti >= text.len() && pi >= pat.len() {
+        return true;
+    }
+
+    // Only pattern left: check if remaining pattern can match empty string
+    if ti >= text.len() {
+        return pi < pat.len() && pat[pi] == '*' && like_match_recursive(text, ti, pat, pi + 1);
+    }
+
+    // Only text left: no match (unless pattern has a trailing *)
+    if pi >= pat.len() {
+        return false;
+    }
+
+    match pat[pi] {
+        '*' => {
+            // Try matching zero or more characters
+            // 1. Match zero chars: advance pattern
+            if like_match_recursive(text, ti, pat, pi + 1) {
+                return true;
+            }
+            // 2. Match one char and keep *  
+            like_match_recursive(text, ti + 1, pat, pi)
+        }
+        '?' => like_match_recursive(text, ti + 1, pat, pi + 1),
+        '#' => {
+            if text[ti].is_ascii_digit() {
+                like_match_recursive(text, ti + 1, pat, pi + 1)
+            } else {
+                false
+            }
+        }
+        '[' => {
+            let (negated, end_idx) = if pi + 1 < pat.len() && pat[pi + 1] == '!' {
+                (true, pi + 2)
+            } else {
+                (false, pi + 1)
+            };
+
+            // Find the closing bracket
+            let close = pat[end_idx..].iter().position(|&c| c == ']');
+            match close {
+                Some(close_idx) => {
+                    let charlist_end = end_idx + close_idx;
+                    let charlist = &pat[end_idx..charlist_end];
+                    let in_list = charlist.contains(&text[ti]);
+                    if negated != in_list {
+                        like_match_recursive(text, ti + 1, pat, charlist_end + 1)
+                    } else {
+                        false
+                    }
+                }
+                None => {
+                    // No closing bracket: treat as literal '['
+                    pat[pi] == text[ti] && like_match_recursive(text, ti + 1, pat, pi + 1)
+                }
+            }
+        }
+        c => {
+            if c == text[ti] {
+                like_match_recursive(text, ti + 1, pat, pi + 1)
+            } else {
+                false
+            }
+        }
     }
 }
 
