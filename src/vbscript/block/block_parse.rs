@@ -2,7 +2,7 @@ use super::block_exec::execute_user_defined_function;
 use super::block_types::{BlockStatement, CaseClause, ElseIfBlock};
 use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr};
 use crate::vbscript::syntax::{
-    ArrayAssignment, Assignment, Const, Dim, MethodCall, OnErrorGoto0, OnErrorResumeNext,
+    ArrayAssignment, Assignment, Const, Dim, Erase, MethodCall, OnErrorGoto0, OnErrorResumeNext,
     PropertySet, ReDim, ResponseCookiesSet, ResponseCookiesSetProp, ResponseWrite, VBSyntax,
 };
 use crate::vbscript::vbs_error::{VBSError, VBSErrorType};
@@ -740,6 +740,9 @@ fn parse_line_into_syntax(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSErro
         }
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("exit") => {
             parse_exit_line(tokens)
+        }
+        TokenType::Identifier if first_token.value.eq_ignore_ascii_case("erase") => {
+            parse_erase_statement(tokens)
         }
         TokenType::Identifier if first_token.value.eq_ignore_ascii_case("randomize") => {
             Ok(Box::new(CallStatement::new("Randomize".to_string(), Vec::new())))
@@ -1714,6 +1717,32 @@ fn parse_exit_line(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
         _ => Err(VBSErrorType::SyntaxError
             .into_error(format!("Invalid Exit statement: Exit {}", exit_kind))),
     }
+}
+
+fn parse_erase_statement(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
+    let non_ws: Vec<&Token> = tokens
+        .iter()
+        .filter(|t| t.token_type != TokenType::WhiteSpace)
+        .collect();
+    if non_ws.len() < 2 {
+        return Err(VBSErrorType::SyntaxError.into_error("Expected variable name after Erase".to_string()));
+    }
+    let mut var_names = Vec::new();
+    for token in non_ws.iter().skip(1) {
+        match token.token_type {
+            TokenType::Identifier => var_names.push(token.value.as_ref().to_lowercase()),
+            TokenType::Comma => continue,
+            TokenType::NewLine | TokenType::EOF => break,
+            _ => {
+                return Err(VBSErrorType::SyntaxError
+                    .into_error(format!("Unexpected token in Erase statement: {:?}", token.token_type)));
+            }
+        }
+    }
+    if var_names.is_empty() {
+        return Err(VBSErrorType::SyntaxError.into_error("Expected variable name after Erase".to_string()));
+    }
+    Ok(Box::new(Erase::new(var_names)))
 }
 
 #[derive(Clone)]

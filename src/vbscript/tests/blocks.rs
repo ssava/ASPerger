@@ -814,3 +814,42 @@ use super::*;
             .unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(2.0)));
     }
+
+    // ===== ERASE =====
+
+    #[test]
+    fn test_erase_array_resets_elements() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp
+            .execute("Dim arr(2)\narr(0) = 10\narr(1) = 20\narr(2) = 30\nErase arr", &mut ctx)
+            .unwrap();
+        if let Some(VBValue::Array(items, _)) = ctx.get_variable("arr") {
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0], VBValue::Empty);
+            assert_eq!(items[1], VBValue::Empty);
+            assert_eq!(items[2], VBValue::Empty);
+        } else {
+            panic!("expected array");
+        }
+    }
+
+    #[test]
+    fn test_erase_variable_sets_empty() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        ctx.set_variable("x", VBValue::Number(42.0));
+        interp.execute("Erase x", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("x"), Some(&VBValue::Empty));
+    }
+
+    #[test]
+    fn test_erase_undefined_variable_no_error() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        // Erase on undefined variable should not error
+        interp.execute("Erase nonexistent", &mut ctx).unwrap();
+    }
