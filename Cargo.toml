@@ -20,7 +20,7 @@ default = ["fetchurl"]
 fetchurl = ["dep:reqwest"]
 
 [dependencies]
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "signal", "time", "sync"] }
 clap = { version = "4.0", features = ["derive", "env"] }
 regex = "1.10.2"
 ahash = "0.8.12"
