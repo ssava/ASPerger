@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use super::block::{parse_blocks, execute_blocks};
-use super::execution_context::{CIStr, CIString, ExecutionContext};
+use super::execution_context::ExecutionContext;
 use super::value::VBValue;
 use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
@@ -371,7 +371,7 @@ mod dictionary_tests {
 #[derive(Debug)]
 pub struct ClassInstance {
     pub class_name: String,
-    pub instance_vars: AHashMap<CIString, VBValue>,
+    pub instance_vars: AHashMap<String, VBValue>,
 }
 
 impl ClassInstance {
@@ -407,14 +407,14 @@ impl VBScriptObject for ClassInstance {
                 })?;
                 let mut instance_vars = self.instance_vars.clone();
                 context.set_variable(name, VBValue::Empty);
-                instance_vars.insert(CIString::new(name.to_string()), VBValue::Empty);
+                instance_vars.insert(name.to_lowercase(), VBValue::Empty);
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
                     super::block::execute_blocks(&body_blocks, ctx)
                 });
                 match result {
                     Ok(()) => {
                         let val = instance_vars
-                            .get(CIStr::new(name))
+                            .get(&name.to_lowercase())
                             .cloned()
                             .unwrap_or(VBValue::Empty);
                         Ok(val)
@@ -424,7 +424,7 @@ impl VBScriptObject for ClassInstance {
             } else {
                 let val = self
                     .instance_vars
-                    .get(CIStr::new(name))
+                    .get(&name.to_lowercase())
                     .cloned()
                     .unwrap_or(VBValue::Empty);
                 Ok(val)
@@ -432,7 +432,7 @@ impl VBScriptObject for ClassInstance {
         } else {
             let val = self
                 .instance_vars
-                .get(CIStr::new(name))
+                .get(&name.to_lowercase())
                 .cloned()
                 .unwrap_or(VBValue::Empty);
             Ok(val)
@@ -456,7 +456,7 @@ impl VBScriptObject for ClassInstance {
                 })?;
                 let mut instance_vars = std::mem::take(&mut self.instance_vars);
                 if let Some(ref param) = prop_def.let_param {
-                    instance_vars.insert(CIString::new(param.clone()), value.clone());
+                    instance_vars.insert(param.to_lowercase(), value.clone());
                 }
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
                     super::block::execute_blocks(&body_blocks, ctx)
@@ -464,11 +464,11 @@ impl VBScriptObject for ClassInstance {
                 self.instance_vars = instance_vars;
                 result
             } else {
-                self.instance_vars.insert(CIString::new(name.to_string()), value);
+                self.instance_vars.insert(name.to_lowercase(), value);
                 Ok(())
             }
         } else {
-            self.instance_vars.insert(CIString::new(name.to_string()), value);
+            self.instance_vars.insert(name.to_lowercase(), value);
             Ok(())
         }
     }
@@ -517,12 +517,12 @@ impl VBScriptObject for ClassInstance {
         let mut instance_vars = self.instance_vars.clone();
         for (i, param) in method.params.iter().enumerate() {
             let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
-            instance_vars.insert(CIString::new(param.clone()), val);
+            instance_vars.insert(param.to_lowercase(), val);
         }
 
         // For Functions, init return value variable
         if method.is_function {
-            instance_vars.insert(CIString::new(method.name.clone()), VBValue::Empty);
+            instance_vars.insert(method.name.to_lowercase(), VBValue::Empty);
         }
 
         // Execute with merged scope (globals + instance vars)
@@ -538,7 +538,7 @@ impl VBScriptObject for ClassInstance {
                 if method.is_function {
                     Ok(self
                         .instance_vars
-                        .get(CIStr::new(&method.name))
+                        .get(&method.name.to_lowercase())
                         .cloned()
                         .unwrap_or(VBValue::Empty))
                 } else {
@@ -549,7 +549,7 @@ impl VBScriptObject for ClassInstance {
                 if method.is_function {
                     Ok(self
                         .instance_vars
-                        .get(CIStr::new(&method.name))
+                        .get(&method.name.to_lowercase())
                         .cloned()
                         .unwrap_or(VBValue::Empty))
                 } else {

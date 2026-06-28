@@ -2,8 +2,37 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use std::path::Path;
+
+use asperger::asp::config::{AspDirConfig, Config, DirConfigCache};
+
 fn make_request(path: &str) -> String {
     format!("GET /{} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n", path)
+}
+
+fn make_config() -> Config {
+    Config {
+        host: "127.0.0.1".to_string(),
+        port: 0,
+        folder: "asp_files".to_string(),
+        program: None,
+        enable_directory_listing: false,
+        default_documents: None,
+        log_level: None,
+    }
+}
+
+fn make_dir_cache(config: &Config) -> DirConfigCache {
+    let root = Path::new(&config.folder)
+        .canonicalize()
+        .unwrap_or_else(|_| Path::new(&config.folder).to_path_buf());
+    DirConfigCache::new(
+        AspDirConfig {
+            default_documents: vec!["index.asp".to_string()],
+            directory_listing: false,
+        },
+        root,
+    )
 }
 
 // ── Single-request helpers ───────────────────────────────────────────────
@@ -12,24 +41,18 @@ fn make_request(path: &str) -> String {
 fn bench_single_request(path: &str) -> String {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let config = asperger::asp::config::Config {
-            host: "127.0.0.1".to_string(),
-            port: 0,
-            folder: "asp_files".to_string(),
-            program: None,
-            enable_directory_listing: false,
-        };
+        let config = make_config();
+        let dir_cache = Arc::new(make_dir_cache(&config));
         let server = asperger::asp::server::AspServer::new(config);
-        let handler = Arc::clone(&server.handler_chain);
         let store = Arc::clone(&server.store);
         let listener = Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
         let addr = listener.local_addr().unwrap();
-        let default_doc = "index.asp".to_string();
 
+        let dc = Arc::clone(&dir_cache);
         let accept_handle = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let _ = asperger::asp::server::AspServer::handle_connection(
-                &handler, &mut stream, "asp_files", &default_doc, &store, false,
+                &mut stream, "asp_files", &dc, &store,
             ).await;
         });
 
@@ -42,21 +65,19 @@ fn bench_single_request(path: &str) -> String {
 /// Spawn N accept tasks on the same listener.
 async fn spawn_accept_tasks(
     listener: Arc<tokio::net::TcpListener>,
-    handler: Arc<dyn asperger::asp::handler::Handler + Send + Sync>,
+    dir_cache: Arc<DirConfigCache>,
     store: Arc<asperger::vbscript::store::Store>,
-    default_doc: String,
     count: usize,
 ) -> Vec<tokio::task::JoinHandle<()>> {
     let mut handles = Vec::with_capacity(count);
     for _ in 0..count {
         let l = Arc::clone(&listener);
-        let h = Arc::clone(&handler);
+        let dc = Arc::clone(&dir_cache);
         let s = Arc::clone(&store);
-        let dd = default_doc.clone();
         handles.push(tokio::spawn(async move {
             let (mut stream, _) = l.accept().await.unwrap();
             let _ = asperger::asp::server::AspServer::handle_connection(
-                &h, &mut stream, "asp_files", &dd, &s, false,
+                &mut stream, "asp_files", &dc, &s,
             ).await;
         }));
     }
@@ -155,27 +176,19 @@ fn bench_throughput_empty(c: &mut Criterion) {
                     // Send N requests sequentially through the same server
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async {
-                        let config = asperger::asp::config::Config {
-                            host: "127.0.0.1".to_string(),
-                            port: 0,
-                            folder: "asp_files".to_string(),
-                            program: None,
-                            enable_directory_listing: false,
-                        };
+                        let config = make_config();
+                        let dir_cache = Arc::new(make_dir_cache(&config));
                         let server = asperger::asp::server::AspServer::new(config);
-                        let handler = Arc::clone(&server.handler_chain);
                         let store = Arc::clone(&server.store);
                         let listener =
                             Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
                         let addr = listener.local_addr().unwrap();
-                        let default_doc = "index.asp".to_string();
 
                         let total_reqs = THROUGHPUT_BATCH_SIZE;
                         let accept_tasks = spawn_accept_tasks(
                             Arc::clone(&listener),
-                            Arc::clone(&handler),
+                            Arc::clone(&dir_cache),
                             Arc::clone(&store),
-                            default_doc,
                             total_reqs,
                         )
                         .await;
@@ -211,26 +224,18 @@ fn run_vu(
 ) -> f64 {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        let config = asperger::asp::config::Config {
-            host: "127.0.0.1".to_string(),
-            port: 0,
-            folder: "asp_files".to_string(),
-            program: None,
-            enable_directory_listing: false,
-        };
+        let config = make_config();
+        let dir_cache = Arc::new(make_dir_cache(&config));
         let server = asperger::asp::server::AspServer::new(config);
-        let handler = Arc::clone(&server.handler_chain);
         let store = Arc::clone(&server.store);
         let listener = Arc::new(tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap());
         let addr = listener.local_addr().unwrap();
-        let default_doc = "index.asp".to_string();
 
         let total = users * requests_per_user;
         let _accept_tasks = spawn_accept_tasks(
             Arc::clone(&listener),
-            Arc::clone(&handler),
+            Arc::clone(&dir_cache),
             Arc::clone(&store),
-            default_doc,
             total,
         )
         .await;

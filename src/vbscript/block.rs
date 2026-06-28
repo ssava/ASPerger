@@ -2074,12 +2074,11 @@ pub(crate) fn execute_user_defined_function(
 ) -> Result<VBValue, VBSError> {
     // Push stack frame for debugger
     if let Some(ref debugger) = context.debugger {
-        use super::execution_context::CIString;
-        let vars: AHashMap<CIString, VBValue> = func
+        let vars: AHashMap<String, VBValue> = func
             .params
             .iter()
             .enumerate()
-            .map(|(i, p)| (CIString::new(p.clone()), args.get(i).cloned().unwrap_or(VBValue::Empty)))
+            .map(|(i, p)| (p.to_lowercase(), args.get(i).cloned().unwrap_or(VBValue::Empty)))
             .collect();
         debugger.push_frame(&func.name, &context.script_path, 0, vars);
     }
@@ -2093,10 +2092,7 @@ pub(crate) fn execute_user_defined_function(
         context.set_variable(&func.name, VBValue::Empty);
     }
 
-    // Save and reset code_start_line for function bodies so
-    // breakpoints inside functions use logical (function-relative) line numbers
-    let saved_code_start_line = context.code_start_line;
-    context.code_start_line = 0;
+    let _guard = crate::vbscript::execution_context::CodeStartLineGuard::new(&mut context.code_start_line);
 
     let body_blocks = match context.get_function_body(&func.name) {
         Some(cached) => cached.clone(),
@@ -2110,13 +2106,8 @@ pub(crate) fn execute_user_defined_function(
     match execute_blocks(&body_blocks, context) {
         Ok(()) => {}
         Err(e) if e.is_exit_function() || e.is_exit_sub() => {}
-        Err(e) => {
-            context.code_start_line = saved_code_start_line;
-            return Err(e);
-        }
+        Err(e) => return Err(e),
     }
-
-    context.code_start_line = saved_code_start_line;
 
     // Pop stack frame for debugger
     if let Some(ref debugger) = context.debugger {

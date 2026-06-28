@@ -1,4 +1,3 @@
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use ahash::AHashMap;
@@ -9,67 +8,6 @@ use super::store::Store;
 use super::tokenizer::Token;
 use super::vbs_error::VBSError;
 use super::VBValue;
-
-// ── Case-insensitive string types for hashmap keys ──────────────────────
-
-/// Case-insensitive string slice for hashmap lookups (borrowed key).
-/// Uses ASCII case-insensitive hashing and comparison.
-#[repr(transparent)]
-pub struct CIStr(str);
-
-impl CIStr {
-    pub fn new(s: &str) -> &Self {
-        unsafe { &*(s as *const str as *const CIStr) }
-    }
-}
-
-impl Hash for CIStr {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        for b in self.0.bytes() {
-            state.write_u8(b.to_ascii_lowercase());
-        }
-    }
-}
-
-impl PartialEq for CIStr {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(&other.0)
-    }
-}
-impl Eq for CIStr {}
-
-/// Owned case-insensitive string for HashMap keys.
-#[derive(Debug, Clone)]
-pub struct CIString(String);
-
-impl CIString {
-    pub fn new(s: String) -> Self {
-        CIString(s)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Hash for CIString {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        CIStr::new(&self.0).hash(state)
-    }
-}
-
-impl PartialEq for CIString {
-    fn eq(&self, other: &Self) -> bool {
-        CIStr::new(&self.0) == CIStr::new(&other.0)
-    }
-}
-impl Eq for CIString {}
-
-impl std::borrow::Borrow<CIStr> for CIString {
-    fn borrow(&self) -> &CIStr {
-        CIStr::new(&self.0)
-    }
-}
 
 /// VBScript error-handling mode.
 ///
@@ -194,13 +132,13 @@ pub struct SessionContext {
 /// Aggregate execution context that owns all per-request state.
 pub struct ExecutionContext {
     /// All script-level variables (case-insensitive keys).
-    variables: AHashMap<CIString, VBValue>,
+    variables: AHashMap<String, VBValue>,
     /// User-defined `Sub` / `Function` definitions.
-    functions: AHashMap<CIString, UserDefinedFunction>,
+    functions: AHashMap<String, UserDefinedFunction>,
     /// Cached parsed function bodies.
-    function_bodies: AHashMap<CIString, Vec<BlockStatement>>,
+    function_bodies: AHashMap<String, Vec<BlockStatement>>,
     /// `Class` definitions (stored by class name).
-    classes: AHashMap<CIString, ClassDefinition>,
+    classes: AHashMap<String, ClassDefinition>,
     /// Current `On Error` mode.
     error_mode: ErrorMode,
     /// The `Err.Number` value set by the last runtime error.
@@ -233,45 +171,71 @@ pub struct ExecutionContext {
     pub request_id: u64,
 }
 
+/// Scoped guard that resets `code_start_line` to a saved value on drop.
+///
+/// Used in `execute_user_defined_function` to ensure the field is restored
+/// even on early returns or panics.
+pub struct CodeStartLineGuard {
+    code_start_line: *mut usize,
+    saved: usize,
+}
+
+impl CodeStartLineGuard {
+    pub fn new(code_start_line: &mut usize) -> Self {
+        let saved = *code_start_line;
+        *code_start_line = 0;
+        CodeStartLineGuard {
+            code_start_line,
+            saved,
+        }
+    }
+}
+
+impl Drop for CodeStartLineGuard {
+    fn drop(&mut self) {
+        unsafe { *self.code_start_line = self.saved; }
+    }
+}
+
 impl ExecutionContext {
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
-        self.variables.get(CIStr::new(name))
+        self.variables.get(&name.to_lowercase())
     }
 
     pub fn set_variable(&mut self, name: &str, value: VBValue) {
-        self.variables.insert(CIString::new(name.to_string()), value);
+        self.variables.insert(name.to_lowercase(), value);
     }
 
     pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
-        self.variables.get_mut(CIStr::new(name))
+        self.variables.get_mut(&name.to_lowercase())
     }
 
     pub fn define_function(&mut self, func: UserDefinedFunction) {
-        self.functions.insert(CIString::new(func.name.clone()), func);
+        self.functions.insert(func.name.to_lowercase(), func);
     }
 
     pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
-        self.functions.get(CIStr::new(name))
+        self.functions.get(&name.to_lowercase())
     }
 
     pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
-        self.function_bodies.get(CIStr::new(name))
+        self.function_bodies.get(&name.to_lowercase())
     }
 
     pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
-        self.function_bodies.insert(CIString::new(name.to_string()), body);
+        self.function_bodies.insert(name.to_lowercase(), body);
     }
 
     pub fn define_class(&mut self, class: ClassDefinition) {
-        self.classes.insert(CIString::new(class.name.clone()), class);
+        self.classes.insert(class.name.to_lowercase(), class);
     }
 
     pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
-        self.classes.get(CIStr::new(name))
+        self.classes.get(&name.to_lowercase())
     }
 
     pub fn get_error_mode(&self) -> &ErrorMode {
@@ -292,11 +256,11 @@ impl ExecutionContext {
         self.err_description.clear();
     }
 
-    pub fn variables(&self) -> &AHashMap<CIString, VBValue> {
+    pub fn variables(&self) -> &AHashMap<String, VBValue> {
         &self.variables
     }
 
-    pub fn variables_mut(&mut self) -> &mut AHashMap<CIString, VBValue> {
+    pub fn variables_mut(&mut self) -> &mut AHashMap<String, VBValue> {
         &mut self.variables
     }
 
@@ -314,7 +278,7 @@ impl ExecutionContext {
     /// run closure `f`, then restore. Used for class Property Get/Let/Set.
     pub fn with_instance_scope<T>(
         &mut self,
-        instance_vars: &mut AHashMap<CIString, VBValue>,
+        instance_vars: &mut AHashMap<String, VBValue>,
         f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
     ) -> Result<T, VBSError> {
         let saved = std::mem::replace(&mut self.variables, std::mem::take(instance_vars));
@@ -327,7 +291,7 @@ impl ExecutionContext {
     /// take priority). After closure, updated instance vars are extracted back.
     pub fn with_class_method_scope<T>(
         &mut self,
-        instance_vars: &mut AHashMap<CIString, VBValue>,
+        instance_vars: &mut AHashMap<String, VBValue>,
         f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
     ) -> Result<T, VBSError> {
         let saved = std::mem::take(&mut self.variables);

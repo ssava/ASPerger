@@ -458,9 +458,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                     // Look up the expression in the specified frame, then fall back to all frames
                     let found = s.stack_frames.get(frame_id as usize)
-                        .and_then(|f| f.variables.get(asperger::vbscript::execution_context::CIStr::new(&expression)))
+                        .and_then(|f| f.variables.get(&expression.to_lowercase()))
                         .or_else(|| {
-                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(asperger::vbscript::execution_context::CIStr::new(&expression)))
+                            s.stack_frames.iter().rev().find_map(|f| f.variables.get(&expression.to_lowercase()))
                         });
 
                     match found {

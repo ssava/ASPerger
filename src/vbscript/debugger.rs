@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use ahash::AHashMap;
 
-use super::execution_context::CIString;
+
 use super::value::VBValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -23,7 +23,7 @@ pub struct StackFrame {
     pub name: String,
     pub file: String,
     pub line: usize,
-    pub variables: AHashMap<CIString, VBValue>,
+    pub variables: AHashMap<String, VBValue>,
 }
 
 pub enum DebugCommand {
@@ -125,7 +125,7 @@ impl Debugger {
         file: &str,
         line: usize,
         frame_depth: usize,
-        vars: Option<&AHashMap<CIString, VBValue>>,
+        vars: Option<&AHashMap<String, VBValue>>,
     ) -> Result<(), crate::vbscript::vbs_error::VBSError> {
         use crate::vbscript::vbs_error::VBSErrorType;
 
@@ -236,7 +236,7 @@ impl Debugger {
         Ok(())
     }
 
-    pub fn push_frame(&self, name: &str, file: &str, line: usize, vars: AHashMap<CIString, VBValue>) {
+    pub fn push_frame(&self, name: &str, file: &str, line: usize, vars: AHashMap<String, VBValue>) {
         let mut s = self.lock_state();
         s.stack_frames.push(StackFrame {
             name: name.to_string(),
@@ -263,11 +263,9 @@ impl Debugger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vbscript::execution_context::CIString;
-
-    fn make_vars() -> AHashMap<CIString, VBValue> {
+    fn make_vars() -> AHashMap<String, VBValue> {
         let mut m = AHashMap::new();
-        m.insert(CIString::new("x".to_string()), VBValue::Number(1.0));
+        m.insert("x".to_lowercase(), VBValue::Number(1.0));
         m
     }
 
