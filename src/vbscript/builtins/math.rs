@@ -99,3 +99,27 @@ pub(super) fn builtin_sqr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     }
     Ok(VBValue::Number(n.sqrt()))
 }
+
+pub(super) fn builtin_sin(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Sin")?;
+    let n = value_utils::to_arg_f64(&args[0]);
+    Ok(VBValue::Number(n.sin()))
+}
+
+pub(super) fn builtin_cos(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Cos")?;
+    let n = value_utils::to_arg_f64(&args[0]);
+    Ok(VBValue::Number(n.cos()))
+}
+
+pub(super) fn builtin_tan(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Tan")?;
+    let n = value_utils::to_arg_f64(&args[0]);
+    Ok(VBValue::Number(n.tan()))
+}
+
+pub(super) fn builtin_atn(args: &[VBValue]) -> Result<VBValue, VBSError> {
+    expect_arg_count(args, 1, "Atn")?;
+    let n = value_utils::to_arg_f64(&args[0]);
+    Ok(VBValue::Number(n.atan()))
+}

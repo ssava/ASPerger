@@ -718,6 +718,54 @@ use super::*;
     }
 
     #[test]
+    fn test_builtin_sin() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Sin(0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+        interp.execute("result = Sin(1.5707963267948966)", &mut ctx).unwrap();
+        let val = match ctx.get_variable("result") {
+            Some(VBValue::Number(n)) => *n,
+            _ => panic!("expected Number"),
+        };
+        assert!((val - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_builtin_cos() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Cos(0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(1.0)));
+    }
+
+    #[test]
+    fn test_builtin_tan() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Tan(0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+    }
+
+    #[test]
+    fn test_builtin_atn() {
+        let mut ctx = ExecutionContext::new();
+        crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
+        let interp = VBScriptInterpreter;
+        interp.execute("result = Atn(0)", &mut ctx).unwrap();
+        assert_eq!(ctx.get_variable("result"), Some(&VBValue::Number(0.0)));
+        interp.execute("result = Atn(1)", &mut ctx).unwrap();
+        let val = match ctx.get_variable("result") {
+            Some(VBValue::Number(n)) => *n,
+            _ => panic!("expected Number"),
+        };
+        assert!((val - 0.7853981633974483).abs() < 1e-10);
+    }
+
+    #[test]
     fn test_builtin_ubound_array() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
