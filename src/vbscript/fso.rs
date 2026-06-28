@@ -10,6 +10,7 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use crate::vbscript::vbobject::VBScriptObject;
+use crate::{prop_not_found, method_not_found, cannot_set_property};
 
 // ---- FileSystemObject ----
 
@@ -21,14 +22,8 @@ use crate::vbscript::vbobject::VBScriptObject;
 /// `DeleteFolder`, `CopyFile`, `CopyFolder`, `MoveFile`, `MoveFolder`,
 /// `CreateFolder`, `GetTempName`, `GetParentFolderName`,
 /// `GetFileName`, `GetExtensionName`, `GetBaseName`, `BuildPath`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FileSystemObject;
-
-impl Default for FileSystemObject {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl FileSystemObject {
     pub fn new() -> Self {
@@ -85,8 +80,7 @@ impl VBScriptObject for FileSystemObject {
                     Ok(VBValue::Array(std::sync::Arc::new(drives), vec![]))
                 }
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on FileSystemObject", name))),
+            _ => prop_not_found!("FileSystemObject", name),
         }
     }
 
@@ -431,8 +425,7 @@ impl VBScriptObject for FileSystemObject {
                         .into_error(format!("Invalid SpecialFolder constant: {}", folder_type))),
                 }
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on FileSystemObject", name))),
+            _ => method_not_found!("FileSystemObject", name),
         }
     }
 }
@@ -630,8 +623,7 @@ impl VBScriptObject for FileObject {
                     .unwrap_or(0);
                 Ok(VBValue::Number(attrs as f64))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on File object", name))),
+            _ => prop_not_found!("File", name),
         }
     }
 
@@ -652,8 +644,7 @@ impl VBScriptObject for FileObject {
                 self.name = new_name;
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Cannot set property '{}' on File object", name))),
+            _ => cannot_set_property!("File", name),
         }
     }
 
@@ -706,8 +697,7 @@ impl VBScriptObject for FileObject {
                 };
                 Ok(VBValue::Object(Box::new(ts)))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on File object", name))),
+            _ => method_not_found!("File", name),
         }
     }
 }
@@ -823,8 +813,7 @@ impl VBScriptObject for FolderObject {
                 let a = 16i32;
                 Ok(VBValue::Number(a as f64))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Folder object", name))),
+            _ => prop_not_found!("Folder", name),
         }
     }
 
@@ -845,8 +834,7 @@ impl VBScriptObject for FolderObject {
                 self.name = new_name;
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Cannot set property '{}' on Folder object", name))),
+            _ => cannot_set_property!("Folder", name),
         }
     }
 
@@ -893,8 +881,7 @@ impl VBScriptObject for FolderObject {
                 })?;
                 Ok(VBValue::Object(Box::new(TextStream::new_write(file))))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Folder object", name))),
+            _ => method_not_found!("Folder", name),
         }
     }
 }

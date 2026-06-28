@@ -12,6 +12,7 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
+use crate::{impl_vbscript_object, prop_not_found, method_not_found, cannot_set_property};
 
 // ===== RequestObject =====
 
@@ -24,12 +25,7 @@ use super::vbs_error::{VBSError, VBSErrorType};
 pub struct RequestObject;
 
 impl VBScriptObject for RequestObject {
-    fn type_name(&self) -> &'static str {
-        "Request"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RequestObject, "Request");
 
     fn get_property(
         &self,
@@ -50,8 +46,7 @@ impl VBScriptObject for RequestObject {
                 context.request.cookies.clone(),
             )))),
             "TOTALBYTES" => Ok(VBValue::Number(context.request.total_bytes as f64)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Request", name))),
+            _ => prop_not_found!("Request", name),
         }
     }
 
@@ -63,8 +58,7 @@ impl VBScriptObject for RequestObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "BINARYREAD" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Request", name))),
+            _ => method_not_found!("Request", name),
         }
     }
 }
@@ -76,12 +70,7 @@ impl VBScriptObject for RequestObject {
 pub struct RequestQueryString(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestQueryString {
-    fn type_name(&self) -> &'static str {
-        "RequestQueryString"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RequestQueryString, "RequestQueryString");
     fn get_property(
         &self,
         name: &str,
@@ -89,10 +78,7 @@ impl VBScriptObject for RequestQueryString {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on RequestQueryString",
-                name
-            ))),
+            _ => prop_not_found!("RequestQueryString", name),
         }
     }
     fn indexed_get(
@@ -119,12 +105,7 @@ impl VBScriptObject for RequestQueryString {
 pub struct RequestForm(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestForm {
-    fn type_name(&self) -> &'static str {
-        "RequestForm"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RequestForm, "RequestForm");
     fn get_property(
         &self,
         name: &str,
@@ -132,8 +113,7 @@ impl VBScriptObject for RequestForm {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on RequestForm", name))),
+            _ => prop_not_found!("RequestForm", name),
         }
     }
     fn indexed_get(
@@ -161,12 +141,7 @@ impl VBScriptObject for RequestForm {
 pub struct RequestServerVariables(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestServerVariables {
-    fn type_name(&self) -> &'static str {
-        "RequestServerVariables"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RequestServerVariables, "RequestServerVariables");
     fn get_property(
         &self,
         name: &str,
@@ -208,12 +183,7 @@ impl VBScriptObject for RequestServerVariables {
 pub struct RequestCookies(pub AHashMap<String, String>);
 
 impl VBScriptObject for RequestCookies {
-    fn type_name(&self) -> &'static str {
-        "RequestCookies"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RequestCookies, "RequestCookies");
     fn get_property(
         &self,
         name: &str,
@@ -259,12 +229,7 @@ impl VBScriptObject for RequestCookies {
 pub struct ResponseObject;
 
 impl VBScriptObject for ResponseObject {
-    fn type_name(&self) -> &'static str {
-        "Response"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ResponseObject, "Response");
 
     fn get_property(
         &self,
@@ -277,8 +242,7 @@ impl VBScriptObject for ResponseObject {
             "STATUS" => Ok(VBValue::String(context.response.status.clone())),
             "EXPIRES" => Ok(VBValue::Number(0.0)),
             "COOKIES" => Ok(VBValue::Object(Box::new(ResponseCookies::new()))),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Response", name))),
+            _ => prop_not_found!("Response", name),
         }
     }
 
@@ -305,8 +269,7 @@ impl VBScriptObject for ResponseObject {
                 Ok(())
             }
             "EXPIRES" => Ok(()),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Response", name))),
+            _ => cannot_set_property!("Response", name),
         }
     }
 
@@ -330,8 +293,7 @@ impl VBScriptObject for ResponseObject {
             "CLEAR" => Ok(VBValue::Empty),
             "FLUSH" => Ok(VBValue::Empty),
             "ADDHEADER" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Response", name))),
+            _ => method_not_found!("Response", name),
         }
     }
 }
@@ -340,14 +302,8 @@ impl VBScriptObject for ResponseObject {
 
 /// `Response.Cookies` — collection proxy for `Response.Cookies("name")` access.
 /// Writes go through `ResponseCookiesSet` / `ResponseCookiesSetProp` syntax nodes.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResponseCookies;
-
-impl Default for ResponseCookies {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl ResponseCookies {
     pub fn new() -> Self {
@@ -396,12 +352,7 @@ pub(crate) fn to_cookie_string(name: &str, entry: &CookieEntry) -> String {
 }
 
 impl VBScriptObject for CookieObject {
-    fn type_name(&self) -> &'static str {
-        "Cookie"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(CookieObject, "Cookie");
     fn get_property(
         &self,
         name: &str,
@@ -475,12 +426,7 @@ impl VBScriptObject for CookieObject {
 }
 
 impl VBScriptObject for ResponseCookies {
-    fn type_name(&self) -> &'static str {
-        "ResponseCookies"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ResponseCookies, "ResponseCookies");
     fn get_property(
         &self,
         name: &str,
@@ -538,12 +484,7 @@ pub struct SessionObject {
 }
 
 impl VBScriptObject for SessionObject {
-    fn type_name(&self) -> &'static str {
-        "Session"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(SessionObject, "Session");
 
     fn get_property(
         &self,
@@ -614,8 +555,7 @@ impl VBScriptObject for SessionObject {
                 }
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Session", name))),
+            _ => method_not_found!("Session", name),
         }
     }
 
@@ -674,12 +614,7 @@ impl SessionContents {
 }
 
 impl VBScriptObject for SessionContents {
-    fn type_name(&self) -> &'static str {
-        "SessionContents"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(SessionContents, "SessionContents");
     fn get_property(
         &self,
         name: &str,
@@ -695,11 +630,7 @@ impl VBScriptObject for SessionContents {
                 }
                 Ok(VBValue::Number(0.0))
             }
-            "KEY" | "ITEM" | "REMOVE" | "REMOVEALL" => {
-                Err(VBSErrorType::RuntimeError.into_error(format!(
-                    "Property '{}' not found on SessionContents", name
-                )))
-            }
+            "KEY" | "ITEM" | "REMOVE" | "REMOVEALL" => prop_not_found!("SessionContents", name),
             _ => {
                 if let Some(ref store) = context.store {
                     let sessions = store.lock_sessions();
@@ -836,12 +767,7 @@ impl VBScriptObject for SessionContents {
 pub struct ServerObject;
 
 impl VBScriptObject for ServerObject {
-    fn type_name(&self) -> &'static str {
-        "Server"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ServerObject, "Server");
 
     fn get_property(
         &self,
@@ -851,8 +777,7 @@ impl VBScriptObject for ServerObject {
         match name.to_uppercase().as_str() {
             "SCRIPTPATH" => Ok(VBValue::String(context.script_path.clone())),
             "SCRIPTTIMEOUT" => Ok(VBValue::Number(90.0)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Server", name))),
+            _ => prop_not_found!("Server", name),
         }
     }
 
@@ -864,8 +789,7 @@ impl VBScriptObject for ServerObject {
     ) -> Result<(), VBSError> {
         match name.to_uppercase().as_str() {
             "SCRIPTTIMEOUT" => Ok(()),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Server", name))),
+            _ => cannot_set_property!("Server", name),
         }
     }
 
@@ -948,8 +872,7 @@ impl VBScriptObject for ServerObject {
                     .collect();
                 Ok(VBValue::String(encoded))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Server", name))),
+            _ => method_not_found!("Server", name),
         }
     }
 }
@@ -966,12 +889,7 @@ impl VBScriptObject for ServerObject {
 pub struct ApplicationObject;
 
 impl VBScriptObject for ApplicationObject {
-    fn type_name(&self) -> &'static str {
-        "Application"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ApplicationObject, "Application");
 
     fn get_property(
         &self,
@@ -981,8 +899,7 @@ impl VBScriptObject for ApplicationObject {
         match name.to_uppercase().as_str() {
             "CONTENTS" => Ok(VBValue::Object(Box::new(ApplicationContents))),
             "STATICOBJECTS" => Ok(VBValue::Empty),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Application", name))),
+            _ => prop_not_found!("Application", name),
         }
     }
 
@@ -1015,8 +932,7 @@ impl VBScriptObject for ApplicationObject {
                 }
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Application", name))),
+            _ => method_not_found!("Application", name),
         }
     }
 
@@ -1058,12 +974,7 @@ impl VBScriptObject for ApplicationObject {
 pub struct ApplicationContents;
 
 impl VBScriptObject for ApplicationContents {
-    fn type_name(&self) -> &'static str {
-        "ApplicationContents"
-    }
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ApplicationContents, "ApplicationContents");
     /// Mirror of `ApplicationObject` locking: every access waits for the
     /// writer lock (`Application.Lock`) held by another request to clear.
     fn get_property(

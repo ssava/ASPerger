@@ -4,6 +4,7 @@
 //! the interpreter.
 
 use super::builtins;
+use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use super::{ExecutionContext, Token, TokenType, VBValue};
 
@@ -11,7 +12,7 @@ use super::{ExecutionContext, Token, TokenType, VBValue};
 ///
 /// Precedences range from 80 (`.` — tightest) down to 1 (`Imp`).
 /// See `precedence()` for the full table.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinOp {
     Add, Sub, Mul, Div, IntDiv, Pow, Mod, Concat,
     Eq, Ne, Lt, Gt, Le, Ge,
@@ -19,7 +20,7 @@ pub enum BinOp {
 }
 
 /// Unary prefix operators.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOp {
     Neg,
     Not,
@@ -517,7 +518,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
         Expr::Literal(val) => Ok(val.clone()),
         Expr::Variable(name) => {
             if name == "__with_obj__" {
-                return context.scope.with_object.clone().ok_or_else(|| {
+                return context.with_object.clone().ok_or_else(|| {
                     VBSErrorType::RuntimeError.into_error("With object not set".to_string())
                 });
             }
@@ -531,11 +532,11 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
                     .into_error(format!("Variable '{}' is not defined", name))),
             }
         }
-        Expr::WithObject => context.scope.with_object.clone().ok_or_else(|| {
+        Expr::WithObject => context.with_object.clone().ok_or_else(|| {
             VBSErrorType::RuntimeError.into_error("With object not set".to_string())
         }),
         Expr::CaseComparison { op, rhs } => {
-            let select_val = context.scope.select_value.clone().ok_or_else(|| {
+            let select_val = context.select_value.clone().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error("Select value not set".to_string())
             })?;
             let rhs_val = evaluate(rhs, context)?;
@@ -562,11 +563,14 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             if evaluated_args.len() == 1
                 && matches!(context.get_variable(name), Some(VBValue::Object(_)))
             {
-                let mut obj_val = {
-                    let slot = context.get_variable_mut(name).unwrap();
-                    let mut replacement = VBValue::Empty;
-                    std::mem::swap(slot, &mut replacement);
-                    replacement
+                let mut obj_val = match context.get_variable_mut(name) {
+                    Some(slot) => {
+                        let mut replacement = VBValue::Empty;
+                        std::mem::swap(slot, &mut replacement);
+                        replacement
+                    }
+                    None => return Err(VBSErrorType::RuntimeError
+                        .into_error("Object variable disappeared during evaluation".to_string())),
                 };
                 match &mut obj_val {
                     VBValue::Object(ref mut obj) => {
@@ -691,15 +695,7 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
 }
 
 pub(crate) fn to_number(val: &VBValue) -> f64 {
-    match val {
-        VBValue::Number(n) => *n,
-        VBValue::String(s) => s.parse::<f64>().unwrap_or(0.0),
-        VBValue::Boolean(true) => -1.0,
-        VBValue::Boolean(false) => 0.0,
-        VBValue::Null | VBValue::Empty => 0.0,
-        VBValue::Array(..) => 0.0,
-        VBValue::Object(_) => 0.0,
-    }
+    value_utils::to_arg_f64(val)
 }
 
 fn to_bool(val: &VBValue) -> bool {
@@ -755,133 +751,89 @@ fn logical_not(val: VBValue) -> Result<VBValue, VBSError> {
     Ok(VBValue::Boolean(!to_bool(&val)))
 }
 
-fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
-    // Fast path: only check op when values are Object/Array (rare case)
-    if matches!(left, VBValue::Array(..) | VBValue::Object(_))
-        || matches!(right, VBValue::Array(..) | VBValue::Object(_))
-    {
-        // Is, Eq, Ne can handle Object/Array (reference comparison via values_equal)
-        // Concat can handle any type (converts to string via to_string_val)
-        if !matches!(op, BinOp::Is | BinOp::Eq | BinOp::Ne | BinOp::Concat) {
-            return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
+fn checked_div(l: f64, r: f64, floor: bool) -> Result<VBValue, VBSError> {
+    if r == 0.0 {
+        Err(VBSErrorType::RuntimeError.into_error("Division by zero".to_string()))
+    } else if floor {
+        Ok(VBValue::Number((l / r).floor()))
+    } else {
+        Ok(VBValue::Number(l / r))
+    }
+}
+
+fn concat_str(left: &VBValue, right: &VBValue) -> String {
+    match (left, right) {
+        (VBValue::String(l), VBValue::String(r)) => {
+            let mut s = String::with_capacity(l.len() + r.len());
+            s.push_str(l);
+            s.push_str(r);
+            s
         }
+        (l, r) => {
+            let ls = to_string_val(l);
+            let rs = to_string_val(r);
+            let mut s = String::with_capacity(ls.len() + rs.len());
+            s.push_str(&ls);
+            s.push_str(&rs);
+            s
+        }
+    }
+}
+
+fn cmp_result(left: &VBValue, right: &VBValue) -> std::cmp::Ordering {
+    let ln = to_number(left);
+    let rn = to_number(right);
+    ln.partial_cmp(&rn).unwrap_or(std::cmp::Ordering::Equal)
+}
+
+fn bool_or_bitwise<B, I>(left: &VBValue, right: &VBValue, bool_op: B, int_op: I) -> VBValue
+where
+    B: Fn(bool, bool) -> bool,
+    I: Fn(i64, i64) -> i64,
+{
+    match (left, right) {
+        (VBValue::Boolean(_), VBValue::Boolean(_)) => VBValue::Boolean(bool_op(to_bool(left), to_bool(right))),
+        _ => VBValue::Number(int_op(to_number(left) as i64, to_number(right) as i64) as f64),
+    }
+}
+
+fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, VBSError> {
+    if (matches!(left, VBValue::Array(..) | VBValue::Object(_))
+        || matches!(right, VBValue::Array(..) | VBValue::Object(_)))
+        && !matches!(op, BinOp::Is | BinOp::Eq | BinOp::Ne | BinOp::Concat)
+    {
+        return Err(VBSErrorType::ValueError.into_error("Type mismatch".to_string()));
     }
     match op {
         BinOp::Add => match (left, right) {
-            (VBValue::String(l), VBValue::String(r)) => {
-                let mut s = String::with_capacity(l.len() + r.len());
-                s.push_str(l.as_str());
-                s.push_str(r.as_str());
-                Ok(VBValue::String(s))
-            }
-            (VBValue::String(l), _) => {
-                let r_str = to_string_val(right);
-                let mut s = String::with_capacity(l.len() + r_str.len());
-                s.push_str(l.as_str());
-                s.push_str(&r_str);
-                Ok(VBValue::String(s))
-            }
-            (_, VBValue::String(r)) => {
-                let l_str = to_string_val(left);
-                let mut s = String::with_capacity(l_str.len() + r.len());
-                s.push_str(&l_str);
-                s.push_str(r.as_str());
-                Ok(VBValue::String(s))
-            }
+            (VBValue::String(_), _) | (_, VBValue::String(_)) => Ok(VBValue::String(concat_str(left, right))),
             _ => Ok(VBValue::Number(to_number(left) + to_number(right))),
         },
         BinOp::Sub => Ok(VBValue::Number(to_number(left) - to_number(right))),
         BinOp::Mul => Ok(VBValue::Number(to_number(left) * to_number(right))),
-        BinOp::Div => {
-            let r = to_number(right);
-            if r == 0.0 {
-                Err(VBSErrorType::RuntimeError.into_error("Division by zero".to_string()))
-            } else {
-                Ok(VBValue::Number(to_number(left) / r))
-            }
-        }
-        BinOp::IntDiv => {
-            let r = to_number(right);
-            if r == 0.0 {
-                Err(VBSErrorType::RuntimeError.into_error("Division by zero".to_string()))
-            } else {
-                Ok(VBValue::Number((to_number(left) / r).floor()))
-            }
-        }
+        BinOp::Div => checked_div(to_number(left), to_number(right), false),
+        BinOp::IntDiv => checked_div(to_number(left), to_number(right), true),
         BinOp::Pow => Ok(VBValue::Number(to_number(left).powf(to_number(right)))),
         BinOp::Mod => Ok(VBValue::Number(to_number(left) % to_number(right))),
-        BinOp::Concat => {
-            let result = match (left, right) {
-                (VBValue::String(l), VBValue::String(r)) => {
-                    let mut s = String::with_capacity(l.len() + r.len());
-                    s.push_str(l.as_str());
-                    s.push_str(r.as_str());
-                    s
-                }
-                (left, right) => {
-                    let l = to_string_val(left);
-                    let r = to_string_val(right);
-                    let mut s = String::with_capacity(l.len() + r.len());
-                    s.push_str(&l);
-                    s.push_str(&r);
-                    s
-                }
-            };
-            Ok(VBValue::String(result))
-        }
+        BinOp::Concat => Ok(VBValue::String(concat_str(left, right))),
         BinOp::Eq => Ok(VBValue::Boolean(values_equal(left, right))),
         BinOp::Ne => Ok(VBValue::Boolean(!values_equal(left, right))),
-        BinOp::Lt => Ok(VBValue::Boolean(
-            compare_values(left, right) == std::cmp::Ordering::Less,
-        )),
-        BinOp::Gt => Ok(VBValue::Boolean(
-            compare_values(left, right) == std::cmp::Ordering::Greater,
-        )),
-        BinOp::Le => Ok(VBValue::Boolean(
-            compare_values(left, right) != std::cmp::Ordering::Greater,
-        )),
-        BinOp::Ge => Ok(VBValue::Boolean(
-            compare_values(left, right) != std::cmp::Ordering::Less,
-        )),
+        BinOp::Lt => Ok(VBValue::Boolean(cmp_result(left, right) == std::cmp::Ordering::Less)),
+        BinOp::Gt => Ok(VBValue::Boolean(cmp_result(left, right) == std::cmp::Ordering::Greater)),
+        BinOp::Le => Ok(VBValue::Boolean(cmp_result(left, right) != std::cmp::Ordering::Greater)),
+        BinOp::Ge => Ok(VBValue::Boolean(cmp_result(left, right) != std::cmp::Ordering::Less)),
         BinOp::Is => Ok(VBValue::Boolean(values_equal(left, right))),
-        BinOp::And => match (left, right) {
-            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
-                Ok(VBValue::Boolean(to_bool(left) && to_bool(right)))
-            }
-            _ => Ok(VBValue::Number(
-                (to_number(left) as i64 & to_number(right) as i64) as f64,
-            )),
-        },
-        BinOp::Or => match (left, right) {
-            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
-                Ok(VBValue::Boolean(to_bool(left) || to_bool(right)))
-            }
-            _ => Ok(VBValue::Number(
-                (to_number(left) as i64 | to_number(right) as i64) as f64,
-            )),
-        },
-        BinOp::Xor => match (left, right) {
-            (VBValue::Boolean(_), VBValue::Boolean(_)) => {
-                Ok(VBValue::Boolean(to_bool(left) ^ to_bool(right)))
-            }
-            _ => Ok(VBValue::Number(
-                (to_number(left) as i64 ^ to_number(right) as i64) as f64,
-            )),
-        },
+        BinOp::And => Ok(bool_or_bitwise(left, right, |a, b| a && b, |a, b| a & b)),
+        BinOp::Or => Ok(bool_or_bitwise(left, right, |a, b| a || b, |a, b| a | b)),
+        BinOp::Xor => Ok(bool_or_bitwise(left, right, |a, b| a ^ b, |a, b| a ^ b)),
         BinOp::Eqv => {
-            let result =
-                if matches!(left, VBValue::Boolean(_)) && matches!(right, VBValue::Boolean(_)) {
-                    VBValue::Boolean(to_bool(left) == to_bool(right))
-                } else {
-                    VBValue::Number(!(to_number(left) as i64 ^ to_number(right) as i64) as f64)
-                };
-            Ok(result)
+            if matches!(left, VBValue::Boolean(_)) && matches!(right, VBValue::Boolean(_)) {
+                Ok(VBValue::Boolean(to_bool(left) == to_bool(right)))
+            } else {
+                Ok(VBValue::Number(!(to_number(left) as i64 ^ to_number(right) as i64) as f64))
+            }
         }
-        BinOp::Imp => {
-            let l = to_bool(left);
-            let r = to_bool(right);
-            Ok(VBValue::Boolean(!l || r))
-        }
+        BinOp::Imp => Ok(VBValue::Boolean(!to_bool(left) || to_bool(right))),
     }
 }
 
@@ -898,11 +850,3 @@ fn values_equal(left: &VBValue, right: &VBValue) -> bool {
     }
 }
 
-fn compare_values(left: &VBValue, right: &VBValue) -> std::cmp::Ordering {
-    let ln = to_number(left);
-    let rn = to_number(right);
-    match ln.partial_cmp(&rn) {
-        Some(ordering) => ordering,
-        None => std::cmp::Ordering::Equal,
-    }
-}

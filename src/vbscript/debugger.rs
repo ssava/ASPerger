@@ -69,6 +69,10 @@ pub struct Debugger {
 }
 
 impl Debugger {
+    fn lock_state(&self) -> std::sync::MutexGuard<'_, DebuggerState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     pub fn new() -> (Self, Arc<Mutex<DebuggerState>>, Receiver<DebugEvent>) {
         let state: Arc<Mutex<DebuggerState>> = Arc::new(Mutex::new(DebuggerState::default()));
         let (cmd_tx, cmd_rx) = mpsc::channel();
@@ -83,7 +87,7 @@ impl Debugger {
     }
 
     pub fn set_breakpoints(&self, file: &str, lines: &[usize]) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock_state();
         let mut sorted = lines.to_vec();
         sorted.sort();
         sorted.dedup();
@@ -91,7 +95,7 @@ impl Debugger {
     }
 
     pub fn set_step_mode(&self, mode: StepMode) {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock_state();
         state.step_mode = mode;
     }
 
@@ -126,7 +130,7 @@ impl Debugger {
         use crate::vbscript::vbs_error::VBSErrorType;
 
         let should_stop = {
-            let s = self.state.lock().unwrap();
+            let s = self.lock_state();
             match s.step_mode {
                 StepMode::Continue => s
                     .breakpoints
@@ -141,7 +145,7 @@ impl Debugger {
         if should_stop {
             // -- snapshot state and send Stopped event --
             {
-                let mut s = self.state.lock().unwrap();
+                let mut s = self.lock_state();
                 s.paused = true;
                 s.current_file = file.to_string();
                 s.current_line = line;
@@ -162,7 +166,7 @@ impl Debugger {
                 }
             }
 
-            let reason = match self.state.lock().unwrap().step_mode {
+            let reason = match self.lock_state().step_mode {
                 StepMode::Continue => StoppedReason::Breakpoint,
                 _ => StoppedReason::Step,
             };
@@ -176,17 +180,20 @@ impl Debugger {
                 })
                 .unwrap_or(());
 
-            // -- block until the DAP client sends a command --
-            match self.command_rx.lock().unwrap().recv() {
+            // -- block until the DAP client sends a command (30s timeout) --
+            use std::sync::mpsc::RecvTimeoutError;
+            let cmd = self.command_rx
+                .lock().unwrap_or_else(|e| e.into_inner())
+                .recv_timeout(std::time::Duration::from_secs(30));
+            match cmd {
                 Ok(DebugCommand::Continue) => {
-                    let mut s = self.state.lock().unwrap();
+                    let mut s = self.lock_state();
                     s.step_mode = StepMode::Continue;
                     s.paused = false;
                     s.stack_frames.clear();
                 }
                 Ok(DebugCommand::Next) => {
-                    // Next = StepOver at current depth until the line changes
-                    let mut s = self.state.lock().unwrap();
+                    let mut s = self.lock_state();
                     s.step_mode = StepMode::StepOver;
                     s.step_frame_depth = frame_depth;
                     s.current_file = file.to_string();
@@ -195,30 +202,33 @@ impl Debugger {
                     s.stack_frames.clear();
                 }
                 Ok(DebugCommand::StepIn) => {
-                    let mut s = self.state.lock().unwrap();
+                    let mut s = self.lock_state();
                     s.step_mode = StepMode::StepIn;
                     s.step_frame_depth = frame_depth;
                     s.paused = false;
                     s.stack_frames.clear();
                 }
                 Ok(DebugCommand::StepOut) => {
-                    // StepOut = stop when frame_depth drops below the current depth
-                    let mut s = self.state.lock().unwrap();
+                    let mut s = self.lock_state();
                     s.step_mode = StepMode::StepOut;
                     s.step_frame_depth = frame_depth;
                     s.paused = false;
                     s.stack_frames.clear();
                 }
-                Ok(DebugCommand::Disconnect) => {
+                Ok(DebugCommand::Disconnect) | Err(RecvTimeoutError::Disconnected) => {
                     return Err(
                         VBSErrorType::RuntimeError.into_error("Debugger disconnected".to_string())
                     );
                 }
-                Err(_) => {}
+                Err(RecvTimeoutError::Timeout) => {
+                    return Err(
+                        VBSErrorType::RuntimeError.into_error("Debugger command timed out".to_string())
+                    );
+                }
             }
         } else if line != 0 {
             // No stop — just remember the current position for StepOver tracking
-            let mut s = self.state.lock().unwrap();
+            let mut s = self.lock_state();
             s.current_file = file.to_string();
             s.current_line = line;
         }
@@ -227,7 +237,7 @@ impl Debugger {
     }
 
     pub fn push_frame(&self, name: &str, file: &str, line: usize, vars: AHashMap<CIString, VBValue>) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock_state();
         s.stack_frames.push(StackFrame {
             name: name.to_string(),
             file: file.to_string(),
@@ -237,16 +247,16 @@ impl Debugger {
     }
 
     pub fn pop_frame(&self) {
-        let mut s = self.state.lock().unwrap();
+        let mut s = self.lock_state();
         s.stack_frames.pop();
     }
 
     pub fn current_frame_depth(&self) -> usize {
-        self.state.lock().unwrap().stack_frames.len()
+        self.lock_state().stack_frames.len()
     }
 
     pub fn update_variables(&self) {
-        drop(self.state.lock().unwrap());
+        drop(self.lock_state());
     }
 }
 

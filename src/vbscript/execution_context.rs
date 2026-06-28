@@ -107,109 +107,7 @@ pub struct ClassDefinition {
     pub methods: AHashMap<String, MethodDef>,
 }
 
-/// Variable scope: holds variables, functions, classes, error state, and the with-object.
-///
-/// Each `Scope` is the per-request variable store.  When a function or
-/// class method is called, a new scope inherits or wraps the parent's
-/// variables (see `with_instance_scope` / `with_class_method_scope`).
-pub struct Scope {
-    /// All script-level variables (case-insensitive keys).
-    variables: AHashMap<CIString, VBValue>,
-    /// User-defined `Sub` / `Function` definitions.
-    functions: AHashMap<CIString, UserDefinedFunction>,
-    /// Cached parsed function bodies — parsed once at definition time, reused on every call.
-    function_bodies: AHashMap<CIString, Vec<BlockStatement>>,
-    /// `Class` definitions (stored by class name).
-    classes: AHashMap<CIString, ClassDefinition>,
-    /// Current `On Error` mode.
-    error_mode: ErrorMode,
-    /// The `Err.Number` value set by the last runtime error.
-    pub err_number: f64,
-    /// The `Err.Description` value set by the last runtime error.
-    pub err_description: String,
-    /// The object set by `With obj ... End With`.
-    pub with_object: Option<VBValue>,
-    /// The expression value set by `Select Case expr`.
-    pub(crate) select_value: Option<VBValue>,
-}
 
-impl Scope {
-    fn new() -> Self {
-        Scope {
-            variables: AHashMap::new(),
-            functions: AHashMap::new(),
-            function_bodies: AHashMap::new(),
-            classes: AHashMap::new(),
-            error_mode: ErrorMode::Normal,
-            err_number: 0.0,
-            err_description: String::new(),
-            with_object: None,
-            select_value: None,
-        }
-    }
-
-    pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
-        self.variables.get(CIStr::new(name))
-    }
-
-    pub fn set_variable(&mut self, name: &str, value: VBValue) {
-        self.variables.insert(CIString::new(name.to_string()), value);
-    }
-
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
-        self.variables.get_mut(CIStr::new(name))
-    }
-
-    pub fn define_function(&mut self, func: UserDefinedFunction) {
-        self.functions.insert(CIString::new(func.name.clone()), func);
-    }
-
-    pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
-        self.functions.get(CIStr::new(name))
-    }
-
-    pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
-        self.function_bodies.get(CIStr::new(name))
-    }
-
-    pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
-        self.function_bodies.insert(CIString::new(name.to_string()), body);
-    }
-
-    pub fn define_class(&mut self, class: ClassDefinition) {
-        self.classes.insert(CIString::new(class.name.clone()), class);
-    }
-
-    pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
-        self.classes.get(CIStr::new(name))
-    }
-
-    pub fn get_error_mode(&self) -> &ErrorMode {
-        &self.error_mode
-    }
-
-    pub fn set_error_mode(&mut self, mode: ErrorMode) {
-        self.error_mode = mode;
-    }
-
-    pub fn set_err(&mut self, err: VBSError) {
-        self.err_number = err.code as f64;
-        self.err_description = err.message;
-    }
-
-    pub fn clear_err(&mut self) {
-        self.err_number = 0.0;
-        self.err_description.clear();
-    }
-
-    pub fn variables(&self) -> &AHashMap<CIString, VBValue> {
-        &self.variables
-    }
-
-    pub fn variables_mut(&mut self) -> &mut AHashMap<CIString, VBValue> {
-        &mut self.variables
-    }
-}
 
 /// Per-request HTTP data populated by the server before script execution.
 ///
@@ -294,12 +192,25 @@ pub struct SessionContext {
 }
 
 /// Aggregate execution context that owns all per-request state.
-///
-/// Provides delegation methods to inner sub-contexts (`scope`, `request`,
-/// `response`, `session`) and holds the shared `store` for persistence.
 pub struct ExecutionContext {
-    /// Variable scope, functions, classes, error state, with-object.
-    pub scope: Scope,
+    /// All script-level variables (case-insensitive keys).
+    variables: AHashMap<CIString, VBValue>,
+    /// User-defined `Sub` / `Function` definitions.
+    functions: AHashMap<CIString, UserDefinedFunction>,
+    /// Cached parsed function bodies.
+    function_bodies: AHashMap<CIString, Vec<BlockStatement>>,
+    /// `Class` definitions (stored by class name).
+    classes: AHashMap<CIString, ClassDefinition>,
+    /// Current `On Error` mode.
+    error_mode: ErrorMode,
+    /// The `Err.Number` value set by the last runtime error.
+    pub err_number: f64,
+    /// The `Err.Description` value set by the last runtime error.
+    pub err_description: String,
+    /// The object set by `With obj ... End With`.
+    pub with_object: Option<VBValue>,
+    /// The expression value set by `Select Case expr`.
+    pub(crate) select_value: Option<VBValue>,
     /// Incoming request data.
     pub request: RequestContext,
     /// Output buffer, status, headers, redirect state.
@@ -317,23 +228,136 @@ pub struct ExecutionContext {
     pub execute_file_callback:
         Option<Arc<dyn Fn(&str, &mut ExecutionContext) -> Result<(), String> + Send + Sync>>,
     /// Physical ASP file line where the current VBScript code block starts.
-    /// Used to offset `block.line()` values to match VS Code breakpoints.
     pub code_start_line: usize,
     /// Unique per-request ID for Application.Lock ownership tracking.
     pub request_id: u64,
 }
 
 impl ExecutionContext {
-    /// Create a new execution context with defaults.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
+        self.variables.get(CIStr::new(name))
+    }
+
+    pub fn set_variable(&mut self, name: &str, value: VBValue) {
+        self.variables.insert(CIString::new(name.to_string()), value);
+    }
+
+    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
+        self.variables.get_mut(CIStr::new(name))
+    }
+
+    pub fn define_function(&mut self, func: UserDefinedFunction) {
+        self.functions.insert(CIString::new(func.name.clone()), func);
+    }
+
+    pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
+        self.functions.get(CIStr::new(name))
+    }
+
+    pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
+        self.function_bodies.get(CIStr::new(name))
+    }
+
+    pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
+        self.function_bodies.insert(CIString::new(name.to_string()), body);
+    }
+
+    pub fn define_class(&mut self, class: ClassDefinition) {
+        self.classes.insert(CIString::new(class.name.clone()), class);
+    }
+
+    pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
+        self.classes.get(CIStr::new(name))
+    }
+
+    pub fn get_error_mode(&self) -> &ErrorMode {
+        &self.error_mode
+    }
+
+    pub fn set_error_mode(&mut self, mode: ErrorMode) {
+        self.error_mode = mode;
+    }
+
+    pub fn set_err(&mut self, err: VBSError) {
+        self.err_number = err.code as f64;
+        self.err_description = err.message;
+    }
+
+    pub fn clear_err(&mut self) {
+        self.err_number = 0.0;
+        self.err_description.clear();
+    }
+
+    pub fn variables(&self) -> &AHashMap<CIString, VBValue> {
+        &self.variables
+    }
+
+    pub fn variables_mut(&mut self) -> &mut AHashMap<CIString, VBValue> {
+        &mut self.variables
+    }
+
+    /// Clear the response buffer.
+    pub fn flush_response_buffer(&mut self) {
+        self.response.flush_buffer();
+    }
+
+    /// Write a string to the response buffer.
+    pub fn write(&mut self, content: &str) {
+        self.response.write(content);
+    }
+
+    /// Temporarily replace the current variables with `instance_vars`,
+    /// run closure `f`, then restore. Used for class Property Get/Let/Set.
+    pub fn with_instance_scope<T>(
+        &mut self,
+        instance_vars: &mut AHashMap<CIString, VBValue>,
+        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
+    ) -> Result<T, VBSError> {
+        let saved = std::mem::replace(&mut self.variables, std::mem::take(instance_vars));
+        let result = f(self);
+        *instance_vars = std::mem::replace(&mut self.variables, saved);
+        result
+    }
+
+    /// Run closure `f` with `instance_vars` merged into variables (instance vars
+    /// take priority). After closure, updated instance vars are extracted back.
+    pub fn with_class_method_scope<T>(
+        &mut self,
+        instance_vars: &mut AHashMap<CIString, VBValue>,
+        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
+    ) -> Result<T, VBSError> {
+        let saved = std::mem::take(&mut self.variables);
+        let mut merged = saved.clone();
+        for (k, v) in instance_vars.iter() {
+            merged.insert(k.clone(), v.clone());
+        }
+        self.variables = merged;
+        let result = f(self);
+        for key in instance_vars.keys().cloned().collect::<Vec<_>>() {
+            if let Some(v) = self.variables.remove(&key) {
+                instance_vars.insert(key, v);
+            }
+        }
+        result
     }
 }
 
 impl Default for ExecutionContext {
     fn default() -> Self {
         ExecutionContext {
-            scope: Scope::new(),
+            variables: AHashMap::new(),
+            functions: AHashMap::new(),
+            function_bodies: AHashMap::new(),
+            classes: AHashMap::new(),
+            error_mode: ErrorMode::Normal,
+            err_number: 0.0,
+            err_description: String::new(),
+            with_object: None,
+            select_value: None,
             request: RequestContext {
                 method: "GET".to_string(),
                 code_page: 65001,
@@ -355,121 +379,5 @@ impl Default for ExecutionContext {
             code_start_line: 0,
             request_id: 0,
         }
-    }
-}
-
-impl ExecutionContext {
-    /// Clear the response buffer.
-    pub fn flush_response_buffer(&mut self) {
-        self.response.flush_buffer();
-    }
-
-    /// Write a string to the response buffer.
-    pub fn write(&mut self, content: &str) {
-        self.response.write(content);
-    }
-
-    /// Set a variable in the current scope.
-    pub fn set_variable(&mut self, name: &str, value: VBValue) {
-        self.scope.set_variable(name, value);
-    }
-
-    /// Get a reference to a variable in the current scope.
-    pub fn get_variable(&self, name: &str) -> Option<&VBValue> {
-        self.scope.get_variable(name)
-    }
-
-    /// Get a mutable reference to a variable in the current scope.
-    pub fn get_variable_mut(&mut self, name: &str) -> Option<&mut VBValue> {
-        self.scope.get_variable_mut(name)
-    }
-
-    /// Define a user-defined function in the current scope.
-    pub fn define_function(&mut self, func: UserDefinedFunction) {
-        self.scope.define_function(func);
-    }
-
-    /// Look up a user-defined function by name.
-    pub fn get_function(&self, name: &str) -> Option<&UserDefinedFunction> {
-        self.scope.get_function(name)
-    }
-
-    /// Look up a cached function body by function name.
-    pub fn get_function_body(&self, name: &str) -> Option<&Vec<BlockStatement>> {
-        self.scope.get_function_body(name)
-    }
-
-    /// Store a cached function body.
-    pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
-        self.scope.set_function_body(name, body);
-    }
-
-    /// Define a class in the current scope.
-    pub fn define_class(&mut self, class: ClassDefinition) {
-        self.scope.define_class(class);
-    }
-
-    /// Look up a class definition by name.
-    pub fn get_class(&self, name: &str) -> Option<&ClassDefinition> {
-        self.scope.get_class(name)
-    }
-
-    /// Temporarily replace the current variable scope with `instance_vars`,
-    /// run closure `f`, then restore the saved scope. Used for class Property Get/Let/Set.
-    pub fn with_instance_scope<T>(
-        &mut self,
-        instance_vars: &mut AHashMap<CIString, VBValue>,
-        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
-    ) -> Result<T, VBSError> {
-        let saved = std::mem::replace(self.scope.variables_mut(), std::mem::take(instance_vars));
-        let result = f(self);
-        *instance_vars = std::mem::replace(self.scope.variables_mut(), saved);
-        result
-    }
-
-    /// Run closure `f` with `instance_vars` merged into the current scope
-    /// (instance vars take priority over globals). After the closure, updated
-    /// instance vars are extracted back and globals remain in scope.
-    /// Used for class Sub/Function method dispatch.
-    pub fn with_class_method_scope<T>(
-        &mut self,
-        instance_vars: &mut AHashMap<CIString, VBValue>,
-        f: impl FnOnce(&mut Self) -> Result<T, VBSError>,
-    ) -> Result<T, VBSError> {
-        let saved = std::mem::take(self.scope.variables_mut());
-        let mut merged = saved.clone();
-        for (k, v) in instance_vars.iter() {
-            merged.insert(k.clone(), v.clone());
-        }
-        *self.scope.variables_mut() = merged;
-        let result = f(self);
-        let final_vars = self.scope.variables_mut();
-        for key in instance_vars.keys().cloned().collect::<Vec<_>>() {
-            if let Some(v) = final_vars.remove(&key) {
-                instance_vars.insert(key, v);
-            }
-        }
-        // What's left in final_vars are the globals (possibly mutated) — keep them
-        result
-    }
-
-    /// Get the current error mode.
-    pub fn get_error_mode(&self) -> &ErrorMode {
-        self.scope.get_error_mode()
-    }
-
-    /// Set the error mode (Normal or ResumeNext).
-    pub fn set_error_mode(&mut self, mode: ErrorMode) {
-        self.scope.set_error_mode(mode);
-    }
-
-    /// Record an error in the scope (sets err_number and err_description).
-    pub fn set_err(&mut self, err: VBSError) {
-        self.scope.set_err(err);
-    }
-
-    /// Clear the recorded error state.
-    pub fn clear_err(&mut self) {
-        self.scope.clear_err();
     }
 }

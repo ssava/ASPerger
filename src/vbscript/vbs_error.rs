@@ -1,6 +1,6 @@
 //! VBScript error types and error-handling primitives.
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VBSError {
     pub code: u16,
     pub message: String,

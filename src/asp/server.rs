@@ -1,11 +1,12 @@
 use crate::asp::asp_error::ASPError;
-use crate::asp::config::{AspServerConfig, Config, DirConfigCache};
-use crate::asp::handler::{CodeHandler, Handler, HtmlHandler};
+use crate::asp::config::{AspDirConfig, AspServerConfig, Config, DirConfigCache};
+use crate::asp::parser::AspBlock;
 use crate::asp::parser::AspParser;
+use crate::asp::preprocessor::DirectiveConfig;
 use crate::vbscript::debugger::Debugger;
-use crate::vbscript::{store::Store, ExecutionContext, Interpreter, VBScriptInterpreter, VBValue};
+use crate::vbscript::{store::Store, ExecutionContext, VBScriptInterpreter, VBValue};
 use ahash::AHashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -49,10 +50,8 @@ pub struct HttpResponse {
     pub extra_headers: Vec<(String, String)>,
 }
 
-/// Main ASP server, owning the handler chain, shared store, and config.
+/// Main ASP server, owning the shared store and config.
 pub struct AspServer {
-    /// Chain of handlers that process ASP blocks.
-    pub handler_chain: Arc<dyn Handler + Send + Sync>,
     /// Shared session/application data store.
     pub store: Arc<Store>,
     /// Server configuration (host, port, folder).
@@ -61,18 +60,8 @@ pub struct AspServer {
 
 impl AspServer {
     /// Create a new `AspServer` with the given configuration.
-    /// Initializes the VBScript interpreter, sets up the handler chain
-    /// (HtmlHandler → CodeHandler), and creates a shared `Store`.
     pub fn new(config: Config) -> Self {
-        let interpreter: Arc<dyn Interpreter> = Arc::new(VBScriptInterpreter);
-
-        let mut html_handler = HtmlHandler::new();
-        let code_handler = CodeHandler::new(Arc::clone(&interpreter));
-
-        html_handler.set_next(Arc::new(code_handler));
-
         AspServer {
-            handler_chain: Arc::new(html_handler),
             store: Store::new(),
             config,
         }
@@ -107,14 +96,13 @@ impl AspServer {
 
         loop {
             let (mut stream, _) = listener.accept().await?;
-            let handler_chain = Arc::clone(&self.handler_chain);
             let store = Arc::clone(&self.store);
             let folder = folder.clone();
             let dir_cache = Arc::clone(&dir_cache);
 
             tokio::spawn(async move {
                 if let Err(e) =
-                    Self::handle_connection(&handler_chain, &mut stream, &folder, &dir_cache, &store).await
+                    Self::handle_connection(&mut stream, &folder, &dir_cache, &store).await
                 {
                     tracing::error!(error = %e, "Connection handling error");
                 }
@@ -379,51 +367,55 @@ impl AspServer {
         }
     }
 
-    /// Process a parsed HTTP request through the full ASP pipeline.
-    ///
-    /// Pipeline phases:
-    /// 1. **Path resolution** — canonicalize, enforce folder sandbox (403 on escape)
-    /// 2. **Dir config** — resolve per-directory `AspDirConfig` from `DirConfigCache`
-    /// 3. **Default document** — if path is a directory, try `default_documents` list,
-    ///    then directory listing, then 404
-    /// 4. **Read & type-check** — read file bytes; non-`.asp` files served as static
-    /// 5. **Include expansion** — resolve `<!-- #include -->` directives
-    /// 6. **Parse & preprocess** — `AspParser` → `Preprocessor` (directives like `@LANGUAGE`)
-    /// 7. **Execute** — build `ExecutionContext`, inject intrinsics, run handler chain
-    pub async fn process_request(
-        request: HttpRequest,
-        handler_chain: &Arc<dyn Handler + Send + Sync>,
+    /// Process a sequence of ASP blocks — writes HTML or executes VBScript.
+    fn process_blocks(
+        blocks: &[&AspBlock],
+        context: &mut ExecutionContext,
+    ) -> Result<(), ASPError> {
+        let interpreter = VBScriptInterpreter;
+        for block in blocks {
+            if context.response.ended {
+                break;
+            }
+            match *block {
+                AspBlock::Html(html) => context.write(html),
+                AspBlock::Code(code, start_line) => {
+                    context.code_start_line = *start_line;
+                    interpreter.execute(code, context).map_err(|e| ASPError::new(500, e.to_string()))?;
+                }
+                AspBlock::Directive(_, _) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn resolve_file_path(
+        request: &HttpRequest,
         folder: &str,
         dir_cache: &DirConfigCache,
-        store: &Arc<Store>,
-        debugger: Option<Arc<Debugger>>,
-    ) -> Result<HttpResponse, ASPError> {
-        let _span = tracing::info_span!("request", method = %request.method, path = %request.path).entered();
-        tracing::debug!(query = %request.query_string, "Processing request");
-
-        // ---------- Phase 1: Path resolution & sandbox ----------
+    ) -> Result<(String, PathBuf), HttpResponse> {
         let raw_path = format!("{}/{}", folder, request.path);
-
-        let canonical_path = match Path::new(&raw_path).canonicalize() {
-            Ok(p) => p,
-            Err(e) => {
-                let err = ASPError::new(404, format!("File not found: {} (folder={}, path={}, error={})", raw_path, folder, request.path, e));
-                return Ok(HttpResponse {
-                    status_line: "404 Not Found".to_string(),
-                    content_type: "text/html".to_string(),
-                    body: err.render_html().into_bytes(),
-                    extra_headers: Vec::new(),
-                });
+        let canonical_path = Path::new(&raw_path).canonicalize().map_err(|e| {
+            let err = ASPError::new(404, format!("File not found: {} (folder={}, path={}, error={})", raw_path, folder, request.path, e));
+            HttpResponse {
+                status_line: "404 Not Found".to_string(),
+                content_type: "text/html".to_string(),
+                body: err.render_html().into_bytes(),
+                extra_headers: Vec::new(),
             }
-        };
+        })?;
 
-        let canonical_folder = Path::new(folder)
-            .canonicalize()
-            .map_err(|_| ASPError::new(500, "Server configuration error".to_string()))?;
+        let canonical_folder = Path::new(folder).canonicalize()
+            .map_err(|_| HttpResponse {
+                status_line: "500 Internal Server Error".to_string(),
+                content_type: "text/plain".to_string(),
+                body: b"Server configuration error".to_vec(),
+                extra_headers: Vec::new(),
+            })?;
 
         if !canonical_path.starts_with(&canonical_folder) {
             let err = ASPError::new(403, "Forbidden: access denied");
-            return Ok(HttpResponse {
+            return Err(HttpResponse {
                 status_line: "403 Forbidden".to_string(),
                 content_type: "text/html".to_string(),
                 body: err.render_html().into_bytes(),
@@ -431,7 +423,6 @@ impl AspServer {
             });
         }
 
-        // ---------- Phase 2: Per-directory config ----------
         let request_dir = if canonical_path.is_dir() {
             canonical_path.as_path()
         } else {
@@ -439,66 +430,68 @@ impl AspServer {
         };
         let dir_config = dir_cache.resolve(request_dir);
 
-        // ---------- Phase 3: Default document resolution ----------
         let file_path = if canonical_path.is_dir() {
-            let mut found = None;
-            for doc in &dir_config.default_documents {
-                let candidate = canonical_path.join(doc);
-                if candidate.is_file() {
-                    found = Some(candidate.to_string_lossy().to_string());
-                    break;
-                }
-            }
-            match found {
+            match Self::resolve_directory_default(&canonical_path, &dir_config) {
                 Some(fp) => fp,
                 None if dir_config.directory_listing => {
-                    return Ok(Self::generate_directory_listing(&canonical_path, &canonical_folder, &request.path));
+                    return Err(Self::generate_directory_listing(
+                        &canonical_path, &canonical_folder, &request.path,
+                    ));
                 }
-                None => {
-                    let tried = dir_config.default_documents.join(", ");
-                    return Ok(HttpResponse {
-                        status_line: "404 Not Found".to_string(),
-                        content_type: "text/html".to_string(),
-                        body: format!(
-                            "<html><head><title>404 Not Found</title>\
-                             <style>body{{font-family:monospace;background:#f8f8f8;padding:2em}}\
-                             h1{{color:#c00;font-size:1.5em}}\
-                             .code{{color:#666}}\
-                             .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\
-                             </style></head><body>\
-                             <h1>404 Not Found</h1>\
-                             <p class=\"code\">{}</p>\
-                             <div class=\"msg\">{}</div>\
-                             </body></html>",
-                            Self::html_escape(&request.path),
-                            Self::html_escape(&format!(
-                                "No default document found. Tried: {}",
-                                tried
-                            ))
-                        ).into_bytes(),
-                        extra_headers: Vec::new(),
-                    });
-                }
+                None => return Err(Self::not_found_response(&request.path, &dir_config.default_documents)),
             }
         } else {
             raw_path
         };
-        let path_obj = Path::new(&file_path);
 
-        // ---------- Phase 4: Read & type check ----------
-        let content = match std::fs::read(&file_path) {
-            Ok(content) => content,
-            Err(_) => {
-                return Ok(HttpResponse {
-                    status_line: "404 Not Found".to_string(),
-                    content_type: "text/plain".to_string(),
-                    body: format!("Page not found: {}", file_path).into_bytes(),
-                    extra_headers: Vec::new(),
-                });
+        Ok((file_path, canonical_folder))
+    }
+
+    fn resolve_directory_default(
+        canonical_path: &Path,
+        dir_config: &AspDirConfig,
+    ) -> Option<String> {
+        for doc in &dir_config.default_documents {
+            let candidate = canonical_path.join(doc);
+            if candidate.is_file() {
+                return Some(candidate.to_string_lossy().to_string());
             }
-        };
+        }
+        None
+    }
 
-        // Non-.asp files are served as static content
+    fn not_found_response(request_path: &str, default_documents: &[String]) -> HttpResponse {
+        let tried = default_documents.join(", ");
+        HttpResponse {
+            status_line: "404 Not Found".to_string(),
+            content_type: "text/html".to_string(),
+            body: format!(
+                "<html><head><title>404 Not Found</title>\
+                 <style>body{{font-family:monospace;background:#f8f8f8;padding:2em}}\
+                 h1{{color:#c00;font-size:1.5em}}\
+                 .code{{color:#666}}\
+                 .msg{{background:#fff;border:1px solid #ddd;padding:1em;margin:1em 0}}\
+                 </style></head><body>\
+                 <h1>404 Not Found</h1>\
+                 <p class=\"code\">{}</p>\
+                 <div class=\"msg\">{}</div>\
+                 </body></html>",
+                Self::html_escape(request_path),
+                Self::html_escape(&format!("No default document found. Tried: {}", tried))
+            ).into_bytes(),
+            extra_headers: Vec::new(),
+        }
+    }
+
+    fn read_asp_file(file_path: &str) -> Result<String, HttpResponse> {
+        let content = std::fs::read(file_path).map_err(|_| HttpResponse {
+            status_line: "404 Not Found".to_string(),
+            content_type: "text/plain".to_string(),
+            body: format!("Page not found: {}", file_path).into_bytes(),
+            extra_headers: Vec::new(),
+        })?;
+
+        let path_obj = Path::new(file_path);
         if !file_path.ends_with(".asp") {
             let content_type = match path_obj.extension().and_then(|e| e.to_str()) {
                 Some("html") | Some("htm") => "text/html",
@@ -507,7 +500,7 @@ impl AspServer {
                 Some("txt") => "text/plain",
                 _ => "application/octet-stream",
             };
-            return Ok(HttpResponse {
+            return Err(HttpResponse {
                 status_line: "200 OK".to_string(),
                 content_type: content_type.to_string(),
                 body: content,
@@ -515,37 +508,40 @@ impl AspServer {
             });
         }
 
-        let content = String::from_utf8(content)
-            .map_err(|e| ASPError::new(500, format!("Non-UTF8 content in ASP file: {}", e)))?;
+        String::from_utf8(content).map_err(|e| HttpResponse {
+            status_line: "500 Internal Server Error".to_string(),
+            content_type: "text/html".to_string(),
+            body: ASPError::new(500, format!("Non-UTF8 content in ASP file: {}", e)).render_html().into_bytes(),
+            extra_headers: Vec::new(),
+        })
+    }
 
-        // ---------- Phase 5: Include expansion ----------
-        let file_dir = Path::new(&file_path).parent().unwrap_or(Path::new(folder));
-        let root_dir = Path::new(folder);
-
-        let expanded = match crate::asp::include_resolver::IncludeResolver::expand(
-            &content, file_dir, root_dir,
-        ) {
-            Ok(s) => s,
-            Err(e) => {
-                return Ok(HttpResponse {
-                    status_line: "500 Internal Server Error".to_string(),
-                    content_type: "text/html".to_string(),
-                    body: ASPError::new(500, e).render_html().into_bytes(),
-                    extra_headers: Vec::new(),
-                });
+    fn build_http_response(context: &ExecutionContext, response_content: &str) -> HttpResponse {
+        if !context.response.redirect_url.is_empty() {
+            HttpResponse {
+                status_line: "302 Found".to_string(),
+                content_type: "text/html".to_string(),
+                body: Vec::new(),
+                extra_headers: context.response.extra_headers.clone(),
             }
-        };
+        } else {
+            HttpResponse {
+                status_line: context.response.status.clone(),
+                content_type: "text/html".to_string(),
+                body: response_content.as_bytes().to_vec(),
+                extra_headers: context.response.extra_headers.clone(),
+            }
+        }
+    }
 
-        // ---------- Phase 6: Parse & preprocess ----------
-        let parser = AspParser::new(expanded);
-        let blocks = parser.parse();
-
-        let preprocessor = crate::asp::preprocessor::Preprocessor::new();
-        let (directive_config, filtered_blocks) = preprocessor.process(&blocks);
-
-        // ---------- Phase 7: Execute ----------
+    fn setup_execution_context(
+        request: &HttpRequest,
+        file_path: &str,
+        store: &Arc<Store>,
+        directive_config: &DirectiveConfig,
+    ) -> ExecutionContext {
         let mut context = ExecutionContext::new();
-        context.script_path = file_path.clone();
+        context.script_path = file_path.to_string();
         context.store = Some(Arc::clone(store));
         context.request_id = store.allocate_request_id();
         context.session.enabled = directive_config.enable_session_state;
@@ -561,88 +557,97 @@ impl AspServer {
         context.request.query_string = request.query_string.clone();
         context.request.params = Self::parse_query_string(&request.query_string);
         context.request.headers = request.headers.clone();
-        // Populate standard CGI/ServerVariables
-        context.request.headers.insert(
-            "script_name".to_string(),
-            format!("/{}", request.path),
-        );
-        context.request.headers.insert(
-            "server_name".to_string(),
-            request
-                .headers
-                .get("host")
+        context.request.headers.insert("script_name".to_string(), format!("/{}", request.path));
+        context.request.headers.insert("server_name".to_string(),
+            request.headers.get("host")
                 .and_then(|h| h.split(':').next())
-                .unwrap_or("127.0.0.1")
-                .to_string(),
-        );
-        context
-            .request
-            .headers
-            .insert("request_method".to_string(), request.method.clone());
-        context
-            .request
-            .headers
-            .insert("query_string".to_string(), request.query_string.clone());
-        context.request.headers.insert(
-            "server_port".to_string(),
-            request
-                .headers
-                .get("host")
+                .unwrap_or("127.0.0.1").to_string());
+        context.request.headers.insert("request_method".to_string(), request.method.clone());
+        context.request.headers.insert("query_string".to_string(), request.query_string.clone());
+        context.request.headers.insert("server_port".to_string(),
+            request.headers.get("host")
                 .and_then(|h| h.split(':').nth(1))
-                .unwrap_or("8080")
-                .to_string(),
-        );
-        context
-            .request
-            .headers
-            .insert("server_protocol".to_string(), "HTTP/1.1".to_string());
-        context.request.cookies = request.cookies;
+                .unwrap_or("8080").to_string());
+        context.request.headers.insert("server_protocol".to_string(), "HTTP/1.1".to_string());
+        context.request.cookies = request.cookies.clone();
         context.request.total_bytes = request.body.len();
+        context
+    }
 
-        let content_type = request
-            .headers
-            .get("content-type")
-            .cloned()
-            .unwrap_or_default();
-        if request.method.eq_ignore_ascii_case("POST") {
-            if content_type.contains("application/x-www-form-urlencoded") {
-                context.request.form = Self::parse_form_body(&request.body);
-            } else if content_type.contains("multipart/form-data") {
-                if let Some(boundary) = content_type
-                    .split(';')
-                    .find_map(|p| p.trim().strip_prefix("boundary="))
-                {
-                    context.request.form = Self::parse_multipart_form_data(&request.body, boundary);
-                }
+    fn setup_session(context: &mut ExecutionContext) {
+        if !context.session.enabled {
+            return;
+        }
+        let existing_session = context.request.cookies.get("ASPSESSIONID")
+            .cloned().unwrap_or_default();
+        if existing_session.is_empty() {
+            context.session.id = Self::generate_session_id();
+            context.response.extra_headers.push((
+                "Set-Cookie".to_string(),
+                format!("ASPSESSIONID={}; path=/", context.session.id),
+            ));
+        } else {
+            context.session.id = existing_session;
+        }
+    }
+
+    fn parse_post_body(context: &mut ExecutionContext, request: &HttpRequest) {
+        if !request.method.eq_ignore_ascii_case("POST") {
+            return;
+        }
+        let content_type = request.headers.get("content-type").cloned().unwrap_or_default();
+        if content_type.contains("application/x-www-form-urlencoded") {
+            context.request.form = Self::parse_form_body(&request.body);
+        } else if content_type.contains("multipart/form-data") {
+            if let Some(boundary) = content_type
+                .split(';')
+                .find_map(|p| p.trim().strip_prefix("boundary="))
+            {
+                context.request.form = Self::parse_multipart_form_data(&request.body, boundary);
             }
         }
+    }
 
-        // Session handling (only when enabled)
-        if context.session.enabled {
-            let existing_session = context
-                .request
-                .cookies
-                .get("ASPSESSIONID")
-                .cloned()
-                .unwrap_or_default();
-            let session_was_new = existing_session.is_empty();
-            if session_was_new {
-                context.session.id = Self::generate_session_id();
-            } else {
-                context.session.id = existing_session;
-            }
+    /// Process a parsed HTTP request through the full ASP pipeline.
+    pub async fn process_request(
+        request: HttpRequest,
+        folder: &str,
+        dir_cache: &DirConfigCache,
+        store: &Arc<Store>,
+        debugger: Option<Arc<Debugger>>,
+    ) -> Result<HttpResponse, ASPError> {
+        let _span = tracing::info_span!("request", method = %request.method, path = %request.path).entered();
 
-            if session_was_new && !context.session.id.is_empty() {
-                context.response.extra_headers.push((
-                    "Set-Cookie".to_string(),
-                    format!("ASPSESSIONID={}; path=/", context.session.id),
-                ));
-            }
-        }
+        let (file_path, _canonical_folder) = match Self::resolve_file_path(&request, folder, dir_cache) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
+        let content = match Self::read_asp_file(&file_path) {
+            Ok(v) => v,
+            Err(resp) => return Ok(resp),
+        };
+        let file_dir = Path::new(&file_path).parent().unwrap_or(Path::new(folder));
 
-        // Set up Server.Execute/Transfer callback
+        let expanded = match crate::asp::include_resolver::IncludeResolver::expand(&content, file_dir, Path::new(folder)) {
+            Ok(v) => v,
+            Err(e) => return Ok(HttpResponse {
+                status_line: "500 Internal Server Error".to_string(),
+                content_type: "text/html".to_string(),
+                body: ASPError::new(500, e).render_html().into_bytes(),
+                extra_headers: Vec::new(),
+            }),
+        };
+
+        let parser = AspParser::new(expanded);
+        let blocks = parser.parse();
+        let preprocessor = crate::asp::preprocessor::Preprocessor::new();
+        let (directive_config, filtered_blocks) = preprocessor.process(&blocks);
+
+        let mut context = Self::setup_execution_context(&request, &file_path, store, &directive_config);
+        Self::parse_post_body(&mut context, &request);
+        Self::setup_session(&mut context);
+
         let folder_clone = folder.to_string();
-        let handler_clone = Arc::clone(handler_chain);
         context.execute_file_callback = Some(Arc::new(move |path, ctx| {
             let target = if path.starts_with('/') || path.starts_with('\\') {
                 format!("{}{}", folder_clone, path)
@@ -651,49 +656,29 @@ impl AspServer {
             };
             let content = std::fs::read_to_string(&target)
                 .map_err(|e| format!("Could not read '{}': {}", target, e))?;
-            let target_dir = Path::new(&target)
-                .parent()
-                .unwrap_or(Path::new(&folder_clone));
+            let target_dir = Path::new(&target).parent().unwrap_or(Path::new(&folder_clone));
             let root = Path::new(&folder_clone);
-            let expanded =
-                crate::asp::include_resolver::IncludeResolver::expand(&content, target_dir, root)
-                    .map_err(|e| format!("Include error in '{}': {}", target, e))?;
+            let expanded = crate::asp::include_resolver::IncludeResolver::expand(&content, target_dir, root)
+                .map_err(|e| format!("Include error in '{}': {}", target, e))?;
             let p = crate::asp::parser::AspParser::new(expanded);
             let inner_blocks = p.parse();
             let pp = crate::asp::preprocessor::Preprocessor::new();
             let (_inner_config, inner_filtered) = pp.process(&inner_blocks);
-            for block in inner_filtered {
-                if ctx.response.ended {
-                    break;
-                }
-                handler_clone
-                    .handle(block, ctx)
-                    .map_err(|e| format!("Execution error in '{}': {}", target, e))?;
-            }
+            Self::process_blocks(&inner_filtered, ctx)
+                .map_err(|e| format!("Execution error in '{}': {}", target, e))?;
             Ok(())
         }));
 
-        // Inject DAP debugger if provided (before block execution)
         context.debugger = debugger;
-
-        // Inject ASP intrinsic objects before block execution
         Self::inject_asp_intrinsic_objects(&mut context);
 
-        // Execute filtered blocks
         let mut response_content = String::new();
-
         for block in &filtered_blocks {
-            if context.response.ended {
-                break;
-            }
-            match handler_chain.handle(block, &mut context) {
-                Ok(()) => {
-                    response_content.push_str(&context.response.buffer);
-                }
+            if context.response.ended { break; }
+            match Self::process_blocks(&[block], &mut context) {
+                Ok(()) => response_content.push_str(&context.response.buffer),
                 Err(e) => {
-                    if context.response.ended {
-                        break;
-                    }
+                    if context.response.ended { break; }
                     response_content.push_str(&context.response.buffer);
                     response_content.push_str(&format!("\n<!-- Error: {} -->\n", e));
                 }
@@ -701,7 +686,6 @@ impl AspServer {
             context.flush_response_buffer();
         }
 
-        // Transfer response cookies to headers
         for (name, entry) in &context.response.cookies {
             context.response.extra_headers.push((
                 "Set-Cookie".to_string(),
@@ -709,32 +693,13 @@ impl AspServer {
             ));
         }
 
-        // Prepend flushed content
         if !context.response.flushed.is_empty() {
             response_content = format!("{}{}", context.response.flushed, response_content);
         }
 
-        // Build response based on context state
-        if !context.response.redirect_url.is_empty() {
-            response_content.clear();
-            let response = HttpResponse {
-                status_line: "302 Found".to_string(),
-                content_type: "text/html".to_string(),
-                body: Vec::new(),
-                extra_headers: context.response.extra_headers,
-            };
-            tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
-            Ok(response)
-        } else {
-            let response = HttpResponse {
-                status_line: context.response.status,
-                content_type: "text/html".to_string(),
-                body: response_content.into_bytes(),
-                extra_headers: context.response.extra_headers,
-            };
-            tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
-            Ok(response)
-        }
+        let response = Self::build_http_response(&context, &response_content);
+        tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
+        Ok(response)
     }
 
     /// Legacy single-connection handler (used by the DAP debug server).
@@ -742,14 +707,13 @@ impl AspServer {
     /// Reads one HTTP request, runs it through `process_request` (no debugger),
     /// and writes the response back.  Not used by the Axum production server.
     pub async fn handle_connection(
-        handler_chain: &Arc<dyn Handler + Send + Sync>,
         stream: &mut tokio::net::TcpStream,
         folder: &str,
         dir_cache: &DirConfigCache,
         store: &Arc<Store>,
     ) -> Result<(), ASPError> {
         let request = Self::read_request(stream).await?;
-        let response = Self::process_request(request, handler_chain, folder, dir_cache, store, None).await?;
+        let response = Self::process_request(request, folder, dir_cache, store, None).await?;
         Self::write_response(stream, &response).await
     }
 
@@ -766,7 +730,6 @@ impl AspServer {
         let dir_cache = asp_cfg.build_dir_cache();
 
         let state = Arc::new(AxumServerState {
-            handler_chain: Arc::clone(&self.handler_chain),
             store: Arc::clone(&self.store),
             folder: folder.clone(),
             dir_cache,
@@ -992,7 +955,6 @@ impl AspServer {
 
 /// Shared state injected into all axum handlers.
 struct AxumServerState {
-    handler_chain: Arc<dyn Handler + Send + Sync>,
     store: Arc<Store>,
     folder: String,
     dir_cache: DirConfigCache,
@@ -1042,7 +1004,6 @@ async fn axum_handler(
 
     match AspServer::process_request(
         http_request,
-        &state.handler_chain,
         &state.folder,
         &state.dir_cache,
         &state.store,

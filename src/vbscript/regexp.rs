@@ -6,6 +6,7 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
+use crate::{impl_vbscript_object, prop_not_found, method_not_found, cannot_set_property};
 use regex::Regex;
 use regex::Match as RegexMatch;
 
@@ -48,13 +49,7 @@ impl RegExpObject {
 }
 
 impl VBScriptObject for RegExpObject {
-    fn type_name(&self) -> &'static str {
-        "RegExp"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(RegExpObject, "RegExp");
 
     fn get_property(
         &self,
@@ -65,8 +60,7 @@ impl VBScriptObject for RegExpObject {
             "PATTERN" => Ok(VBValue::String(self.pattern.clone())),
             "IGNORECASE" => Ok(VBValue::Boolean(self.ignore_case)),
             "GLOBAL" => Ok(VBValue::Boolean(self.global)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on RegExp object", name))),
+            _ => prop_not_found!("RegExp", name),
         }
     }
 
@@ -89,8 +83,7 @@ impl VBScriptObject for RegExpObject {
                 self.global = value_utils::to_boolean(&value);
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Cannot set property '{}' on RegExp object", name))),
+            _ => cannot_set_property!("RegExp", name),
         }
     }
 
@@ -155,8 +148,7 @@ impl VBScriptObject for RegExpObject {
                 };
                 Ok(VBValue::String(result.to_string()))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on RegExp object", name))),
+            _ => method_not_found!("RegExp", name),
         }
     }
 }
@@ -184,13 +176,7 @@ impl MatchObject {
 }
 
 impl VBScriptObject for MatchObject {
-    fn type_name(&self) -> &'static str {
-        "Match"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(MatchObject, "Match");
 
     fn get_property(
         &self,
@@ -202,8 +188,7 @@ impl VBScriptObject for MatchObject {
             "FIRSTINDEX" => Ok(VBValue::Number(self.first_index as f64)),
             "LENGTH" => Ok(VBValue::Number(self.length as f64)),
             "SUBMATCHES" => Ok(VBValue::Object(Box::new(SubMatchesObject::new(self.sub_matches.clone())))),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Match object", name))),
+            _ => prop_not_found!("Match", name),
         }
     }
 
@@ -244,13 +229,7 @@ impl SubMatchesObject {
 }
 
 impl VBScriptObject for SubMatchesObject {
-    fn type_name(&self) -> &'static str {
-        "SubMatches"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(SubMatchesObject, "SubMatches");
 
     fn get_property(
         &self,
@@ -259,8 +238,7 @@ impl VBScriptObject for SubMatchesObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(self.items.len() as f64)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on SubMatches", name))),
+            _ => prop_not_found!("SubMatches", name),
         }
     }
 

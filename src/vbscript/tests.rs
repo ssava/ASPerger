@@ -4096,8 +4096,8 @@ mod tests {
                 &mut ctx,
             )
             .unwrap();
-        assert_eq!(ctx.scope.err_number, 42.0);
-        assert_eq!(ctx.scope.err_description, "custom error");
+        assert_eq!(ctx.err_number, 42.0);
+        assert_eq!(ctx.err_description, "custom error");
     }
 
     #[test]
@@ -4109,7 +4109,7 @@ mod tests {
         interp
             .execute("On Error Resume Next\nErr.Raise", &mut ctx)
             .unwrap();
-        assert!(ctx.scope.err_number != 0.0);
+        assert!(ctx.err_number != 0.0);
     }
 
     #[test]
@@ -4121,7 +4121,7 @@ mod tests {
         interp
             .execute("On Error Resume Next\nErr.Raise 5", &mut ctx)
             .unwrap();
-        assert_eq!(ctx.scope.err_number, 5.0);
+        assert_eq!(ctx.err_number, 5.0);
     }
 
     // ===== REGEXP OBJECT =====
@@ -5281,7 +5281,6 @@ mod tests {
         let addr = listener.local_addr().unwrap();
 
         let folder = asp_dir.to_string();
-        let handler = Arc::clone(&server.handler_chain);
         let store = Arc::clone(&server.store);
         let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
@@ -5290,7 +5289,6 @@ mod tests {
                 tokio::select! {
                     result = listener.accept() => {
                         let (stream, _) = result.unwrap();
-                        let handler = Arc::clone(&handler);
                         let store = Arc::clone(&store);
                         let folder = folder.clone();
                         tokio::spawn(async move {
@@ -5305,7 +5303,7 @@ mod tests {
                                     .unwrap_or_else(|_| std::path::Path::new(&folder).to_path_buf()),
                             );
                             let _ = crate::asp::server::AspServer::handle_connection(
-                                &handler, &mut stream, &folder, &dir_cache, &store,
+                                &mut stream, &folder, &dir_cache, &store,
                             ).await;
                         });
                     }

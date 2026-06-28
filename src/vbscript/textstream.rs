@@ -10,6 +10,7 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use crate::vbscript::vbobject::VBScriptObject;
+use crate::{impl_vbscript_object, prop_not_found, method_not_found};
 
 #[derive(Debug)]
 struct TextStreamInner {
@@ -102,13 +103,7 @@ impl TextStream {
 }
 
 impl VBScriptObject for TextStream {
-    fn type_name(&self) -> &'static str {
-        "TextStream"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(TextStream, "TextStream");
 
     fn get_property(
         &self,
@@ -122,8 +117,7 @@ impl VBScriptObject for TextStream {
             "ATENDOFLINE" => Ok(VBValue::Boolean(inner.at_end_of_line)),
             "LINE" => Ok(VBValue::Number(inner.line as f64)),
             "COLUMN" => Ok(VBValue::Number(inner.column as f64)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on TextStream", name))),
+            _ => prop_not_found!("TextStream", name),
         }
     }
 
@@ -288,8 +282,7 @@ impl VBScriptObject for TextStream {
                 inner.closed = true;
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on TextStream", name))),
+            _ => method_not_found!("TextStream", name),
         }
     }
 }

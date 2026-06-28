@@ -224,7 +224,7 @@ impl BlockStatement {
 ///
 /// Function bodies are stored as raw token lines so they can be re-parsed
 /// into `BlockStatement`s on each call (VBScript allows redefinition).
-/// The cached parsed bodies are stored separately in `Scope::function_bodies`.
+/// The cached parsed bodies are stored separately in `ExecutionContext::function_bodies`.
 #[derive(Clone)]
 pub struct UserDefinedFunction {
     pub name: String,
@@ -547,138 +547,154 @@ fn parse_comma_args(tokens: &[Token]) -> Result<Vec<Expr>, VBSError> {
 ///  6. obj.Method(args)     (method call)
 ///  7. .Property = value    (With-block property set)
 ///  8. .Method(args)        (With-block method call)
+fn try_parse_response_method(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() < 3 || !non_ws[0].value.eq_ignore_ascii_case("response") || non_ws[1].token_type != TokenType::Dot {
+        return None;
+    }
+    let method_name = non_ws[2].value.to_string();
+    let method_upper = method_name.to_uppercase();
+    if method_upper == "END" || method_upper == "CLEAR" || method_upper == "FLUSH" {
+        return Some(Ok(Box::new(MethodCall::new("response".to_string(), method_name, Vec::new()))));
+    }
+    if method_upper == "ADDHEADER" || method_upper == "REDIRECT" {
+        let arg_tokens: Vec<Token> = tokens.iter()
+            .skip_while(|t| !(t.token_type == TokenType::Identifier && t.value.eq_ignore_ascii_case(&method_name)))
+            .skip(1).filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
+        let args = if arg_tokens.is_empty() { Vec::new() } else { match parse_comma_args(&arg_tokens) { Ok(a) => a, Err(e) => return Some(Err(e)) } };
+        return Some(Ok(Box::new(MethodCall::new("response".to_string(), method_name, args))));
+    }
+    None
+}
+
+fn try_parse_response_write(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() < 3
+        || !non_ws[0].value.eq_ignore_ascii_case("response")
+        || non_ws[1].token_type != TokenType::Dot
+        || !non_ws[2].value.eq_ignore_ascii_case("write")
+    {
+        return None;
+    }
+    let mut expr_start = tokens.len();
+    let mut found_write = false;
+    for (i, tok) in tokens.iter().enumerate() {
+        if tok.token_type != TokenType::WhiteSpace && tok.value.eq_ignore_ascii_case("write") {
+            found_write = true;
+            continue;
+        }
+        if found_write { expr_start = i; break; }
+    }
+    let expr = if expr_start < tokens.len() {
+        parse_expression(&tokens[expr_start..])
+    } else {
+        Ok(Expr::Literal(VBValue::Empty))
+    };
+    Some(expr.map(|e| Box::new(ResponseWrite::new(e)) as Box<dyn VBSyntax>))
+}
+
+fn try_parse_response_cookies(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() < 7
+        || !non_ws[0].value.eq_ignore_ascii_case("response")
+        || non_ws[1].token_type != TokenType::Dot
+        || !non_ws[2].value.eq_ignore_ascii_case("cookies")
+        || non_ws[3].token_type != TokenType::LeftParen
+    {
+        return None;
+    }
+    let mut i = 0;
+    while i < tokens.len() && !(tokens[i].token_type == TokenType::Identifier && tokens[i].value.eq_ignore_ascii_case("cookies")) {
+        i += 1;
+    }
+    i += 1;
+    let paren_start = i + 1;
+    let mut depth = 1;
+    while i < tokens.len() && depth > 0 {
+        i += 1;
+        if i < tokens.len() {
+            if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
+            else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
+        }
+    }
+    let key_expr = match parse_expression(&tokens[paren_start..i]) {
+        Ok(e) => e, Err(e) => return Some(Err(e)),
+    };
+    i += 1;
+    while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+    if i < tokens.len() && tokens[i].token_type == TokenType::Dot {
+        i += 1;
+        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+        if i < tokens.len() && tokens[i].token_type == TokenType::Identifier {
+            let property_name = tokens[i].value.to_string();
+            i += 1;
+            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace { i += 1; }
+            if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
+                i += 1;
+                return Some(parse_expression(&tokens[i..]).map(|v| Box::new(ResponseCookiesSetProp::new(key_expr, property_name, v)) as Box<dyn VBSyntax>));
+            }
+        }
+    }
+    if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
+        i += 1;
+        return Some(parse_expression(&tokens[i..]).map(|v| Box::new(ResponseCookiesSet::new(key_expr, v)) as Box<dyn VBSyntax>));
+    }
+    Some(Err(VBSErrorType::SyntaxError.into_error("Invalid Response.Cookies syntax".to_string())))
+}
+
+fn try_parse_call_statement(tokens: &[Token], non_ws: &[&Token]) -> Option<Result<Box<dyn VBSyntax>, VBSError>> {
+    if non_ws.len() >= 2 && non_ws[0].token_type == TokenType::Identifier && non_ws[1].token_type != TokenType::Assign && non_ws[1].token_type != TokenType::Dot {
+        let name = non_ws[0].value.to_string();
+        if !tokens.iter().any(|t| t.token_type == TokenType::Assign) {
+            let name_pos = tokens.iter().position(|t| t.token_type == TokenType::Identifier && t.value.as_ref() == name).unwrap_or(0);
+            let arg_tokens = &tokens[name_pos + 1..];
+            let filtered: Vec<Token> = arg_tokens.iter().filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
+            let args = if filtered.is_empty() { Vec::new() } else { match parse_comma_args(&filtered) { Ok(a) => a, Err(e) => return Some(Err(e)) } };
+            return Some(Ok(Box::new(CallStatement::new(name, args))));
+        }
+    }
+    if non_ws.len() >= 2 && non_ws[0].token_type == TokenType::Identifier && non_ws[1].token_type == TokenType::LeftParen {
+        let name = non_ws[0].value.to_string();
+        let mut i = 0;
+        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen { i += 1; }
+        if i < tokens.len() {
+            i += 1;
+            let paren_start = i;
+            let mut depth = 1;
+            while i < tokens.len() && depth > 0 {
+                if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
+                else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
+                if depth > 0 { i += 1; }
+            }
+            let arg_expr = match parse_expression(&tokens[paren_start..i]) {
+                Ok(e) => e, Err(e) => return Some(Err(e)),
+            };
+            return Some(match arg_expr {
+                Expr::FunctionCall { ref name, ref args } => Ok(Box::new(CallStatement::new(name.clone(), args.clone()))),
+                _ => {
+                    let args = if paren_start < i { parse_comma_args(&tokens[paren_start..i]) } else { Ok(Vec::new()) };
+                    args.map(|a| Box::new(CallStatement::new(name, a)) as Box<dyn VBSyntax>)
+                }
+            });
+        }
+    }
+    None
+}
+
 fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>, VBSError> {
     let non_ws: Vec<&Token> = tokens
         .iter()
         .filter(|t| t.token_type != TokenType::WhiteSpace)
         .collect();
 
-    // 1a. Response.End, Response.Clear, Response.Flush, Response.AddHeader, Response.Redirect
-    //
-    // These are parsed as synthetic MethodCall nodes because the general
-    // expression parser does not handle `obj.Method(args)` at the statement
-    // level (that would require a function-call production rule).  Instead
-    // we short-circuit known Response method invocations here.
-    if non_ws.len() >= 3
-        && non_ws[0].value.eq_ignore_ascii_case("response")
-        && non_ws[1].token_type == TokenType::Dot
-    {
-        let method_name = non_ws[2].value.to_string();
-        let method_upper = method_name.to_uppercase();
-
-        // Zero-argument methods: End, Clear, Flush
-        if method_upper == "END" || method_upper == "CLEAR" || method_upper == "FLUSH" {
-            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, Vec::new())));
-        }
-
-        // Multi-argument methods: extract the argument token range after the method name
-        let arg_tokens: Vec<Token> = tokens.iter()
-            .skip_while(|t| !(t.token_type == TokenType::Identifier
-                && t.value.eq_ignore_ascii_case(&method_name)))
-            .skip(1)
-            .filter(|t| t.token_type != TokenType::WhiteSpace)
-            .cloned()
-            .collect();
-        let args = if arg_tokens.is_empty() {
-            Vec::new()
-        } else {
-            parse_comma_args(&arg_tokens)?
-        };
-
-        if method_upper == "ADDHEADER" || method_upper == "REDIRECT" {
-            return Ok(Box::new(MethodCall::new("response".to_string(), method_name, args)));
-        }
+    if let Some(result) = try_parse_response_method(tokens, &non_ws) {
+        return result;
+    }
+    if let Some(result) = try_parse_response_write(tokens, &non_ws) {
+        return result;
+    }
+    if let Some(result) = try_parse_response_cookies(tokens, &non_ws) {
+        return result;
     }
 
-    // 1b. Response.Write expr
-    if non_ws.len() >= 3
-        && non_ws[0].value.eq_ignore_ascii_case("response")
-        && non_ws[1].token_type == TokenType::Dot
-        && non_ws[2].value.eq_ignore_ascii_case("write")
-    {
-        let mut expr_start = tokens.len();
-        let mut found_write = false;
-        for (i, tok) in tokens.iter().enumerate() {
-            if tok.token_type != TokenType::WhiteSpace && tok.value.eq_ignore_ascii_case("write") {
-                found_write = true;
-                continue;
-            }
-            if found_write {
-                expr_start = i;
-                break;
-            }
-        }
-        let expr = if expr_start < tokens.len() {
-            parse_expression(&tokens[expr_start..])?
-        } else {
-            Expr::Literal(VBValue::Empty)
-        };
-        return Ok(Box::new(ResponseWrite::new(expr)));
-    }
-
-    // 2. Response.Cookies("key") = value  OR  Response.Cookies("key").Property = value
-    if non_ws.len() >= 7
-        && non_ws[0].value.eq_ignore_ascii_case("response")
-        && non_ws[1].token_type == TokenType::Dot
-        && non_ws[2].value.eq_ignore_ascii_case("cookies")
-        && non_ws[3].token_type == TokenType::LeftParen
-    {
-        let mut i = 0;
-        while i < tokens.len()
-            && !(tokens[i].token_type == TokenType::Identifier
-                && tokens[i].value.eq_ignore_ascii_case("cookies"))
-        {
-            i += 1;
-        }
-        // skip "cookies"
-        i += 1;
-        // find matching )
-        let paren_start = i + 1;
-        let mut depth = 1;
-        while i < tokens.len() && depth > 0 {
-            i += 1;
-            if i < tokens.len() {
-                if tokens[i].token_type == TokenType::LeftParen {
-                    depth += 1;
-                } else if tokens[i].token_type == TokenType::RightParen {
-                    depth -= 1;
-                }
-            }
-        }
-        let key_expr = parse_expression(&tokens[paren_start..i])?;
-        i += 1;
-        while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
-            i += 1;
-        }
-        // Check for Response.Cookies("key").Property = value
-        if i < tokens.len() && tokens[i].token_type == TokenType::Dot {
-            i += 1;
-            while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
-                i += 1;
-            }
-            if i < tokens.len() && tokens[i].token_type == TokenType::Identifier {
-                let property_name = tokens[i].value.to_string();
-                i += 1;
-                while i < tokens.len() && tokens[i].token_type == TokenType::WhiteSpace {
-                    i += 1;
-                }
-                if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
-                    i += 1;
-                    let value_expr = parse_expression(&tokens[i..])?;
-                    return Ok(Box::new(ResponseCookiesSetProp::new(key_expr, property_name, value_expr)));
-                }
-            }
-            // If we don't see .Property =, fall through to error
-        }
-        if i < tokens.len() && tokens[i].token_type == TokenType::Assign {
-            i += 1;
-            let value_expr = parse_expression(&tokens[i..])?;
-            return Ok(Box::new(ResponseCookiesSet::new(key_expr, value_expr)));
-        }
-        // if no = or .Property =, treat as method call (fall through)
-    }
-
-    // 3. var = expr (bare assignment, no Set keyword)
+    // var = expr (bare assignment, no Set keyword)
     if non_ws.len() >= 2
         && non_ws[0].token_type == TokenType::Identifier
         && non_ws[1].token_type == TokenType::Assign
@@ -842,72 +858,8 @@ fn parse_expression_or_assignment(tokens: &[Token]) -> Result<Box<dyn VBSyntax>,
         )));
     }
 
-    // Identifier args... (Sub/Function call without Call keyword, no parens)
-    if non_ws.len() >= 2
-        && non_ws[0].token_type == TokenType::Identifier
-        && non_ws[1].token_type != TokenType::Assign
-        && non_ws[1].token_type != TokenType::Dot
-    {
-        let name = non_ws[0].value.to_string();
-        let mut assign_pos = None;
-        for (i, tok) in tokens.iter().enumerate() {
-            if tok.token_type == TokenType::Assign {
-                assign_pos = Some(i);
-                break;
-            }
-        }
-        if assign_pos.is_none() {
-            let name_pos = tokens.iter().position(|t| {
-                t.token_type == TokenType::Identifier && t.value.as_ref() == name
-            }).unwrap_or(0);
-            let arg_tokens = &tokens[name_pos + 1..];
-            let filtered: Vec<Token> = arg_tokens.iter()
-                .filter(|t| t.token_type != TokenType::WhiteSpace)
-                .cloned()
-                .collect();
-            let args = if filtered.is_empty() {
-                Vec::new()
-            } else {
-                parse_comma_args(&filtered)?
-            };
-            return Ok(Box::new(CallStatement::new(name, args)));
-        }
-    }
-
-    // Identifier(args) — Function/Sub call without Call keyword (with parens)
-    if non_ws.len() >= 2
-        && non_ws[0].token_type == TokenType::Identifier
-        && non_ws[1].token_type == TokenType::LeftParen
-    {
-        let name = non_ws[0].value.to_string();
-        let mut i = 0;
-        while i < tokens.len() && tokens[i].token_type != TokenType::LeftParen {
-            i += 1;
-        }
-        if i < tokens.len() {
-            i += 1;
-            let paren_start = i;
-            let mut depth = 1;
-            while i < tokens.len() && depth > 0 {
-                if tokens[i].token_type == TokenType::LeftParen { depth += 1; }
-                else if tokens[i].token_type == TokenType::RightParen { depth -= 1; }
-                if depth > 0 { i += 1; }
-            }
-            let arg_expr = parse_expression(&tokens[paren_start..i])?;
-            match arg_expr {
-                Expr::FunctionCall { ref name, ref args } => {
-                    return Ok(Box::new(CallStatement::new(name.clone(), args.clone())));
-                }
-                _ => {
-                    let args = if paren_start < i {
-                        parse_comma_args(&tokens[paren_start..i])?
-                    } else {
-                        Vec::new()
-                    };
-                    return Ok(Box::new(CallStatement::new(name, args)));
-                }
-            }
-        }
+    if let Some(result) = try_parse_call_statement(tokens, &non_ws) {
+        return result;
     }
 
     Err(VBSErrorType::NotImplementedError.into_error(format!(
@@ -2423,7 +2375,7 @@ pub fn execute_blocks(
                 &context.script_path,
                 file_line,
                 frame_depth,
-                Some(context.scope.variables()),
+                Some(context.variables()),
             )?;
         }
 
@@ -2640,7 +2592,7 @@ pub fn execute_blocks(
                 ..
             } => {
                 let expr_val = evaluate(expression, context)?;
-                context.scope.select_value = Some(expr_val.clone());
+                context.select_value = Some(expr_val.clone());
                 let mut matched = false;
 
                 for case in cases {
@@ -2662,7 +2614,7 @@ pub fn execute_blocks(
                         break;
                     }
                 }
-                context.scope.select_value = None;
+                context.select_value = None;
 
                 if !matched {
                     if let Some(body) = else_body {
@@ -2692,9 +2644,9 @@ pub fn execute_blocks(
             // --- With block: swap scope with-object, restore after body ---
             BlockStatement::With { object, body, .. } => {
                 let obj_val = evaluate(object, context)?;
-                let prev_with = context.scope.with_object.replace(obj_val);
+                let prev_with = context.with_object.replace(obj_val);
                 let result = execute_blocks(body, context);
-                context.scope.with_object = prev_with;
+                context.with_object = prev_with;
                 result?
             }
             // --- Control-flow sentinels propagated as errors ---

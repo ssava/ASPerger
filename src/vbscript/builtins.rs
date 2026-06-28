@@ -7,110 +7,110 @@ use super::value_utils;
 use super::vbobject::Dictionary;
 use super::vbs_error::{VBSError, VBSErrorType};
 use chrono::{Datelike, Timelike};
-use std::cell::RefCell;
+use std::sync::Mutex;
 
-thread_local! {
-    static RNG_STATE: RefCell<u32> = const { RefCell::new(0u32) };
-    static RNG_LAST: RefCell<f64> = const { RefCell::new(0.0f64) };
+static RNG_STATE: Mutex<u32> = Mutex::new(0u32);
+static RNG_LAST: Mutex<f64> = Mutex::new(0.0f64);
+
+macro_rules! builtins {
+    ($name:ident, $args:ident, $($entry:literal => $func:ident),* $(,)?) => {
+        match $name.to_uppercase().as_str() {
+            $($entry => $func(&$args),)*
+            _ => Err(VBSErrorType::NotImplementedError
+                .into_error(format!("Function '{}' is not implemented", $name))),
+        }
+    };
 }
 
 /// Dispatch a built-in VBScript function call by name.
-///
-/// Matches case-insensitively against ~80 built-in functions covering
-/// string manipulation (`Len`, `Mid`, `Replace`), math (`Abs`, `Sqr`, `Rnd`),
-/// date/time (`Now`, `DateAdd`, `DateDiff`), type conversion (`CInt`, `CStr`),
-/// array operations (`UBound`, `LBound`, `Split`, `Join`),
-/// and I/O (`CreateObject`, `FetchURL`).
 pub fn call_builtin(name: &str, args: Vec<VBValue>) -> Result<VBValue, VBSError> {
-    match name {
-        n if n.eq_ignore_ascii_case("ARRAY") => builtin_array(&args),
-        n if n.eq_ignore_ascii_case("FETCHURL") => builtin_fetchurl(&args),
-        n if n.eq_ignore_ascii_case("CREATEOBJECT") => builtin_createobject(&args),
-        n if n.eq_ignore_ascii_case("LEN") => builtin_len(&args),
-        n if n.eq_ignore_ascii_case("UCASE") => builtin_ucase(&args),
-        n if n.eq_ignore_ascii_case("LCASE") => builtin_lcase(&args),
-        n if n.eq_ignore_ascii_case("MID") => builtin_mid(&args),
-        n if n.eq_ignore_ascii_case("LEFT") => builtin_left(&args),
-        n if n.eq_ignore_ascii_case("RIGHT") => builtin_right(&args),
-        n if n.eq_ignore_ascii_case("TRIM") => builtin_trim(&args),
-        n if n.eq_ignore_ascii_case("CINT") => builtin_cint(&args),
-        n if n.eq_ignore_ascii_case("CSTR") => builtin_cstr(&args),
-        n if n.eq_ignore_ascii_case("ABS") => builtin_abs(&args),
-        n if n.eq_ignore_ascii_case("ISNULL") => builtin_isnull(&args),
-        n if n.eq_ignore_ascii_case("ISEMPTY") => builtin_isempty(&args),
-        n if n.eq_ignore_ascii_case("INSTR") => builtin_instr(&args),
-        n if n.eq_ignore_ascii_case("SPLIT") => builtin_split(&args),
-        n if n.eq_ignore_ascii_case("JOIN") => builtin_join(&args),
-        n if n.eq_ignore_ascii_case("REPLACE") => builtin_replace(&args),
-        n if n.eq_ignore_ascii_case("ASC") => builtin_asc(&args),
-        n if n.eq_ignore_ascii_case("CHR") => builtin_chr(&args),
-        n if n.eq_ignore_ascii_case("LTRIM") => builtin_ltrim(&args),
-        n if n.eq_ignore_ascii_case("RTRIM") => builtin_rtrim(&args),
-        n if n.eq_ignore_ascii_case("SPACE") => builtin_space(&args),
-        n if n.eq_ignore_ascii_case("STRING") => builtin_string(&args),
-        n if n.eq_ignore_ascii_case("STRREVERSE") => builtin_strreverse(&args),
-        n if n.eq_ignore_ascii_case("INSTRREV") => builtin_instrrev(&args),
-        n if n.eq_ignore_ascii_case("ISNUMERIC") => builtin_isnumeric(&args),
-        n if n.eq_ignore_ascii_case("ISARRAY") => builtin_isarray(&args),
-        // Date/Time
-        n if n.eq_ignore_ascii_case("NOW") => builtin_now(&args),
-        n if n.eq_ignore_ascii_case("DATE") => builtin_date(&args),
-        n if n.eq_ignore_ascii_case("TIME") => builtin_time(&args),
-        n if n.eq_ignore_ascii_case("YEAR") => builtin_year(&args),
-        n if n.eq_ignore_ascii_case("MONTH") => builtin_month(&args),
-        n if n.eq_ignore_ascii_case("DAY") => builtin_day(&args),
-        n if n.eq_ignore_ascii_case("HOUR") => builtin_hour(&args),
-        n if n.eq_ignore_ascii_case("MINUTE") => builtin_minute(&args),
-        n if n.eq_ignore_ascii_case("SECOND") => builtin_second(&args),
-        n if n.eq_ignore_ascii_case("WEEKDAY") => builtin_weekday(&args),
-        n if n.eq_ignore_ascii_case("WEEKDAYNAME") => builtin_weekdayname(&args),
-        n if n.eq_ignore_ascii_case("MONTHNAME") => builtin_monthname(&args),
-        n if n.eq_ignore_ascii_case("DATEADD") => builtin_dateadd(&args),
-        n if n.eq_ignore_ascii_case("DATEDIFF") => builtin_datediff(&args),
-        n if n.eq_ignore_ascii_case("DATEPART") => builtin_datepart(&args),
-        n if n.eq_ignore_ascii_case("DATESERIAL") => builtin_dateserial(&args),
-        n if n.eq_ignore_ascii_case("DATEVALUE") => builtin_datevalue(&args),
-        n if n.eq_ignore_ascii_case("TIMESERIAL") => builtin_timeserial(&args),
-        n if n.eq_ignore_ascii_case("TIMEVALUE") => builtin_timevalue(&args),
-        n if n.eq_ignore_ascii_case("TIMER") => builtin_timer(&args),
-        n if n.eq_ignore_ascii_case("FORMATDATETIME") => builtin_formatdatetime(&args),
-        // Math
-        n if n.eq_ignore_ascii_case("RND") => builtin_rnd(&args),
-        n if n.eq_ignore_ascii_case("RANDOMIZE") => builtin_randomize(&args),
-        n if n.eq_ignore_ascii_case("INT") => builtin_int(&args),
-        n if n.eq_ignore_ascii_case("FIX") => builtin_fix(&args),
-        n if n.eq_ignore_ascii_case("ROUND") => builtin_round(&args),
-        n if n.eq_ignore_ascii_case("SGN") => builtin_sgn(&args),
-        n if n.eq_ignore_ascii_case("SQR") => builtin_sqr(&args),
-        // Array
-        n if n.eq_ignore_ascii_case("UBOUND") => builtin_ubound(&args),
-        n if n.eq_ignore_ascii_case("LBOUND") => builtin_lbound(&args),
-        n if n.eq_ignore_ascii_case("FILTER") => builtin_filter(&args),
-        // Type Conversion
-        n if n.eq_ignore_ascii_case("CBOOL") => builtin_cbool(&args),
-        n if n.eq_ignore_ascii_case("CBYTE") => builtin_cbyte(&args),
-        n if n.eq_ignore_ascii_case("CDATE") => builtin_cdate(&args),
-        n if n.eq_ignore_ascii_case("CDBL") => builtin_cdbl(&args),
-        n if n.eq_ignore_ascii_case("CLNG") => builtin_clng(&args),
-        n if n.eq_ignore_ascii_case("CSNG") => builtin_csng(&args),
-        n if n.eq_ignore_ascii_case("CCUR") => builtin_ccur(&args),
-        // Other
-        n if n.eq_ignore_ascii_case("HEX") => builtin_hex(&args),
-        n if n.eq_ignore_ascii_case("OCT") => builtin_oct(&args),
-        n if n.eq_ignore_ascii_case("ISDATE") => builtin_isdate(&args),
-        n if n.eq_ignore_ascii_case("ISOBJECT") => builtin_isobject(&args),
-        n if n.eq_ignore_ascii_case("TYPENAME") => builtin_typename(&args),
-        n if n.eq_ignore_ascii_case("VARTYPE") => builtin_vartype(&args),
-        // Remaining string functions
-        n if n.eq_ignore_ascii_case("STRCOMP") => builtin_strcomp(&args),
-        n if n.eq_ignore_ascii_case("FORMATCURRENCY") => builtin_formatcurrency(&args),
-        n if n.eq_ignore_ascii_case("FORMATNUMBER") => builtin_formatnumber(&args),
-        n if n.eq_ignore_ascii_case("FORMATPERCENT") => builtin_formatpercent(&args),
-        n if n.eq_ignore_ascii_case("LSET") => builtin_lset(&args),
-        n if n.eq_ignore_ascii_case("RSET") => builtin_rset(&args),
-        _ => Err(VBSErrorType::NotImplementedError
-            .into_error(format!("Function '{}' is not implemented", name))),
-    }
+    // String
+    // Date/Time
+    // Math
+    // Array
+    // Type Conversion
+    // Other
+    builtins!(name, args,
+        "ARRAY" => builtin_array,
+        "FETCHURL" => builtin_fetchurl,
+        "CREATEOBJECT" => builtin_createobject,
+        "LEN" => builtin_len,
+        "UCASE" => builtin_ucase,
+        "LCASE" => builtin_lcase,
+        "MID" => builtin_mid,
+        "LEFT" => builtin_left,
+        "RIGHT" => builtin_right,
+        "TRIM" => builtin_trim,
+        "CINT" => builtin_cint,
+        "CSTR" => builtin_cstr,
+        "ABS" => builtin_abs,
+        "ISNULL" => builtin_isnull,
+        "ISEMPTY" => builtin_isempty,
+        "INSTR" => builtin_instr,
+        "SPLIT" => builtin_split,
+        "JOIN" => builtin_join,
+        "REPLACE" => builtin_replace,
+        "ASC" => builtin_asc,
+        "CHR" => builtin_chr,
+        "LTRIM" => builtin_ltrim,
+        "RTRIM" => builtin_rtrim,
+        "SPACE" => builtin_space,
+        "STRING" => builtin_string,
+        "STRREVERSE" => builtin_strreverse,
+        "INSTRREV" => builtin_instrrev,
+        "ISNUMERIC" => builtin_isnumeric,
+        "ISARRAY" => builtin_isarray,
+        "NOW" => builtin_now,
+        "DATE" => builtin_date,
+        "TIME" => builtin_time,
+        "YEAR" => builtin_year,
+        "MONTH" => builtin_month,
+        "DAY" => builtin_day,
+        "HOUR" => builtin_hour,
+        "MINUTE" => builtin_minute,
+        "SECOND" => builtin_second,
+        "WEEKDAY" => builtin_weekday,
+        "WEEKDAYNAME" => builtin_weekdayname,
+        "MONTHNAME" => builtin_monthname,
+        "DATEADD" => builtin_dateadd,
+        "DATEDIFF" => builtin_datediff,
+        "DATEPART" => builtin_datepart,
+        "DATESERIAL" => builtin_dateserial,
+        "DATEVALUE" => builtin_datevalue,
+        "TIMESERIAL" => builtin_timeserial,
+        "TIMEVALUE" => builtin_timevalue,
+        "TIMER" => builtin_timer,
+        "FORMATDATETIME" => builtin_formatdatetime,
+        "RND" => builtin_rnd,
+        "RANDOMIZE" => builtin_randomize,
+        "INT" => builtin_int,
+        "FIX" => builtin_fix,
+        "ROUND" => builtin_round,
+        "SGN" => builtin_sgn,
+        "SQR" => builtin_sqr,
+        "UBOUND" => builtin_ubound,
+        "LBOUND" => builtin_lbound,
+        "FILTER" => builtin_filter,
+        "CBOOL" => builtin_cbool,
+        "CBYTE" => builtin_cbyte,
+        "CDATE" => builtin_cdate,
+        "CDBL" => builtin_cdbl,
+        "CLNG" => builtin_clng,
+        "CSNG" => builtin_csng,
+        "CCUR" => builtin_ccur,
+        "HEX" => builtin_hex,
+        "OCT" => builtin_oct,
+        "ISDATE" => builtin_isdate,
+        "ISOBJECT" => builtin_isobject,
+        "TYPENAME" => builtin_typename,
+        "VARTYPE" => builtin_vartype,
+        "STRCOMP" => builtin_strcomp,
+        "FORMATCURRENCY" => builtin_formatcurrency,
+        "FORMATNUMBER" => builtin_formatnumber,
+        "FORMATPERCENT" => builtin_formatpercent,
+        "LSET" => builtin_lset,
+        "RSET" => builtin_rset,
+    )
 }
 
 fn expect_arg_count(args: &[VBValue], expected: usize, name: &str) -> Result<(), VBSError> {
@@ -159,28 +159,37 @@ fn builtin_createobject(args: &[VBValue]) -> Result<VBValue, VBSError> {
 }
 
 fn builtin_fetchurl(args: &[VBValue]) -> Result<VBValue, VBSError> {
-    expect_arg_count(args, 1, "FetchURL")?;
-    let url = value_utils::to_arg_string(&args[0]);
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .map_err(|e| VBSErrorType::RuntimeError
-            .into_error(format!("FetchURL: failed to create client: {e}")))?;
-    let rt_handle = tokio::runtime::Handle::current();
-    let result = tokio::task::block_in_place(move || {
-        rt_handle.block_on(async {
-            match client.get(&url).send().await {
-                Ok(resp) => match resp.text().await {
-                    Ok(body) => Ok(VBValue::String(body)),
+    #[cfg(not(feature = "fetchurl"))]
+    {
+        let _ = args;
+        Err(VBSErrorType::NotImplementedError
+            .into_error("FetchURL requires the 'fetchurl' feature".to_string()))
+    }
+    #[cfg(feature = "fetchurl")]
+    {
+        expect_arg_count(args, 1, "FetchURL")?;
+        let url = value_utils::to_arg_string(&args[0]);
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .map_err(|e| VBSErrorType::RuntimeError
+                .into_error(format!("FetchURL: failed to create client: {e}")))?;
+        let rt_handle = tokio::runtime::Handle::current();
+        let result = tokio::task::block_in_place(move || {
+            rt_handle.block_on(async {
+                match client.get(&url).send().await {
+                    Ok(resp) => match resp.text().await {
+                        Ok(body) => Ok(VBValue::String(body)),
+                        Err(e) => Err(VBSErrorType::RuntimeError
+                            .into_error(format!("FetchURL: failed to read response body: {e}"))),
+                    },
                     Err(e) => Err(VBSErrorType::RuntimeError
-                        .into_error(format!("FetchURL: failed to read response body: {e}"))),
-                },
-                Err(e) => Err(VBSErrorType::RuntimeError
-                    .into_error(format!("FetchURL: request failed: {e}"))),
-            }
-        })
-    });
-    result
+                        .into_error(format!("FetchURL: request failed: {e}"))),
+                }
+            })
+        });
+        result
+    }
 }
 
 fn builtin_len(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -1057,26 +1066,22 @@ fn builtin_rnd(args: &[VBValue]) -> Result<VBValue, VBSError> {
     } else {
         Some(value_utils::to_arg_f64(&args[0]))
     };
-    RNG_STATE.with(|state| {
-        RNG_LAST.with(|last| {
-            let mut s = state.borrow_mut();
-            let mut l = last.borrow_mut();
-            match seed {
-                Some(n) if n < 0.0 => {
-                    *s = ((-n) as u32) & 0x7fffffff;
-                    let val = rnd_next(&mut s);
-                    *l = val;
-                    Ok(VBValue::Number(val))
-                }
-                Some(0.0) => Ok(VBValue::Number(*l)),
-                _ => {
-                    let val = rnd_next(&mut s);
-                    *l = val;
-                    Ok(VBValue::Number(val))
-                }
-            }
-        })
-    })
+    let mut state = RNG_STATE.lock().unwrap();
+    let mut last = RNG_LAST.lock().unwrap();
+    match seed {
+        Some(n) if n < 0.0 => {
+            *state = ((-n) as u32) & 0x7fffffff;
+            let val = rnd_next(&mut state);
+            *last = val;
+            Ok(VBValue::Number(val))
+        }
+        Some(0.0) => Ok(VBValue::Number(*last)),
+        _ => {
+            let val = rnd_next(&mut state);
+            *last = val;
+            Ok(VBValue::Number(val))
+        }
+    }
 }
 
 fn builtin_randomize(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -1086,9 +1091,7 @@ fn builtin_randomize(args: &[VBValue]) -> Result<VBValue, VBSError> {
     } else {
         value_utils::to_arg_f64(&args[0]) as u32
     };
-    RNG_STATE.with(|state| {
-        *state.borrow_mut() = seed & 0x7fffffff;
-    });
+    *RNG_STATE.lock().unwrap() = seed & 0x7fffffff;
     Ok(VBValue::Null)
 }
 

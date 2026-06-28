@@ -7,6 +7,7 @@ use super::value::VBValue;
 use super::value_utils;
 use super::vbobject::VBScriptObject;
 use super::vbs_error::{VBSError, VBSErrorType};
+use crate::{impl_vbscript_object, prop_not_found, method_not_found, cannot_set_property};
 
 // ---- Connection ----
 
@@ -36,13 +37,7 @@ impl Connection {
 }
 
 impl VBScriptObject for Connection {
-    fn type_name(&self) -> &'static str {
-        "Connection"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(Connection, "Connection");
 
     fn get_property(
         &self,
@@ -52,10 +47,7 @@ impl VBScriptObject for Connection {
         match name.to_uppercase().as_str() {
             "CONNECTIONSTRING" => Ok(VBValue::String(self.connection_string.clone())),
             "STATE" => Ok(VBValue::Number(self.state as f64)),
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Property '{}' not found on Connection object",
-                name
-            ))),
+            _ => prop_not_found!("Connection", name),
         }
     }
 
@@ -70,10 +62,7 @@ impl VBScriptObject for Connection {
                 self.connection_string = value_utils::to_arg_string(&value);
                 Ok(())
             }
-            _ => Err(VBSErrorType::RuntimeError.into_error(format!(
-                "Cannot set property '{}' on Connection object",
-                name
-            ))),
+            _ => cannot_set_property!("Connection", name),
         }
     }
 
@@ -104,8 +93,7 @@ impl VBScriptObject for Connection {
                 let _sql = value_utils::to_arg_string(&args[0]);
                 Ok(VBValue::Object(Box::new(Recordset::empty())))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Connection object", name))),
+            _ => method_not_found!("Connection", name),
         }
     }
 }
@@ -130,13 +118,7 @@ impl Recordset {
 }
 
 impl VBScriptObject for Recordset {
-    fn type_name(&self) -> &'static str {
-        "Recordset"
-    }
-
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(Recordset, "Recordset");
 
     fn get_property(
         &self,
@@ -146,8 +128,7 @@ impl VBScriptObject for Recordset {
         match name.to_uppercase().as_str() {
             "EOF" => Ok(VBValue::Boolean(self.eof)),
             "RECORDCOUNT" => Ok(VBValue::Number(self.field_names.len() as f64)),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Recordset object", name))),
+            _ => prop_not_found!("Recordset", name),
         }
     }
 
@@ -175,8 +156,7 @@ impl VBScriptObject for Recordset {
                 self.current_index = 0;
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Recordset object", name))),
+            _ => method_not_found!("Recordset", name),
         }
     }
 }

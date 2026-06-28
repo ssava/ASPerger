@@ -6,21 +6,7 @@ use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::ExecutionContext;
 use crate::vbscript::{Token, TokenType, Tokenizer, VBValue};
 
-/// Trait abstraction over VBScript execution, enabling alternate
-/// interpreter implementations (e.g. mocking in tests).
-pub trait Interpreter: Send + Sync {
-    fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError>;
-}
-
-/// Default VBScript interpreter. Tokenizes, parses, and executes code
-/// within the given `ExecutionContext`.
 pub struct VBScriptInterpreter;
-
-impl Interpreter for VBScriptInterpreter {
-    fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        VBScriptInterpreter::execute(self, code, context)
-    }
-}
 
 impl VBScriptInterpreter {
     pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {

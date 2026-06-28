@@ -11,7 +11,7 @@ use super::VBSyntax;
 /// - `Response.End`, `Response.Redirect`, etc. — short-circuits with side effects
 /// - `Server.Execute` / `Server.Transfer` — calls the `execute_file_callback`
 /// - `obj.Property(args)` — tries property access + indexed_get pattern first
-/// - `With obj ... .Method(args)` — uses `context.scope.with_object`
+/// - `With obj ... .Method(args)` — uses `context.with_object`
 /// - Generic `obj.Method(args)` — swaps the object out of context, calls `call_method`, puts it back
 #[derive(Clone)]
 pub struct MethodCall {
@@ -51,7 +51,6 @@ fn try_property_indexed_access(
     }
     let obj_ref = if object_name == "__with_obj__" {
         context
-            .scope
             .with_object
             .take()
             .ok_or_else(|| {
@@ -77,7 +76,7 @@ fn try_property_indexed_access(
         if let Ok(VBValue::Object(sub_obj)) = obj.get_property(property, context).as_ref() {
             if let Ok(result) = sub_obj.indexed_get(&args[0], context) {
                 if object_name == "__with_obj__" {
-                    context.scope.with_object = Some(obj_ref);
+                    context.with_object = Some(obj_ref);
                 } else {
                     context.set_variable(object_name, obj_ref);
                 }
@@ -86,7 +85,7 @@ fn try_property_indexed_access(
         }
     }
     if object_name == "__with_obj__" {
-        context.scope.with_object = Some(obj_ref);
+        context.with_object = Some(obj_ref);
     } else {
         context.set_variable(object_name, obj_ref);
     }
@@ -173,8 +172,8 @@ impl VBSyntax for MethodCall {
             }
 
         if self.object_name == "__with_obj__" {
-            // With-block method call: use context.scope.with_object
-            let mut obj_val = context.scope.with_object.take().ok_or_else(|| {
+            // With-block method call: use context.with_object
+            let mut obj_val = context.with_object.take().ok_or_else(|| {
                 VBSErrorType::RuntimeError.into_error("With object not set".to_string())
             })?;
             match &mut obj_val {
@@ -182,12 +181,12 @@ impl VBSyntax for MethodCall {
                     obj.call_method(&self.method_name, &args, context)?;
                 }
                 _ => {
-                    context.scope.with_object = Some(obj_val);
+                    context.with_object = Some(obj_val);
                     return Err(VBSErrorType::RuntimeError
                         .into_error("With object is not an object".to_string()));
                 }
             }
-            context.scope.with_object = Some(obj_val);
+            context.with_object = Some(obj_val);
             return Ok(());
         }
 

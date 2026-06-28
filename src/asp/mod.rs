@@ -3,7 +3,6 @@
 
 pub mod asp_error;
 pub mod config;
-pub mod handler;
 pub mod include_resolver;
 pub mod parser;
 pub mod preprocessor;

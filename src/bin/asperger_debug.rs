@@ -644,7 +644,6 @@ fn start_debug_http_server<W: Write + Send + 'static>(
                     std::time::Duration::from_secs(10),
                     AspServer::process_request(
                         request,
-                        &server.handler_chain,
                         &folder,
                         &dir_cache,
                         &server.store,

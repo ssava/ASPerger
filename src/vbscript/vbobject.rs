@@ -7,6 +7,56 @@ use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
 use ahash::AHashMap;
 
+#[macro_export]
+macro_rules! impl_vbscript_object {
+    ($ty:ty, $name:expr) => {
+        fn type_name(&self) -> &'static str { $name }
+        fn clone_box(&self) -> Box<dyn $crate::vbscript::vbobject::VBScriptObject> { Box::new(self.clone()) }
+    };
+}
+
+#[macro_export]
+macro_rules! prop_not_found {
+    ($ty:literal) => {
+        |name: &str| Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Property '{}' not found on {}", name, $ty)
+        ))
+    };
+    ($ty:literal, $name:expr) => {
+        Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Property '{}' not found on {}", $name, $ty)
+        ))
+    };
+}
+
+#[macro_export]
+macro_rules! method_not_found {
+    ($ty:literal) => {
+        |name: &str| Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Method '{}' not found on {}", name, $ty)
+        ))
+    };
+    ($ty:literal, $name:expr) => {
+        Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Method '{}' not found on {}", $name, $ty)
+        ))
+    };
+}
+
+#[macro_export]
+macro_rules! cannot_set_property {
+    ($ty:literal) => {
+        |name: &str| Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Cannot set property '{}' on {} object", name, $ty)
+        ))
+    };
+    ($ty:literal, $name:expr) => {
+        Err($crate::vbscript::vbs_error::VBSErrorType::RuntimeError.into_error(
+            format!("Cannot set property '{}' on {} object", $name, $ty)
+        ))
+    };
+}
+
 /// Trait for VBScript COM / intrinsic objects that can expose properties,
 /// methods, and indexed access to scripts.
 ///
@@ -108,9 +158,7 @@ fn key_to_cow(val: &VBValue) -> Cow<'_, str> {
 }
 
 impl VBScriptObject for Dictionary {
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(Dictionary, "Dictionary");
 
     fn get_property(
         &self,
@@ -128,8 +176,7 @@ impl VBScriptObject for Dictionary {
             "ITEMS" => Ok(VBValue::Array(std::sync::Arc::new(
                 self.items.values().cloned().collect(),
             ), vec![])),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Dictionary", name))),
+            _ => prop_not_found!("Dictionary", name),
         }
     }
 
@@ -147,6 +194,12 @@ impl VBScriptObject for Dictionary {
                     ));
                 }
                 let key = key_to_cow(&args[0]).into_owned();
+                if self.items.contains_key(&key) {
+                    return Err(VBSErrorType::RuntimeError.into_error(format!(
+                        "The key '{}' is already associated with an element of this collection",
+                        key
+                    )));
+                }
                 let value = args[1].clone();
                 self.items.insert(key, value);
                 Ok(VBValue::Empty)
@@ -183,8 +236,7 @@ impl VBScriptObject for Dictionary {
                 self.items.clear();
                 Ok(VBValue::Empty)
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Dictionary", name))),
+            _ => method_not_found!("Dictionary", name),
         }
     }
 
@@ -237,13 +289,13 @@ mod dictionary_tests {
     }
 
     #[test]
-    fn test_dictionary_add_duplicate_key_overwrites() {
+    fn test_dictionary_add_duplicate_key_errors() {
         let mut d = Dictionary::new();
         let mut c = ctx();
         d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(1.0)], &mut c).unwrap();
-        d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(2.0)], &mut c).unwrap();
-        let val = d.indexed_get(&VBValue::String("k".into()), &mut c).unwrap();
-        assert_eq!(val, VBValue::Number(2.0));
+        let err = d.call_method("ADD", &[VBValue::String("k".into()), VBValue::Number(2.0)], &mut c).unwrap_err();
+        assert!(matches!(err.error_type, VBSErrorType::RuntimeError));
+        assert!(err.message.contains("already associated"));
     }
 
     #[test]
@@ -539,14 +591,8 @@ impl VBScriptObject for ClassInstance {
 /// Properties: `Err.Number`, `Err.Description`.
 /// Methods: `Err.Clear`, `Err.Raise number[, description]`.
 /// The interpreter injects an `Err` object into every execution context.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ErrObject;
-
-impl Default for ErrObject {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 impl ErrObject {
     pub fn new() -> Self {
@@ -555,9 +601,7 @@ impl ErrObject {
 }
 
 impl VBScriptObject for ErrObject {
-    fn clone_box(&self) -> Box<dyn VBScriptObject> {
-        Box::new(self.clone())
-    }
+    impl_vbscript_object!(ErrObject, "Err");
 
     fn get_property(
         &self,
@@ -565,10 +609,9 @@ impl VBScriptObject for ErrObject {
         context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "NUMBER" => Ok(VBValue::Number(context.scope.err_number)),
-            "DESCRIPTION" => Ok(VBValue::String(context.scope.err_description.clone())),
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Property '{}' not found on Err object", name))),
+            "NUMBER" => Ok(VBValue::Number(context.err_number)),
+            "DESCRIPTION" => Ok(VBValue::String(context.err_description.clone())),
+            _ => prop_not_found!("Err", name),
         }
     }
 
@@ -599,8 +642,7 @@ impl VBScriptObject for ErrObject {
                     .into_error(description)
                     .with_code(number))
             }
-            _ => Err(VBSErrorType::RuntimeError
-                .into_error(format!("Method '{}' not found on Err object", name))),
+            _ => method_not_found!("Err", name),
         }
     }
 }

@@ -25,6 +25,6 @@ pub mod vbs_error;
 mod tests;
 
 pub use execution_context::ExecutionContext;
-pub use interpreter::{Interpreter, VBScriptInterpreter};
+pub use interpreter::VBScriptInterpreter;
 pub use tokenizer::{Token, TokenType, Tokenizer};
 pub use value::VBValue;
