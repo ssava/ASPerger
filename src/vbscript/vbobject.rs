@@ -146,7 +146,7 @@ impl Dictionary {
 /// when the value is already a `String`.
 fn key_to_cow(val: &VBValue) -> Cow<'_, str> {
     match val {
-        VBValue::String(s) => Cow::Borrowed(s.as_str()),
+        VBValue::String(s) => Cow::Borrowed(&*s),
         VBValue::Null => Cow::Owned("Null".to_string()),
         VBValue::Empty => Cow::Owned(String::new()),
         VBValue::Number(n) => Cow::Owned(n.to_string()),
@@ -170,7 +170,7 @@ impl VBScriptObject for Dictionary {
             "KEYS" => Ok(VBValue::Array(std::sync::Arc::new(
                 self.items
                     .keys()
-                    .map(|k| VBValue::String(k.clone()))
+                    .map(|k| VBValue::String(k.clone().into()))
                     .collect(),
             ), vec![])),
             "ITEMS" => Ok(VBValue::Array(std::sync::Arc::new(
@@ -610,7 +610,7 @@ impl VBScriptObject for ErrObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "NUMBER" => Ok(VBValue::Number(context.err_number)),
-            "DESCRIPTION" => Ok(VBValue::String(context.err_description.clone())),
+            "DESCRIPTION" => Ok(VBValue::String(context.err_description.clone().into())),
             _ => prop_not_found!("Err", name),
         }
     }

@@ -17,7 +17,7 @@ impl VBScriptObject for ServerObject {
         context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "SCRIPTPATH" => Ok(VBValue::String(context.script_path.clone())),
+            "SCRIPTPATH" => Ok(VBValue::String(context.script_path.clone().into())),
             "SCRIPTTIMEOUT" => Ok(VBValue::Number(90.0)),
             _ => prop_not_found!("Server", name),
         }
@@ -39,9 +39,26 @@ impl VBScriptObject for ServerObject {
         &mut self,
         name: &str,
         args: &[VBValue],
-        _context: &mut ExecutionContext,
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
+            "EXECUTE" | "TRANSFER" => {
+                if !args.is_empty() {
+                    let path = value_utils::to_arg_string(&args[0]);
+                    let callback = context.execute_file_callback.take();
+                    if let Some(cb) = callback {
+                        cb(&path, context).map_err(|e| {
+                            VBSErrorType::RuntimeError
+                                .into_error(format!("Server.Execute failed: {e}"))
+                        })?;
+                        context.execute_file_callback = Some(cb);
+                    }
+                    if name.to_uppercase().as_str() == "TRANSFER" {
+                        context.response.ended = true;
+                    }
+                }
+                Ok(VBValue::Empty)
+            }
             "CREATEOBJECT" => {
                 if args.is_empty() {
                     return Err(VBSErrorType::ValueError
@@ -72,7 +89,7 @@ impl VBScriptObject for ServerObject {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 let full_path = cwd.join(path.trim_start_matches('/').trim_start_matches('\\'));
                 Ok(VBValue::String(
-                    full_path.to_str().unwrap_or(&path).to_string(),
+                    full_path.to_str().unwrap_or(&path).to_string().into(),
                 ))
             }
             "HTMLENCODE" => {
@@ -83,7 +100,7 @@ impl VBScriptObject for ServerObject {
                     .replace(">", "&gt;")
                     .replace("\"", "&quot;")
                     .replace("'", "&#39;");
-                Ok(VBValue::String(encoded))
+                Ok(VBValue::String(encoded.into()))
             }
             "URLENCODE" => {
                 let s = value_utils::to_arg_string(&args[0]);
@@ -97,7 +114,7 @@ impl VBScriptObject for ServerObject {
                         _ => format!("%{:02X}", b),
                     })
                     .collect();
-                Ok(VBValue::String(encoded))
+                Ok(VBValue::String(encoded.into()))
             }
             "URLPATHENCODE" => {
                 let s = value_utils::to_arg_string(&args[0]);
@@ -112,7 +129,7 @@ impl VBScriptObject for ServerObject {
                         _ => format!("%{:02X}", b),
                     })
                     .collect();
-                Ok(VBValue::String(encoded))
+                Ok(VBValue::String(encoded.into()))
             }
             _ => method_not_found!("Server", name),
         }

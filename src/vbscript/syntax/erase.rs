@@ -1,4 +1,6 @@
 use super::VBSyntax;
+use crate::vbscript::compiler::Compiler;
+use crate::vbscript::instruction::Instruction;
 use crate::vbscript::value::VBValue;
 use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::ExecutionContext;
@@ -29,6 +31,16 @@ impl VBSyntax for Erase {
                         *v = VBValue::Empty;
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        for name in &self.var_names {
+            let name_lower = name.to_lowercase();
+            if let Some(slot) = compiler.local_slot(&name_lower) {
+                compiler.emit(Instruction::Erase(slot));
             }
         }
         Ok(())

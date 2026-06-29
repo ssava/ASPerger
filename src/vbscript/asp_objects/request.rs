@@ -71,7 +71,7 @@ impl VBScriptObject for RequestQueryString {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
-        Ok(VBValue::String(val))
+        Ok(VBValue::String(val.into()))
     }
     fn call_method(
         &mut self,
@@ -105,7 +105,7 @@ impl VBScriptObject for RequestForm {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
-        Ok(VBValue::String(val))
+        Ok(VBValue::String(val.into()))
     }
     fn call_method(
         &mut self,
@@ -135,7 +135,7 @@ impl VBScriptObject for RequestServerVariables {
                     .get(&name.to_lowercase())
                     .cloned()
                     .unwrap_or_default();
-                Ok(VBValue::String(val))
+                Ok(VBValue::String(val.into()))
             }
         }
     }
@@ -146,7 +146,7 @@ impl VBScriptObject for RequestServerVariables {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key.to_lowercase()).cloned().unwrap_or_default();
-        Ok(VBValue::String(val))
+        Ok(VBValue::String(val.into()))
     }
     fn call_method(
         &mut self,
@@ -172,7 +172,7 @@ impl VBScriptObject for RequestCookies {
             "COUNT" => Ok(VBValue::Number(self.0.len() as f64)),
             _ => {
                 let val = self.0.get(name).cloned().unwrap_or_default();
-                Ok(VBValue::String(val))
+                Ok(VBValue::String(val.into()))
             }
         }
     }
@@ -183,7 +183,7 @@ impl VBScriptObject for RequestCookies {
     ) -> Result<VBValue, VBSError> {
         let key = value_utils::to_arg_string(index);
         let val = self.0.get(&key).cloned().unwrap_or_default();
-        Ok(VBValue::String(val))
+        Ok(VBValue::String(val.into()))
     }
     fn call_method(
         &mut self,

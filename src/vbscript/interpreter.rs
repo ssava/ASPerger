@@ -30,6 +30,40 @@ impl VBScriptInterpreter {
         block::execute_blocks(&blocks, context)
     }
 
+    pub fn execute_vm(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
+        let code = code.trim().to_string();
+
+        let tokens = Tokenizer::tokenize(&code);
+        if tokens.iter().all(|t| t.token_type == TokenType::EOF) {
+            return Ok(());
+        }
+
+        tracing::trace!(token_count = tokens.len(), "Tokenized code block");
+
+        let lines = self.group_tokens_into_lines(&tokens)?;
+
+        if context.get_variable("ERR").is_none() {
+            context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
+        }
+
+        let blocks = block::parse_blocks(&lines)?;
+        tracing::trace!(block_count = blocks.len(), "Parsed VBScript blocks");
+
+        let mut compiler = crate::vbscript::compiler::Compiler::new(&mut *context);
+        let mut compiled = compiler.compile(&blocks)?;
+
+        for func in compiled.function_defs.drain(..) {
+            context.define_function(func);
+        }
+
+        for (name, code) in compiled.compiled_functions.drain(..) {
+            context.set_function_code(&name, code);
+        }
+
+        let mut vm = crate::vbscript::vm::Vm::new(context);
+        vm.run(compiled)
+    }
+
     fn group_tokens_into_lines(&self, tokens: &[Token]) -> Result<Vec<Vec<Token>>, VBSError> {
         let mut lines: Vec<Vec<Token>> = Vec::new();
         let mut current_line: Vec<Token> = Vec::new();

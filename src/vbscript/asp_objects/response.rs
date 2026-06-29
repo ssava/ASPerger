@@ -18,8 +18,8 @@ impl VBScriptObject for ResponseObject {
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "BUFFER" => Ok(VBValue::Boolean(true)),
-            "CONTENTTYPE" => Ok(VBValue::String("text/html".to_string())),
-            "STATUS" => Ok(VBValue::String(context.response.status.clone())),
+            "CONTENTTYPE" => Ok(VBValue::String("text/html".into())),
+            "STATUS" => Ok(VBValue::String(context.response.status.clone().into())),
             "EXPIRES" => Ok(VBValue::Number(0.0)),
             "COOKIES" => Ok(VBValue::Object(Box::new(ResponseCookies::new()))),
             _ => prop_not_found!("Response", name),
@@ -56,16 +56,62 @@ impl VBScriptObject for ResponseObject {
     fn call_method(
         &mut self,
         name: &str,
-        _args: &[VBValue],
-        _context: &mut ExecutionContext,
+        args: &[VBValue],
+        context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
             "WRITE" => Ok(VBValue::Empty),
-            "REDIRECT" => Ok(VBValue::Empty),
-            "END" => Ok(VBValue::Empty),
-            "CLEAR" => Ok(VBValue::Empty),
-            "FLUSH" => Ok(VBValue::Empty),
-            "ADDHEADER" => Ok(VBValue::Empty),
+            "REDIRECT" => {
+                if !args.is_empty() {
+                    let url = value_utils::to_arg_string(&args[0]);
+                    context.response.status = "302 Found".to_string();
+                    context
+                        .response
+                        .extra_headers
+                        .push(("Location".to_string(), url.clone()));
+                    context.response.redirect_url = url;
+                    context.response.ended = true;
+                }
+                Ok(VBValue::Empty)
+            }
+            "END" => {
+                context.response.ended = true;
+                Ok(VBValue::Empty)
+            }
+            "CLEAR" => {
+                context.response.buffer.clear();
+                Ok(VBValue::Empty)
+            }
+            "FLUSH" => {
+                context.response.flushed.push_str(&context.response.buffer);
+                context.response.buffer.clear();
+                Ok(VBValue::Empty)
+            }
+            "ADDHEADER" => {
+                if args.len() >= 2 {
+                    let name = value_utils::to_arg_string(&args[0]);
+                    let value = value_utils::to_arg_string(&args[1]);
+                    context.response.extra_headers.push((name, value));
+                }
+                Ok(VBValue::Empty)
+            }
+            "BINARYWRITE" => {
+                if let Some(arg) = args.first() {
+                    let bytes = match arg {
+                        VBValue::Array(items, _dims) => {
+                            items.iter().map(|v| match v {
+                                VBValue::Number(n) => *n as u8,
+                                VBValue::Boolean(b) => *b as u8,
+                                other => other.to_string().as_bytes().first().copied().unwrap_or(0),
+                            }).collect()
+                        }
+                        VBValue::Null | VBValue::Empty => Vec::new(),
+                        other => other.to_string().into_bytes(),
+                    };
+                    context.response.write_binary(&bytes);
+                }
+                Ok(VBValue::Empty)
+            }
             _ => method_not_found!("Response", name),
         }
     }
@@ -126,12 +172,12 @@ impl VBScriptObject for CookieObject {
             None => return Ok(VBValue::Empty),
         };
         match name.to_uppercase().as_str() {
-            "EXPIRES" => Ok(VBValue::String(entry.expires.clone())),
-            "DOMAIN" => Ok(VBValue::String(entry.domain.clone())),
-            "PATH" => Ok(VBValue::String(entry.path.clone())),
+            "EXPIRES" => Ok(VBValue::String(entry.expires.clone().into())),
+            "DOMAIN" => Ok(VBValue::String(entry.domain.clone().into())),
+            "PATH" => Ok(VBValue::String(entry.path.clone().into())),
             "SECURE" => Ok(VBValue::Boolean(entry.secure)),
             "HASKEYS" => Ok(VBValue::Boolean(!entry.subkeys.is_empty())),
-            _ => Ok(VBValue::String(entry.value.to_string())),
+            _ => Ok(VBValue::String(entry.value.to_string().into())),
         }
     }
     fn set_property(
@@ -161,7 +207,7 @@ impl VBScriptObject for CookieObject {
                 .subkeys
                 .get(&key.to_uppercase())
                 .cloned()
-                .map(VBValue::String)
+                .map(|s| VBValue::String(s.into()))
                 .unwrap_or(VBValue::Empty)),
             None => Ok(VBValue::Empty),
         }
@@ -198,7 +244,7 @@ impl VBScriptObject for ResponseCookies {
         match name.to_uppercase().as_str() {
             "COUNT" => Ok(VBValue::Number(context.response.cookies.len() as f64)),
             _ => match context.response.cookies.get(name) {
-                Some(entry) => Ok(VBValue::String(entry.value.to_string())),
+                Some(entry) => Ok(VBValue::String(entry.value.to_string().into())),
                 None => Ok(VBValue::Empty),
             },
         }

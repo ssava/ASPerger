@@ -7,7 +7,7 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum VBValue {
-    String(String),
+    String(Arc<str>),
     Number(f64),
     Boolean(bool),
     Null,
@@ -84,7 +84,7 @@ mod tests {
             } else if let Ok(num) = trimmed.parse::<f64>() {
                 Ok(VBValue::Number(num))
             } else if trimmed.starts_with('"') && trimmed.ends_with('"') {
-                Ok(VBValue::String(trimmed[1..trimmed.len() - 1].to_string()))
+                Ok(VBValue::String(trimmed[1..trimmed.len() - 1].to_string().into()))
             } else {
                 Err(format!("Cannot interpret '{}' as a valid value", s))
             }
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn test_vb_value_clone_string() {
-        let v = VBValue::String("hello".to_string());
+        let v = VBValue::String("hello".into());
         let c = v.clone();
         assert_eq!(v, c);
     }
@@ -128,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_vb_value_partial_eq_different_types() {
-        assert_ne!(VBValue::Number(1.0), VBValue::String("1".to_string()));
+        assert_ne!(VBValue::Number(1.0), VBValue::String("1".into()));
         assert_ne!(VBValue::Empty, VBValue::Null);
         assert_ne!(VBValue::Boolean(true), VBValue::Number(1.0));
     }
@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn test_vb_value_from_str_string() {
         let v: VBValue = "\"hello\"".parse().unwrap();
-        assert_eq!(v, VBValue::String("hello".to_string()));
+        assert_eq!(v, VBValue::String("hello".into()));
     }
 
     #[test]
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_vb_value_display_string() {
-        let v = VBValue::String("test".to_string());
+        let v = VBValue::String("test".into());
         assert_eq!(v.to_string(), "test");
     }
 

@@ -99,12 +99,12 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         context.set_variable(
             "items",
             VBValue::Array(std::sync::Arc::new(vec![
-                VBValue::String("a".to_string()),
-                VBValue::String("b".to_string()),
-                VBValue::String("c".to_string()),
+                VBValue::String("a".into()),
+                VBValue::String("b".into()),
+                VBValue::String("c".into()),
             ]), vec![]),
         );
-        context.set_variable("result", VBValue::String("".to_string()));
+        context.set_variable("result", VBValue::String("".into()));
         interpreter
             .execute(
                 "For Each x In items\n    result = result & x\nNext",
@@ -113,7 +113,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             context.get_variable("result"),
-            Some(&VBValue::String("abc".to_string()))
+            Some(&VBValue::String("abc".into()))
         );
     }
 
@@ -207,7 +207,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     fn test_function_call_array() {
         let mut context = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
-        context.set_variable("result", VBValue::String("".to_string()));
+        context.set_variable("result", VBValue::String("".into()));
         let interpreter = crate::vbscript::VBScriptInterpreter;
         interpreter
             .execute("result = Array(10, 20, 30)", &mut context)
@@ -258,7 +258,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             context.get_variable("result"),
-            Some(&VBValue::String("HELLO".to_string()))
+            Some(&VBValue::String("HELLO".into()))
         );
     }
 
@@ -272,7 +272,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             context.get_variable("result"),
-            Some(&VBValue::String("ell".to_string()))
+            Some(&VBValue::String("ell".into()))
         );
     }
 
@@ -330,7 +330,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("n"),
-            Some(&VBValue::String("John".to_string()))
+            Some(&VBValue::String("John".into()))
         );
     }
 
@@ -344,7 +344,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("n"),
-            Some(&VBValue::String("".to_string()))
+            Some(&VBValue::String("".into()))
         );
     }
 
@@ -374,7 +374,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("u"),
-            Some(&VBValue::String("admin".to_string()))
+            Some(&VBValue::String("admin".into()))
         );
     }
 
@@ -406,7 +406,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("u"),
-            Some(&VBValue::String("ASPerger/1.0".to_string()))
+            Some(&VBValue::String("ASPerger/1.0".into()))
         );
     }
 
@@ -437,7 +437,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("t"),
-            Some(&VBValue::String("dark".to_string()))
+            Some(&VBValue::String("dark".into()))
         );
     }
 
@@ -449,7 +449,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         interp.execute("x = Response.Status", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("x"),
-            Some(&VBValue::String("200 OK".to_string()))
+            Some(&VBValue::String("200 OK".into()))
         );
     }
 
@@ -463,7 +463,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("x"),
-            Some(&VBValue::String("text/html".to_string()))
+            Some(&VBValue::String("text/html".into()))
         );
     }
 
@@ -491,7 +491,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     fn test_asp_response_write_with_variable() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
-        ctx.set_variable("name", VBValue::String("World".to_string()));
+        ctx.set_variable("name", VBValue::String("World".into()));
         let interp = VBScriptInterpreter;
         interp.execute("Response.Write name", &mut ctx).unwrap();
         assert_eq!(ctx.response.buffer, "World");
@@ -551,7 +551,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
                 .and_then(|d| d.get("USERNAME"))
                 .cloned()
         };
-        assert_eq!(session_val, Some(VBValue::String("Alice".to_string())));
+        assert_eq!(session_val, Some(VBValue::String("Alice".into())));
     }
 
     #[test]
@@ -565,7 +565,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("s"),
-            Some(&VBValue::String("MY-SESSION".to_string()))
+            Some(&VBValue::String("MY-SESSION".into()))
         );
     }
 
@@ -626,18 +626,18 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         match (&k1, &k2) {
             (VBValue::String(a), VBValue::String(b)) => {
                 let expected = ["K1", "K2"];
-                assert!(expected.contains(&a.as_str()), "k1={:?} not in [K1,K2]", a);
-                assert!(expected.contains(&b.as_str()), "k2={:?} not in [K1,K2]", b);
+                assert!(expected.contains(&a.as_ref()), "k1={:?} not in [K1,K2]", a);
+                assert!(expected.contains(&b.as_ref()), "k2={:?} not in [K1,K2]", b);
             }
             _ => panic!("Expected String keys, got {:?} {:?}", k1, k2),
         }
         assert!(
-            v1 == VBValue::String("v1".to_string()) || v1 == VBValue::String("v2".to_string()),
+            v1 == VBValue::String("v1".into()) || v1 == VBValue::String("v2".into()),
             "v1={:?} not in [v1,v2]",
             v1
         );
         assert!(
-            v2 == VBValue::String("v1".to_string()) || v2 == VBValue::String("v2".to_string()),
+            v2 == VBValue::String("v1".into()) || v2 == VBValue::String("v2".into()),
             "v2={:?} not in [v1,v2]",
             v2
         );
@@ -662,7 +662,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("v"),
-            Some(&VBValue::String("v1".to_string()))
+            Some(&VBValue::String("v1".into()))
         );
     }
 
@@ -696,7 +696,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         assert_eq!(
             ctx.get_variable("r"),
             Some(&VBValue::String(
-                "&lt;b&gt;bold&lt;/b&gt; &amp; &#39;quotes&#39;".to_string()
+                "&lt;b&gt;bold&lt;/b&gt; &amp; &#39;quotes&#39;".to_string().into()
             ))
         );
     }
@@ -711,7 +711,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("r"),
-            Some(&VBValue::String("hello+world".to_string()))
+            Some(&VBValue::String("hello+world".into()))
         );
     }
 
@@ -725,7 +725,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("r"),
-            Some(&VBValue::String("a%2Fb%3Fc".to_string()))
+            Some(&VBValue::String("a%2Fb%3Fc".into()))
         );
     }
 
@@ -739,7 +739,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("r"),
-            Some(&VBValue::String("a/b+c".to_string()))
+            Some(&VBValue::String("a/b+c".into()))
         );
     }
 
@@ -765,7 +765,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("p"),
-            Some(&VBValue::String("/home/site/index.asp".to_string()))
+            Some(&VBValue::String("/home/site/index.asp".into()))
         );
     }
 
@@ -855,7 +855,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             let data = store.lock_apps();
             data.get("KEY").cloned()
         };
-        assert_eq!(val, Some(VBValue::String("val".to_string())));
+        assert_eq!(val, Some(VBValue::String("val".into())));
     }
 
     #[test]
@@ -939,7 +939,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("e"),
-            Some(&VBValue::String("2026-06-01".to_string()))
+            Some(&VBValue::String("2026-06-01".into()))
         );
     }
 
@@ -956,7 +956,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("v"),
-            Some(&VBValue::String("hello".to_string()))
+            Some(&VBValue::String("hello".into()))
         );
     }
 
@@ -983,19 +983,19 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
         interp.execute("Dim rType, sType, svType, aType\nrType = TypeName(Request)\nsType = TypeName(Response)\nsvType = TypeName(Server)\naType = TypeName(Application)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("rType"),
-            Some(&VBValue::String("Request".to_string()))
+            Some(&VBValue::String("Request".into()))
         );
         assert_eq!(
             ctx.get_variable("sType"),
-            Some(&VBValue::String("Response".to_string()))
+            Some(&VBValue::String("Response".into()))
         );
         assert_eq!(
             ctx.get_variable("svType"),
-            Some(&VBValue::String("Server".to_string()))
+            Some(&VBValue::String("Server".into()))
         );
         assert_eq!(
             ctx.get_variable("aType"),
-            Some(&VBValue::String("Application".to_string()))
+            Some(&VBValue::String("Application".into()))
         );
     }
 
@@ -1069,7 +1069,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             .unwrap();
         assert_eq!(
             ctx.get_variable("atype"),
-            Some(&VBValue::String("Application".to_string()))
+            Some(&VBValue::String("Application".into()))
         );
     }
 

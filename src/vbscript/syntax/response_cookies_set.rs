@@ -1,7 +1,10 @@
 use super::VBSyntax;
 use crate::vbscript::asp_objects::to_cookie_string;
+use crate::vbscript::compiler::Compiler;
 use crate::vbscript::execution_context::CookieEntry;
 use crate::vbscript::expr::{evaluate, Expr};
+use crate::vbscript::instruction::Instruction;
+use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
 #[derive(Clone)]
@@ -35,6 +38,17 @@ impl VBSyntax for ResponseCookiesSet {
             "Set-Cookie".to_string(),
             to_cookie_string(&name, entry),
         ));
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        let response_idx = compiler.add_constant(VBValue::String("response".into()));
+        compiler.emit(Instruction::LoadGlobal(response_idx));
+        let cookies_idx = compiler.add_constant(VBValue::String("cookies".into()));
+        compiler.emit(Instruction::GetProp(cookies_idx));
+        compiler.compile_expr(&self.key);
+        compiler.compile_expr(&self.value);
+        compiler.emit(Instruction::IndexSet);
         Ok(())
     }
 
@@ -82,6 +96,19 @@ impl VBSyntax for ResponseCookiesSetProp {
             "Set-Cookie".to_string(),
             to_cookie_string(&name, entry),
         ));
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        let response_idx = compiler.add_constant(VBValue::String("response".into()));
+        compiler.emit(Instruction::LoadGlobal(response_idx));
+        let cookies_idx = compiler.add_constant(VBValue::String("cookies".into()));
+        compiler.emit(Instruction::GetProp(cookies_idx));
+        compiler.compile_expr(&self.key);
+        compiler.emit(Instruction::IndexGet);
+        compiler.compile_expr(&self.value);
+        let prop_idx = compiler.add_constant(VBValue::String(self.property.to_lowercase().into()));
+        compiler.emit(Instruction::SetProp(prop_idx));
         Ok(())
     }
 

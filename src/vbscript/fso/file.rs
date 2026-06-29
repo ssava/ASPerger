@@ -82,17 +82,17 @@ impl VBScriptObject for FileObject {
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "NAME" => Ok(VBValue::String(self.name.clone())),
+            "NAME" => Ok(VBValue::String(self.name.clone().into())),
             "SHORTPATH" | "PATH" => Ok(VBValue::String(
-                self.path.to_str().unwrap_or("").to_string(),
+                self.path.to_str().unwrap_or("").to_string().into(),
             )),
-            "SHORTNAME" => Ok(VBValue::String(self.short_name.clone())),
+            "SHORTNAME" => Ok(VBValue::String(self.short_name.clone().into())),
             "SIZE" => Ok(VBValue::Number(self.size as f64)),
-            "TYPE" => Ok(VBValue::String(self.file_type.clone())),
-            "DATECREATED" => Ok(VBValue::String(self.date_created.clone())),
-            "DATELASTMODIFIED" => Ok(VBValue::String(self.date_last_modified.clone())),
-            "DATELASTACCESSED" => Ok(VBValue::String(self.date_last_accessed.clone())),
-            "PARENTFOLDER" => Ok(VBValue::String(self.parent_folder.clone())),
+            "TYPE" => Ok(VBValue::String(self.file_type.clone().into())),
+            "DATECREATED" => Ok(VBValue::String(self.date_created.clone().into())),
+            "DATELASTMODIFIED" => Ok(VBValue::String(self.date_last_modified.clone().into())),
+            "DATELASTACCESSED" => Ok(VBValue::String(self.date_last_accessed.clone().into())),
+            "PARENTFOLDER" => Ok(VBValue::String(self.parent_folder.clone().into())),
             "ATTRIBUTES" => {
                 let attrs = fs::metadata(&self.path)
                     .map(|m| {

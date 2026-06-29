@@ -37,7 +37,7 @@ impl VBScriptObject for FileSystemObject {
             "DRIVES" => {
                 #[cfg(unix)]
                 {
-                    let drives = vec![VBValue::String("/".to_string())];
+                    let drives = vec![VBValue::String("/".into())];
                     Ok(VBValue::Array(std::sync::Arc::new(drives), vec![]))
                 }
                 #[cfg(windows)]
@@ -46,7 +46,7 @@ impl VBScriptObject for FileSystemObject {
                         .filter_map(|letter| {
                             let path = format!("{}:\\", letter as char);
                             if Path::new(&path).exists() {
-                                Some(VBValue::String(path))
+                                Some(VBValue::String(path.into()))
                             } else {
                                 None
                             }
@@ -331,7 +331,7 @@ impl VBScriptObject for FileSystemObject {
                     }
                 });
                 match parent {
-                    Some(name) => Ok(VBValue::String(name)),
+                    Some(name) => Ok(VBValue::String(name.into())),
                     None => Ok(VBValue::Empty),
                 }
             }
@@ -340,7 +340,7 @@ impl VBScriptObject for FileSystemObject {
                 let p = std::path::Path::new(&path);
                 let name = p.file_name().and_then(|n| n.to_str());
                 match name {
-                    Some(n) => Ok(VBValue::String(n.to_string())),
+                    Some(n) => Ok(VBValue::String(n.to_string().into())),
                     None => Ok(VBValue::Empty),
                 }
             }
@@ -349,8 +349,8 @@ impl VBScriptObject for FileSystemObject {
                 let p = std::path::Path::new(&path);
                 let ext = p.extension().and_then(|e| e.to_str());
                 match ext {
-                    Some(e) => Ok(VBValue::String(e.to_string())),
-                    None => Ok(VBValue::String("".to_string())),
+                    Some(e) => Ok(VBValue::String(e.to_string().into())),
+                    None => Ok(VBValue::String("".into())),
                 }
             }
             "GETBASENAME" => {
@@ -358,15 +358,15 @@ impl VBScriptObject for FileSystemObject {
                 let p = std::path::Path::new(&path);
                 let name = p.file_stem().and_then(|n| n.to_str());
                 match name {
-                    Some(n) => Ok(VBValue::String(n.to_string())),
-                    None => Ok(VBValue::String("".to_string())),
+                    Some(n) => Ok(VBValue::String(n.to_string().into())),
+                    None => Ok(VBValue::String("".into())),
                 }
             }
             "GETABSOLUTEPATHNAME" => {
                 let path = value_utils::to_arg_string(&args[0]);
                 let p = resolve_path(&path);
                 let s = p.to_str().unwrap_or(&path);
-                Ok(VBValue::String(s.to_string()))
+                Ok(VBValue::String(s.to_string().into()))
             }
             "BUILDPATH" => {
                 let parent = value_utils::to_arg_string(&args[0]);
@@ -379,21 +379,22 @@ impl VBScriptObject for FileSystemObject {
                 let joined = format!("{}/{}", parent, child);
                 let p = std::path::Path::new(&joined);
                 let result = p.to_str().unwrap_or(&joined);
-                Ok(VBValue::String(result.to_string()))
+                Ok(VBValue::String(result.to_string().into()))
             }
             "GETSPECIALFOLDER" => {
                 let folder_type = value_utils::to_arg_f64(&args[0]) as i32;
                 match folder_type {
                     0 => Ok(VBValue::String(
-                        std::env::var("WINDIR").unwrap_or_else(|_| "/usr".to_string()),
+                        std::env::var("WINDIR").unwrap_or_else(|_| "/usr".to_string()).into(),
                     )),
                     1 => Ok(VBValue::String(
                         std::env::var("SYSTEMROOT")
                             .or_else(|_| std::env::var("WINDIR"))
-                            .unwrap_or_else(|_| "/usr/lib".to_string()),
+                            .unwrap_or_else(|_| "/usr/lib".to_string())
+                            .into(),
                     )),
                     2 => Ok(VBValue::String(
-                        std::env::temp_dir().to_str().unwrap_or("/tmp").to_string(),
+                        std::env::temp_dir().to_str().unwrap_or("/tmp").to_string().into(),
                     )),
                     _ => Err(VBSErrorType::RuntimeError
                         .into_error(format!("Invalid SpecialFolder constant: {}", folder_type))),

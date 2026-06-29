@@ -5,7 +5,7 @@ use super::value::VBValue;
 /// Convert a `VBValue` to its string representation.
 pub fn to_arg_string(val: &VBValue) -> String {
     match val {
-        VBValue::String(s) => s.clone(),
+        VBValue::String(s) => s.to_string(),
         VBValue::Null => "Null".to_string(),
         VBValue::Empty => "".to_string(),
         VBValue::Number(n) => n.to_string(),
@@ -47,7 +47,7 @@ pub fn to_boolean(val: &VBValue) -> bool {
     match val {
         VBValue::Boolean(b) => *b,
         VBValue::Number(n) => *n != 0.0,
-        VBValue::String(s) => !s.is_empty() && !s.eq_ignore_ascii_case("false") && s != "0",
+        VBValue::String(s) => !s.is_empty() && !s.eq_ignore_ascii_case("false") && s.as_ref() != "0",
         VBValue::Null | VBValue::Empty => false,
         VBValue::Array(..) | VBValue::Object(_) => true,
     }

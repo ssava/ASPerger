@@ -1,5 +1,7 @@
 use super::VBSyntax;
+use crate::vbscript::compiler::Compiler;
 use crate::vbscript::expr::{evaluate, to_number, Expr};
+use crate::vbscript::instruction::Instruction;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
 /// AST node for `Dim var` / `Dim var(5)` / `Dim var(2, 3)` declarations.
@@ -44,6 +46,30 @@ impl VBSyntax for Dim {
                             dim_bounds,
                         ),
                     );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        for (var_name, dims) in &self.var_names {
+            let slot = compiler.allocate_local(var_name);
+            match dims {
+                None => {
+                    compiler.emit(Instruction::LoadEmpty);
+                    compiler.emit(Instruction::StoreLocal(slot));
+                }
+                Some(dim_exprs) if dim_exprs.is_empty() => {
+                    compiler.emit(Instruction::NewArray(0));
+                    compiler.emit(Instruction::StoreLocal(slot));
+                }
+                Some(dim_exprs) => {
+                    for dim_expr in dim_exprs {
+                        compiler.compile_expr(dim_expr);
+                    }
+                    compiler.emit(Instruction::NewArray(dim_exprs.len() as u8));
+                    compiler.emit(Instruction::StoreLocal(slot));
                 }
             }
         }

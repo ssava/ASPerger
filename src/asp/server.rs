@@ -381,7 +381,7 @@ impl AspServer {
                 AspBlock::Html(html) => context.write(html),
                 AspBlock::Code(code, start_line) => {
                     context.code_start_line = *start_line;
-                    interpreter.execute(code, context).map_err(|e| ASPError::new(500, e.to_string()))?;
+                    interpreter.execute_vm(code, context).map_err(|e| ASPError::new(500, e.to_string()))?;
                 }
                 AspBlock::Directive(_, _) => {}
             }

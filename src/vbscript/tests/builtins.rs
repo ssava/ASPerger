@@ -13,9 +13,9 @@ use super::*;
         assert!(matches!(arr, Some(VBValue::Array(..))));
         if let Some(VBValue::Array(a, _)) = arr {
             assert_eq!(a.len(), 3);
-            assert_eq!(a[0], VBValue::String("a".to_string()));
-            assert_eq!(a[1], VBValue::String("b".to_string()));
-            assert_eq!(a[2], VBValue::String("c".to_string()));
+            assert_eq!(a[0], VBValue::String("a".into()));
+            assert_eq!(a[1], VBValue::String("b".into()));
+            assert_eq!(a[2], VBValue::String("c".into()));
         }
     }
 
@@ -29,9 +29,9 @@ use super::*;
             .unwrap();
         if let Some(VBValue::Array(a, _)) = ctx.get_variable("result") {
             assert_eq!(a.len(), 3);
-            assert_eq!(a[0], VBValue::String("x".to_string()));
-            assert_eq!(a[1], VBValue::String("y".to_string()));
-            assert_eq!(a[2], VBValue::String("z".to_string()));
+            assert_eq!(a[0], VBValue::String("x".into()));
+            assert_eq!(a[1], VBValue::String("y".into()));
+            assert_eq!(a[2], VBValue::String("z".into()));
         } else {
             panic!("Expected Array");
         }
@@ -47,8 +47,8 @@ use super::*;
             .unwrap();
         if let Some(VBValue::Array(a, _)) = ctx.get_variable("result") {
             assert_eq!(a.len(), 2);
-            assert_eq!(a[0], VBValue::String("a".to_string()));
-            assert_eq!(a[1], VBValue::String("b,c,d".to_string()));
+            assert_eq!(a[0], VBValue::String("a".into()));
+            assert_eq!(a[1], VBValue::String("b,c,d".into()));
         } else {
             panic!("Expected Array");
         }
@@ -64,7 +64,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("a,b,c".to_string()))
+            Some(&VBValue::String("a,b,c".into()))
         );
     }
 
@@ -78,7 +78,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("x y".to_string()))
+            Some(&VBValue::String("x y".into()))
         );
     }
 
@@ -95,7 +95,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hello there there".to_string()))
+            Some(&VBValue::String("hello there there".into()))
         );
     }
 
@@ -112,7 +112,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("a|b|c,d".to_string()))
+            Some(&VBValue::String("a|b|c,d".into()))
         );
     }
 
@@ -126,7 +126,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("yyyzzz".to_string()))
+            Some(&VBValue::String("yyyzzz".into()))
         );
     }
 
@@ -147,7 +147,7 @@ use super::*;
         interp.execute("result = Chr(65)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("A".to_string()))
+            Some(&VBValue::String("A".into()))
         );
     }
 
@@ -161,7 +161,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hello  ".to_string()))
+            Some(&VBValue::String("hello  ".into()))
         );
     }
 
@@ -175,7 +175,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("  hello".to_string()))
+            Some(&VBValue::String("  hello".into()))
         );
     }
 
@@ -187,7 +187,7 @@ use super::*;
         interp.execute("result = Space(5)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("     ".to_string()))
+            Some(&VBValue::String("     ".into()))
         );
     }
 
@@ -199,7 +199,7 @@ use super::*;
         interp.execute("result = String(3, 65)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("AAA".to_string()))
+            Some(&VBValue::String("AAA".into()))
         );
     }
 
@@ -213,7 +213,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("*****".to_string()))
+            Some(&VBValue::String("*****".into()))
         );
     }
 
@@ -227,7 +227,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("olleh".to_string()))
+            Some(&VBValue::String("olleh".into()))
         );
     }
 
@@ -458,7 +458,7 @@ use super::*;
         interp.execute("result = WeekdayName(1)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("Sunday".to_string()))
+            Some(&VBValue::String("Sunday".into()))
         );
     }
 
@@ -472,7 +472,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("Mon".to_string()))
+            Some(&VBValue::String("Mon".into()))
         );
     }
 
@@ -484,7 +484,7 @@ use super::*;
         interp.execute("result = MonthName(1)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("January".to_string()))
+            Some(&VBValue::String("January".into()))
         );
     }
 
@@ -498,7 +498,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("Feb".to_string()))
+            Some(&VBValue::String("Feb".into()))
         );
     }
 
@@ -658,7 +658,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("07/04/2024".to_string()))
+            Some(&VBValue::String("07/04/2024".into()))
         );
     }
 
@@ -920,11 +920,11 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("r1"),
-            Some(&VBValue::String("FF".to_string()))
+            Some(&VBValue::String("FF".into()))
         );
         assert_eq!(
             ctx.get_variable("r2"),
-            Some(&VBValue::String("0".to_string()))
+            Some(&VBValue::String("0".into()))
         );
     }
 
@@ -936,7 +936,7 @@ use super::*;
         interp.execute("result = Oct(8)", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("10".to_string()))
+            Some(&VBValue::String("10".into()))
         );
     }
 
@@ -976,35 +976,35 @@ use super::*;
         ).unwrap();
         assert_eq!(
             ctx.get_variable("r1"),
-            Some(&VBValue::String("String".to_string()))
+            Some(&VBValue::String("String".into()))
         );
         assert_eq!(
             ctx.get_variable("r2"),
-            Some(&VBValue::String("Integer".to_string()))
+            Some(&VBValue::String("Integer".into()))
         );
         assert_eq!(
             ctx.get_variable("r3"),
-            Some(&VBValue::String("Long".to_string()))
+            Some(&VBValue::String("Long".into()))
         );
         assert_eq!(
             ctx.get_variable("r4"),
-            Some(&VBValue::String("Double".to_string()))
+            Some(&VBValue::String("Double".into()))
         );
         assert_eq!(
             ctx.get_variable("r5"),
-            Some(&VBValue::String("Boolean".to_string()))
+            Some(&VBValue::String("Boolean".into()))
         );
         assert_eq!(
             ctx.get_variable("r6"),
-            Some(&VBValue::String("Null".to_string()))
+            Some(&VBValue::String("Null".into()))
         );
         assert_eq!(
             ctx.get_variable("r7"),
-            Some(&VBValue::String("Empty".to_string()))
+            Some(&VBValue::String("Empty".into()))
         );
         assert_eq!(
             ctx.get_variable("r8"),
-            Some(&VBValue::String("Array".to_string()))
+            Some(&VBValue::String("Array".into()))
         );
     }
 
@@ -1043,8 +1043,8 @@ use super::*;
         interp.execute("a = Array(\"apple\", \"banana\", \"apricot\", \"cherry\")\nresult = Filter(a, \"ap\")", &mut ctx).unwrap();
         if let Some(VBValue::Array(arr, _)) = ctx.get_variable("result") {
             assert_eq!(arr.len(), 2);
-            assert_eq!(arr[0], VBValue::String("apple".to_string()));
-            assert_eq!(arr[1], VBValue::String("apricot".to_string()));
+            assert_eq!(arr[0], VBValue::String("apple".into()));
+            assert_eq!(arr[1], VBValue::String("apricot".into()));
         } else {
             panic!("Expected Array");
         }
@@ -1063,7 +1063,7 @@ use super::*;
             .unwrap();
         if let Some(VBValue::Array(arr, _)) = ctx.get_variable("result") {
             assert_eq!(arr.len(), 1);
-            assert_eq!(arr[0], VBValue::String("banana".to_string()));
+            assert_eq!(arr[0], VBValue::String("banana".into()));
         } else {
             panic!("Expected Array");
         }
@@ -1151,7 +1151,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("1,234.57".to_string()))
+            Some(&VBValue::String("1,234.57".into()))
         );
     }
 
@@ -1165,7 +1165,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("1,234".to_string()))
+            Some(&VBValue::String("1,234".into()))
         );
     }
 
@@ -1181,7 +1181,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("$1,234.50".to_string()))
+            Some(&VBValue::String("$1,234.50".into()))
         );
     }
 
@@ -1197,6 +1197,6 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("12.3%".to_string()))
+            Some(&VBValue::String("12.3%".into()))
         );
     }

@@ -44,7 +44,7 @@ pub(super) fn builtin_fetchurl(args: &[VBValue]) -> Result<VBValue, VBSError> {
             rt_handle.block_on(async {
                 match client.get(&url).send().await {
                     Ok(resp) => match resp.text().await {
-                        Ok(body) => Ok(VBValue::String(body)),
+                        Ok(body) => Ok(VBValue::String(body.into())),
                         Err(e) => Err(VBSErrorType::RuntimeError
                             .into_error(format!("FetchURL: failed to read response body: {e}"))),
                     },
@@ -65,7 +65,7 @@ pub(super) fn builtin_cint(args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 pub(super) fn builtin_cstr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "CStr")?;
-    Ok(VBValue::String(value_utils::to_arg_string(&args[0])))
+    Ok(VBValue::String(value_utils::to_arg_string(&args[0]).into()))
 }
 
 pub(super) fn builtin_isnull(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -250,20 +250,20 @@ pub(super) fn builtin_hex(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Hex")?;
     let n = value_utils::to_arg_f64(&args[0]);
     if n == 0.0 {
-        return Ok(VBValue::String("0".to_string()));
+        return Ok(VBValue::String("0".into()));
     }
     let n = n as i64;
-    Ok(VBValue::String(format!("{:X}", n)))
+    Ok(VBValue::String(format!("{:X}", n).into()))
 }
 
 pub(super) fn builtin_oct(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Oct")?;
     let n = value_utils::to_arg_f64(&args[0]);
     if n == 0.0 {
-        return Ok(VBValue::String("0".to_string()));
+        return Ok(VBValue::String("0".into()));
     }
     let n = n as i64;
-    Ok(VBValue::String(format!("{:o}", n)))
+    Ok(VBValue::String(format!("{:o}", n).into()))
 }
 
 pub(super) fn builtin_isdate(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -304,7 +304,7 @@ pub(super) fn builtin_typename(args: &[VBValue]) -> Result<VBValue, VBSError> {
             }
         }
     };
-    Ok(VBValue::String(name.to_string()))
+    Ok(VBValue::String(name.to_string().into()))
 }
 
 pub(super) fn builtin_vartype(args: &[VBValue]) -> Result<VBValue, VBSError> {

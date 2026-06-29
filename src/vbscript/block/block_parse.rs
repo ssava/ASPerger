@@ -1,6 +1,8 @@
 use super::block_exec::execute_user_defined_function;
 use super::block_types::{BlockStatement, CaseClause, ElseIfBlock};
+use crate::vbscript::compiler::Compiler;
 use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr};
+use crate::vbscript::instruction::Instruction;
 use crate::vbscript::syntax::{
     ArrayAssignment, Assignment, Const, Dim, Erase, MethodCall, OnErrorGoto0, OnErrorResumeNext,
     PropertySet, ReDim, ResponseCookiesSet, ResponseCookiesSetProp, ResponseWrite, VBSyntax,
@@ -1665,6 +1667,9 @@ impl VBSyntax for ErrorSyntax {
     fn clone_box(&self) -> Box<dyn VBSyntax> {
         Box::new(self.clone())
     }
+    fn compile(&self, _compiler: &mut Compiler) -> Result<(), VBSError> {
+        Ok(())
+    }
     fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
         Err(VBSErrorType::NotImplementedError
             .into_error(format!("Unrecognized command: {}", self.message)))
@@ -1684,6 +1689,22 @@ struct ExitSyntax {
 impl VBSyntax for ExitSyntax {
     fn clone_box(&self) -> Box<dyn VBSyntax> {
         Box::new(self.clone())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        match self.exit_type {
+            VBSErrorType::ExitDo | VBSErrorType::ExitFor => {
+                compiler.emit_exit();
+            }
+            VBSErrorType::ExitFunction => {
+                compiler.emit(Instruction::ExitFunction);
+            }
+            VBSErrorType::ExitSub => {
+                compiler.emit(Instruction::ExitSub);
+            }
+            _ => {}
+        }
+        Ok(())
     }
 
     fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
@@ -1760,6 +1781,15 @@ impl CallStatement {
 impl VBSyntax for CallStatement {
     fn clone_box(&self) -> Box<dyn VBSyntax> {
         Box::new(self.clone())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        for arg in &self.args {
+            compiler.compile_expr(arg);
+        }
+        let name_idx = compiler.add_constant(VBValue::String(self.name.to_lowercase().into()));
+        compiler.emit(Instruction::Call(name_idx, self.args.len() as u8));
+        Ok(())
     }
 
     fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {

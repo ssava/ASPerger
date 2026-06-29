@@ -148,7 +148,7 @@ pub(crate) fn execute_user_defined_function(
     }
 }
 
-fn extract_properties_from_class_body(
+pub(crate) fn extract_properties_from_class_body(
     body_lines: &[Vec<Token>],
 ) -> Result<AHashMap<String, PropertyDef>, VBSError> {
     let mut properties: AHashMap<String, PropertyDef> = AHashMap::new();
@@ -261,7 +261,7 @@ fn extract_properties_from_class_body(
     Ok(properties)
 }
 
-fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String, MethodDef> {
+pub(crate) fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String, MethodDef> {
     let mut methods: AHashMap<String, MethodDef> = AHashMap::new();
     let mut i = 0;
 

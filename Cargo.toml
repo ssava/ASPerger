@@ -15,6 +15,10 @@ harness = false
 name = "level2_http"
 harness = false
 
+[[bench]]
+name = "level3_vm_comparison"
+harness = false
+
 [features]
 default = ["fetchurl"]
 fetchurl = ["dep:reqwest"]

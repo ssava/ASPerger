@@ -51,3 +51,4 @@ pub(crate) mod builtins;
 pub(crate) mod objects;
 pub(crate) mod fso;
 pub(crate) mod asp;
+pub(crate) mod vm_comparison;

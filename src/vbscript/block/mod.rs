@@ -2,7 +2,7 @@
 
 mod block_types;
 mod block_parse;
-mod block_exec;
+pub(crate) mod block_exec;
 
 pub use block_types::{BlockStatement, CaseClause, ElseIfBlock, UserDefinedFunction};
 pub use block_parse::parse_blocks;

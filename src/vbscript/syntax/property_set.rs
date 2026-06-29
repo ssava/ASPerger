@@ -1,4 +1,6 @@
+use super::super::compiler::Compiler;
 use super::super::expr::{evaluate, Expr};
+use super::super::instruction::Instruction;
 use super::super::value::VBValue;
 use super::super::vbs_error::{VBSError, VBSErrorType};
 use super::super::ExecutionContext;
@@ -73,6 +75,20 @@ impl VBSyntax for PropertySet {
         // Put the object back (even on error, to avoid corrupting state)
         context.set_variable(&obj_key, obj_val);
         result
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        let name_lower = self.object_name.to_lowercase();
+        if let Some(slot) = compiler.local_slot(&name_lower) {
+            compiler.emit(Instruction::LoadLocal(slot));
+        } else {
+            let idx = compiler.add_constant(VBValue::String(name_lower.into()));
+            compiler.emit(Instruction::LoadGlobal(idx));
+        }
+        compiler.compile_expr(&self.value_expr);
+        let prop_idx = compiler.add_constant(VBValue::String(self.property.to_lowercase().into()));
+        compiler.emit(Instruction::SetProp(prop_idx));
+        Ok(())
     }
 
     fn clone_box(&self) -> Box<dyn VBSyntax> {

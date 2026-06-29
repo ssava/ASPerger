@@ -23,7 +23,7 @@ impl VBScriptObject for SessionObject {
             return Ok(VBValue::Empty);
         }
         match name.to_uppercase().as_str() {
-            "SESSIONID" => Ok(VBValue::String(context.session.id.clone())),
+            "SESSIONID" => Ok(VBValue::String(context.session.id.clone().into())),
             "TIMEOUT" => Ok(VBValue::Number(20.0)),
             "CONTENTS" => Ok(VBValue::Object(Box::new(SessionContents::new(
                 context.session.id.clone(),
@@ -230,7 +230,7 @@ impl VBScriptObject for SessionContents {
                                 keys.len()
                             )));
                         }
-                        Ok(VBValue::String(keys[index - 1].clone()))
+                        Ok(VBValue::String(keys[index - 1].clone().into()))
                     } else {
                         Ok(VBValue::Empty)
                     }

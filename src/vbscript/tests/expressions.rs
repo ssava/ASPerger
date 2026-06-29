@@ -559,11 +559,11 @@ use super::*;
     fn test_like_wildcard_matches() {
         let mut ctx = ExecutionContext::new();
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx);
-        ctx.set_variable("s", VBValue::String("hello".to_string()));
+        ctx.set_variable("s", VBValue::String("hello".into()));
         let interp = VBScriptInterpreter;
         interp.execute("result = s Like \"h*\"", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(true)));
-        ctx.set_variable("s", VBValue::String("world".to_string()));
+        ctx.set_variable("s", VBValue::String("world".into()));
         interp.execute("result = s Like \"h*\"", &mut ctx).unwrap();
         assert_eq!(ctx.get_variable("result"), Some(&VBValue::Boolean(false)));
     }

@@ -84,7 +84,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             context.get_variable("val"),
-            Some(&VBValue::String("Alpha".to_string()))
+            Some(&VBValue::String("Alpha".into()))
         );
     }
 
@@ -108,7 +108,7 @@ use super::*;
         interpreter
             .execute("dict.Add \"g\", \"Gamma\"", &mut context)
             .unwrap();
-        context.set_variable("result", VBValue::String("".to_string()));
+        context.set_variable("result", VBValue::String("".into()));
         interpreter
             .execute(
                 "For Each key In dict.Keys\n    result = result & key\nNext",
@@ -119,7 +119,7 @@ use super::*;
         assert!(result.is_some());
         // Keys may be in any order
         let s = match result.unwrap() {
-            VBValue::String(s) => s.clone(),
+            VBValue::String(s) => s.to_string(),
             _ => String::new(),
         };
         assert_eq!(s.len(), 3);
@@ -336,7 +336,7 @@ use super::*;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nre.Global = True\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hello there there".to_string()))
+            Some(&VBValue::String("hello there there".into()))
         );
     }
 
@@ -348,7 +348,7 @@ use super::*;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"world\"\nresult = re.Replace(\"hello world world\", \"there\")", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hello there world".to_string()))
+            Some(&VBValue::String("hello there world".into()))
         );
     }
 
@@ -369,8 +369,8 @@ use super::*;
                 VBValue::Object(m) => m.get_property("Value", &mut ExecutionContext::new()).unwrap(),
                 _ => panic!("Expected Match object at [1]"),
             };
-            assert_eq!(match0_value, VBValue::String("123".to_string()));
-            assert_eq!(match1_value, VBValue::String("456".to_string()));
+            assert_eq!(match0_value, VBValue::String("123".into()));
+            assert_eq!(match1_value, VBValue::String("456".into()));
         } else {
             panic!("Expected Array");
         }
@@ -393,7 +393,7 @@ use super::*;
         interp.execute("Set re = CreateObject(\"VBScript.RegExp\")\nre.Pattern = \"test\"\nre.IgnoreCase = True\nre.Global = True\np = re.Pattern\ni = re.IgnoreCase\ng = re.Global", &mut ctx).unwrap();
         assert_eq!(
             ctx.get_variable("p"),
-            Some(&VBValue::String("test".to_string()))
+            Some(&VBValue::String("test".into()))
         );
         assert_eq!(ctx.get_variable("i"), Some(&VBValue::Boolean(true)));
         assert_eq!(ctx.get_variable("g"), Some(&VBValue::Boolean(true)));
@@ -481,7 +481,7 @@ use super::*;
         assert_eq!(
             ctx.get_variable("cs"),
             Some(&VBValue::String(
-                "Provider=SQLOLEDB;Data Source=server".to_string()
+                "Provider=SQLOLEDB;Data Source=server".to_string().into()
             ))
         );
     }
@@ -498,7 +498,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hi   ".to_string()))
+            Some(&VBValue::String("hi   ".into()))
         );
     }
 
@@ -512,7 +512,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hel".to_string()))
+            Some(&VBValue::String("hel".into()))
         );
     }
 
@@ -526,7 +526,7 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("   hi".to_string()))
+            Some(&VBValue::String("   hi".into()))
         );
     }
 
@@ -540,6 +540,6 @@ use super::*;
             .unwrap();
         assert_eq!(
             ctx.get_variable("result"),
-            Some(&VBValue::String("hel".to_string()))
+            Some(&VBValue::String("hel".into()))
         );
     }

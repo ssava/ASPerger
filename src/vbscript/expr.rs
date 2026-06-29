@@ -265,7 +265,7 @@ fn parse_primary(tokens: &[&Token], pos: &mut usize) -> Result<Expr, VBSError> {
             })?;
             Ok(Expr::Literal(VBValue::Number(num)))
         }
-        TokenType::StringLiteral => Ok(Expr::Literal(VBValue::String(token.value.to_string()))),
+        TokenType::StringLiteral => Ok(Expr::Literal(VBValue::String(token.value.clone()))),
         TokenType::True => Ok(Expr::Literal(VBValue::Boolean(true))),
         TokenType::False => Ok(Expr::Literal(VBValue::Boolean(false))),
         TokenType::Null => Ok(Expr::Literal(VBValue::Null)),
@@ -718,7 +718,7 @@ fn to_bool(val: &VBValue) -> bool {
 
 fn to_string_val(val: &VBValue) -> String {
     match val {
-        VBValue::String(s) => s.clone(),
+        VBValue::String(s) => s.to_string(),
         VBValue::Number(n) => n.to_string(),
         VBValue::Boolean(true) => "True".to_string(),
         VBValue::Boolean(false) => "False".to_string(),
@@ -813,7 +813,7 @@ fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, V
     }
     match op {
         BinOp::Add => match (left, right) {
-            (VBValue::String(_), _) | (_, VBValue::String(_)) => Ok(VBValue::String(concat_str(left, right))),
+            (VBValue::String(_), _) | (_, VBValue::String(_)) => Ok(VBValue::String(concat_str(left, right).into())),
             _ => Ok(VBValue::Number(to_number(left) + to_number(right))),
         },
         BinOp::Sub => Ok(VBValue::Number(to_number(left) - to_number(right))),
@@ -822,7 +822,7 @@ fn eval_binary(left: &VBValue, op: &BinOp, right: &VBValue) -> Result<VBValue, V
         BinOp::IntDiv => checked_div(to_number(left), to_number(right), true),
         BinOp::Pow => Ok(VBValue::Number(to_number(left).powf(to_number(right)))),
         BinOp::Mod => Ok(VBValue::Number(to_number(left) % to_number(right))),
-        BinOp::Concat => Ok(VBValue::String(concat_str(left, right))),
+        BinOp::Concat => Ok(VBValue::String(concat_str(left, right).into())),
         BinOp::Eq => Ok(VBValue::Boolean(values_equal(left, right))),
         BinOp::Ne => Ok(VBValue::Boolean(!values_equal(left, right))),
         BinOp::Lt => Ok(VBValue::Boolean(cmp_result(left, right) == std::cmp::Ordering::Less)),

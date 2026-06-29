@@ -1,4 +1,6 @@
+use super::super::compiler::Compiler;
 use super::super::expr::{evaluate, Expr};
+use super::super::instruction::Instruction;
 use super::super::value::VBValue;
 use super::super::value_utils;
 use super::super::vbs_error::{VBSError, VBSErrorType};
@@ -227,6 +229,21 @@ impl VBSyntax for MethodCall {
             _ => Err(VBSErrorType::RuntimeError
                 .into_error(format!("Object variable '{}' is not set", self.object_name))),
         }
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        let name_lower = self.object_name.to_lowercase();
+        let method_idx = compiler.add_constant(VBValue::String(self.method_name.to_lowercase().into()));
+        for arg in &self.args {
+            compiler.compile_expr(arg);
+        }
+        if let Some(slot) = compiler.local_slot(&name_lower) {
+            compiler.emit(Instruction::CallMethodLocal(slot, method_idx, self.args.len() as u8));
+        } else {
+            let obj_idx = compiler.add_constant(VBValue::String(name_lower.into()));
+            compiler.emit(Instruction::CallMethodGlobal(obj_idx, method_idx, self.args.len() as u8));
+        }
+        Ok(())
     }
 
     fn clone_box(&self) -> Box<dyn VBSyntax> {

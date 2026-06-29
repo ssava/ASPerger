@@ -1,5 +1,7 @@
 use super::VBSyntax;
+use crate::vbscript::compiler::Compiler;
 use crate::vbscript::expr::{evaluate, BinOp, Expr};
+use crate::vbscript::instruction::Instruction;
 use crate::vbscript::value_utils;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext, VBValue};
 
@@ -31,21 +33,23 @@ impl VBSyntax for Assignment {
                     if let Some(existing) = context.get_variable_mut(&self.var_name) {
                         match existing {
                             VBValue::String(s) => {
-                                s.push_str(&rhs_str);
+                                let mut new_s = s.to_string();
+                                new_s.push_str(&rhs_str);
+                                *existing = VBValue::String(new_s.into());
                                 return Ok(());
                             }
                             VBValue::Empty => {
-                                *existing = VBValue::String(rhs_str);
+                                *existing = VBValue::String(rhs_str.into());
                                 return Ok(());
                             }
                             _ => {
                                 let lhs_str = existing.to_string();
-                                *existing = VBValue::String(lhs_str + &rhs_str);
+                                *existing = VBValue::String((lhs_str + &rhs_str).into());
                                 return Ok(());
                             }
                         }
                     } else {
-                        context.set_variable(&self.var_name, VBValue::String(rhs_str));
+                        context.set_variable(&self.var_name, VBValue::String(rhs_str.into()));
                         return Ok(());
                     }
                 }
@@ -53,6 +57,18 @@ impl VBSyntax for Assignment {
         }
         let value = evaluate(&self.expr, context)?;
         context.set_variable(&self.var_name, value);
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        compiler.compile_expr(&self.expr);
+        let name_lower = self.var_name.to_lowercase();
+        if let Some(slot) = compiler.local_slot(&name_lower) {
+            compiler.emit(Instruction::StoreLocal(slot));
+        } else {
+            let idx = compiler.add_constant(VBValue::String(name_lower.into()));
+            compiler.emit(Instruction::StoreGlobal(idx));
+        }
         Ok(())
     }
 

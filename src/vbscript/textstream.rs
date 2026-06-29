@@ -149,7 +149,7 @@ impl VBScriptObject for TextStream {
                         }
                     }
                     inner.at_end_of_line = buf.last() == Some(&b'\n');
-                    Ok(VBValue::String(String::from_utf8_lossy(&buf).to_string()))
+                    Ok(VBValue::String(String::from_utf8_lossy(&buf).to_string().into()))
                 } else {
                     Err(VBSErrorType::RuntimeError
                         .into_error("TextStream is not open for reading".to_string()))
@@ -174,7 +174,7 @@ impl VBScriptObject for TextStream {
                     }
                     inner.line += 1;
                     inner.column = 1;
-                    Ok(VBValue::String(line))
+                    Ok(VBValue::String(line.into()))
                 } else {
                     Err(VBSErrorType::RuntimeError
                         .into_error("TextStream is not open for reading".to_string()))
@@ -187,7 +187,7 @@ impl VBScriptObject for TextStream {
                     reader.read_to_string(&mut content).unwrap_or(0);
                     inner.at_end_of_stream = true;
                     inner.at_end_of_line = true;
-                    Ok(VBValue::String(content))
+                    Ok(VBValue::String(content.into()))
                 } else {
                     Err(VBSErrorType::RuntimeError
                         .into_error("TextStream is not open for reading".to_string()))

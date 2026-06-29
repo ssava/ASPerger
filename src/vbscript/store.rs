@@ -136,7 +136,7 @@ mod tests {
         {
             let mut sessions = store.lock_sessions();
             let mut data = AHashMap::new();
-            data.insert("foo".to_string(), VBValue::String("bar".to_string()));
+            data.insert("foo".to_string(), VBValue::String("bar".into()));
             sessions.insert(key.clone(), data);
         }
         {
@@ -216,10 +216,10 @@ mod tests {
         {
             let mut sessions = store.lock_sessions();
             let mut a = AHashMap::new();
-            a.insert("key".to_string(), VBValue::String("val_a".to_string()));
+            a.insert("key".to_string(), VBValue::String("val_a".into()));
             sessions.insert("A".to_string(), a);
             let mut b = AHashMap::new();
-            b.insert("key".to_string(), VBValue::String("val_b".to_string()));
+            b.insert("key".to_string(), VBValue::String("val_b".into()));
             sessions.insert("B".to_string(), b);
         }
         {

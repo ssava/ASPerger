@@ -1,5 +1,7 @@
 use super::VBSyntax;
+use crate::vbscript::compiler::Compiler;
 use crate::vbscript::expr::{evaluate, to_number, Expr};
+use crate::vbscript::instruction::Instruction;
 use crate::vbscript::value::VBValue;
 use crate::vbscript::{vbs_error::VBSError, ExecutionContext};
 
@@ -72,6 +74,16 @@ impl VBSyntax for ReDim {
             );
         }
 
+        Ok(())
+    }
+
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
+        let name_lower = self.var_name.to_lowercase();
+        let slot = compiler.allocate_local(&name_lower);
+        for size_expr in &self.size_exprs {
+            compiler.compile_expr(size_expr);
+        }
+        compiler.emit(Instruction::ReDim(slot, self.size_exprs.len() as u8, self.preserve));
         Ok(())
     }
 

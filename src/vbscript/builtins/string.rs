@@ -20,10 +20,10 @@ pub(super) fn builtin_ucase(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = match &args[0] {
         VBValue::String(s) => s.to_uppercase(),
         VBValue::Null => return Ok(VBValue::Null),
-        VBValue::Empty => return Ok(VBValue::String("".to_string())),
+        VBValue::Empty => return Ok(VBValue::String("".into())),
         v => v.to_string().to_uppercase(),
     };
-    Ok(VBValue::String(s))
+    Ok(VBValue::String(s.into()))
 }
 
 pub(super) fn builtin_lcase(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -31,10 +31,10 @@ pub(super) fn builtin_lcase(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = match &args[0] {
         VBValue::String(s) => s.to_lowercase(),
         VBValue::Null => return Ok(VBValue::Null),
-        VBValue::Empty => return Ok(VBValue::String("".to_string())),
+        VBValue::Empty => return Ok(VBValue::String("".into())),
         v => v.to_string().to_lowercase(),
     };
-    Ok(VBValue::String(s))
+    Ok(VBValue::String(s.into()))
 }
 
 pub(super) fn builtin_mid(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -48,15 +48,15 @@ pub(super) fn builtin_mid(args: &[VBValue]) -> Result<VBValue, VBSError> {
     };
 
     if start < 1 || start > s.len() {
-        return Ok(VBValue::String("".to_string()));
+        return Ok(VBValue::String("".into()));
     }
     let start_idx = start - 1;
     match length {
         Some(len) => {
             let end = (start_idx + len).min(s.len());
-            Ok(VBValue::String(s[start_idx..end].to_string()))
+            Ok(VBValue::String(s[start_idx..end].to_string().into()))
         }
-        None => Ok(VBValue::String(s[start_idx..].to_string())),
+        None => Ok(VBValue::String(s[start_idx..].to_string().into())),
     }
 }
 
@@ -65,7 +65,7 @@ pub(super) fn builtin_left(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = value_utils::to_arg_string(&args[0]);
     let count = value_utils::to_arg_f64(&args[1]) as usize;
     let count = count.min(s.len());
-    Ok(VBValue::String(s[..count].to_string()))
+    Ok(VBValue::String(s[..count].to_string().into()))
 }
 
 pub(super) fn builtin_right(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -73,13 +73,13 @@ pub(super) fn builtin_right(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = value_utils::to_arg_string(&args[0]);
     let count = value_utils::to_arg_f64(&args[1]) as usize;
     let count = count.min(s.len());
-    Ok(VBValue::String(s[s.len() - count..].to_string()))
+    Ok(VBValue::String(s[s.len() - count..].to_string().into()))
 }
 
 pub(super) fn builtin_trim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Trim")?;
     let s = value_utils::to_arg_string(&args[0]);
-    Ok(VBValue::String(s.trim().to_string()))
+    Ok(VBValue::String(s.trim().to_string().into()))
 }
 
 pub(super) fn builtin_instr(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -127,7 +127,7 @@ pub(super) fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
     };
 
     let parts: Vec<VBValue> = if delimiter.is_empty() {
-        vec![VBValue::String(s)]
+        vec![VBValue::String(s.into())]
     } else {
         let split_result: Vec<&str> = if count < 0 {
             s.split(&delimiter).collect()
@@ -150,7 +150,7 @@ pub(super) fn builtin_split(args: &[VBValue]) -> Result<VBValue, VBSError> {
         };
         split_result
             .into_iter()
-            .map(|p| VBValue::String(p.to_string()))
+            .map(|p| VBValue::String(p.to_string().into()))
             .collect()
     };
     Ok(VBValue::Array(std::sync::Arc::new(parts), vec![]))
@@ -171,7 +171,7 @@ pub(super) fn builtin_join(args: &[VBValue]) -> Result<VBValue, VBSError> {
         }
     };
     let strings: Vec<String> = arr.iter().map(value_utils::to_arg_string).collect();
-    Ok(VBValue::String(strings.join(&delimiter)))
+    Ok(VBValue::String(strings.join(&delimiter).into()))
 }
 
 pub(super) fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -191,10 +191,10 @@ pub(super) fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
     };
 
     if find.is_empty() {
-        return Ok(VBValue::String(s));
+        return Ok(VBValue::String(s.into()));
     }
     if start < 1 || start > s.len() {
-        return Ok(VBValue::String("".to_string()));
+        return Ok(VBValue::String("".into()));
     }
     let search_from = start - 1;
     let search_in = &s[search_from..];
@@ -221,7 +221,7 @@ pub(super) fn builtin_replace(args: &[VBValue]) -> Result<VBValue, VBSError> {
             }
         }
     }
-    Ok(VBValue::String(result))
+    Ok(VBValue::String(result.into()))
 }
 
 pub(super) fn builtin_asc(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -240,7 +240,7 @@ pub(super) fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Chr")?;
     let code = value_utils::to_arg_f64(&args[0]) as u32;
     match char::from_u32(code) {
-        Some(c) => Ok(VBValue::String(c.to_string())),
+        Some(c) => Ok(VBValue::String(c.to_string().into())),
         None => {
             Err(VBSErrorType::ValueError.into_error(format!("Invalid character code: {}", code)))
         }
@@ -250,19 +250,19 @@ pub(super) fn builtin_chr(args: &[VBValue]) -> Result<VBValue, VBSError> {
 pub(super) fn builtin_ltrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "LTrim")?;
     let s = value_utils::to_arg_string(&args[0]);
-    Ok(VBValue::String(s.trim_start().to_string()))
+    Ok(VBValue::String(s.trim_start().to_string().into()))
 }
 
 pub(super) fn builtin_rtrim(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "RTrim")?;
     let s = value_utils::to_arg_string(&args[0]);
-    Ok(VBValue::String(s.trim_end().to_string()))
+    Ok(VBValue::String(s.trim_end().to_string().into()))
 }
 
 pub(super) fn builtin_space(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "Space")?;
     let count = value_utils::to_arg_f64(&args[0]) as usize;
-    Ok(VBValue::String(" ".repeat(count)))
+    Ok(VBValue::String(" ".repeat(count).into()))
 }
 
 pub(super) fn builtin_string(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -276,13 +276,13 @@ pub(super) fn builtin_string(args: &[VBValue]) -> Result<VBValue, VBSError> {
         VBValue::String(s) => s.chars().next().unwrap_or(' '),
         _ => ' ',
     };
-    Ok(VBValue::String(ch.to_string().repeat(count)))
+    Ok(VBValue::String(ch.to_string().repeat(count).into()))
 }
 
 pub(super) fn builtin_strreverse(args: &[VBValue]) -> Result<VBValue, VBSError> {
     expect_arg_count(args, 1, "StrReverse")?;
     let s = value_utils::to_arg_string(&args[0]);
-    Ok(VBValue::String(s.chars().rev().collect()))
+    Ok(VBValue::String(s.chars().rev().collect::<String>().into()))
 }
 
 pub(super) fn builtin_instrrev(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -374,7 +374,7 @@ pub(super) fn builtin_formatnumber(args: &[VBValue]) -> Result<VBValue, VBSError
         true
     };
     let formatted = format_number_internal(num, numdigits);
-    Ok(VBValue::String(formatted))
+    Ok(VBValue::String(formatted.into()))
 }
 
 pub(super) fn builtin_formatcurrency(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -410,7 +410,7 @@ pub(super) fn builtin_formatcurrency(args: &[VBValue]) -> Result<VBValue, VBSErr
     } else {
         format!("${}", num_str)
     };
-    Ok(VBValue::String(result))
+    Ok(VBValue::String(result.into()))
 }
 
 pub(super) fn builtin_formatpercent(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -440,7 +440,7 @@ pub(super) fn builtin_formatpercent(args: &[VBValue]) -> Result<VBValue, VBSErro
         true
     };
     let num_str = format_number_internal(num, numdigits);
-    Ok(VBValue::String(format!("{}%", num_str)))
+    Ok(VBValue::String(format!("{}%", num_str).into()))
 }
 
 pub(super) fn builtin_lset(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -448,11 +448,11 @@ pub(super) fn builtin_lset(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = value_utils::to_arg_string(&args[0]);
     let length = value_utils::to_arg_f64(&args[1]) as usize;
     if s.len() >= length {
-        Ok(VBValue::String(s[..length].to_string()))
+        Ok(VBValue::String(s[..length].to_string().into()))
     } else {
         let mut result = s.clone();
         result.push_str(&" ".repeat(length - s.len()));
-        Ok(VBValue::String(result))
+        Ok(VBValue::String(result.into()))
     }
 }
 
@@ -461,10 +461,10 @@ pub(super) fn builtin_rset(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let s = value_utils::to_arg_string(&args[0]);
     let length = value_utils::to_arg_f64(&args[1]) as usize;
     if s.len() >= length {
-        Ok(VBValue::String(s[..length].to_string()))
+        Ok(VBValue::String(s[..length].to_string().into()))
     } else {
         let mut result = " ".repeat(length - s.len());
         result.push_str(&s);
-        Ok(VBValue::String(result))
+        Ok(VBValue::String(result.into()))
     }
 }

@@ -4,6 +4,7 @@
 
 pub trait VBSyntax {
     fn execute(&self, context: &mut crate::vbscript::ExecutionContext) -> Result<(), VBSError>;
+    fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError>;
     fn clone_box(&self) -> Box<dyn VBSyntax>;
 }
 
@@ -19,8 +20,9 @@ mod property_set;
 mod redim;
 mod response_cookies_set;
 mod response_write;
-
 use super::vbs_error::VBSError;
+use crate::vbscript::compiler::Compiler;
+
 pub use array_assignment::ArrayAssignment;
 pub use assignment::Assignment;
 pub use const_syntax::Const;

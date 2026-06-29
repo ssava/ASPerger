@@ -57,7 +57,7 @@ impl VBScriptObject for RegExpObject {
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "PATTERN" => Ok(VBValue::String(self.pattern.clone())),
+            "PATTERN" => Ok(VBValue::String(self.pattern.clone().into())),
             "IGNORECASE" => Ok(VBValue::Boolean(self.ignore_case)),
             "GLOBAL" => Ok(VBValue::Boolean(self.global)),
             _ => prop_not_found!("RegExp", name),
@@ -146,7 +146,7 @@ impl VBScriptObject for RegExpObject {
                 } else {
                     re.replace(&input, replacement.as_str())
                 };
-                Ok(VBValue::String(result.to_string()))
+                Ok(VBValue::String(result.to_string().into()))
             }
             _ => method_not_found!("RegExp", name),
         }
@@ -184,7 +184,7 @@ impl VBScriptObject for MatchObject {
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "VALUE" => Ok(VBValue::String(self.value.clone())),
+            "VALUE" => Ok(VBValue::String(self.value.clone().into())),
             "FIRSTINDEX" => Ok(VBValue::Number(self.first_index as f64)),
             "LENGTH" => Ok(VBValue::Number(self.length as f64)),
             "SUBMATCHES" => Ok(VBValue::Object(Box::new(SubMatchesObject::new(self.sub_matches.clone())))),
@@ -199,7 +199,7 @@ impl VBScriptObject for MatchObject {
     ) -> Result<VBValue, VBSError> {
         let i = value_utils::to_arg_f64(index) as usize;
         self.sub_matches.get(i).cloned()
-            .map(VBValue::String)
+            .map(|s| VBValue::String(s.into()))
             .ok_or_else(|| VBSErrorType::RuntimeError
                 .into_error(format!("SubMatch index {} out of range", i)))
     }
@@ -249,7 +249,7 @@ impl VBScriptObject for SubMatchesObject {
     ) -> Result<VBValue, VBSError> {
         let i = value_utils::to_arg_f64(index) as usize;
         self.items.get(i).cloned()
-            .map(VBValue::String)
+            .map(|s| VBValue::String(s.into()))
             .ok_or_else(|| VBSErrorType::RuntimeError
                 .into_error(format!("SubMatches index {} out of range", i)))
     }

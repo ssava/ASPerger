@@ -119,7 +119,7 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("content"),
-            Some(&VBValue::String("Hello, World!".to_string()))
+            Some(&VBValue::String("Hello, World!".into()))
         );
 
         cleanup_path(&path);
@@ -168,15 +168,15 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("line1"),
-            Some(&VBValue::String("Line 1".to_string()))
+            Some(&VBValue::String("Line 1".into()))
         );
         assert_eq!(
             ctx.get_variable("line2"),
-            Some(&VBValue::String("Line 2".to_string()))
+            Some(&VBValue::String("Line 2".into()))
         );
         assert_eq!(
             ctx.get_variable("line3"),
-            Some(&VBValue::String("Line 3".to_string()))
+            Some(&VBValue::String("Line 3".into()))
         );
 
         cleanup_path(&path);
@@ -208,7 +208,7 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("part"),
-            Some(&VBValue::String("ABCD".to_string()))
+            Some(&VBValue::String("ABCD".into()))
         );
 
         cleanup_path(&path);
@@ -268,23 +268,23 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("parent"),
-            Some(&VBValue::String("/a/b".to_string()))
+            Some(&VBValue::String("/a/b".into()))
         );
         assert_eq!(
             ctx.get_variable("fname"),
-            Some(&VBValue::String("c.txt".to_string()))
+            Some(&VBValue::String("c.txt".into()))
         );
         assert_eq!(
             ctx.get_variable("ext"),
-            Some(&VBValue::String("txt".to_string()))
+            Some(&VBValue::String("txt".into()))
         );
         assert_eq!(
             ctx.get_variable("base"),
-            Some(&VBValue::String("c".to_string()))
+            Some(&VBValue::String("c".into()))
         );
         assert_eq!(
             ctx.get_variable("built"),
-            Some(&VBValue::String("/a/b/c.txt".to_string()))
+            Some(&VBValue::String("/a/b/c.txt".into()))
         );
     }
 
@@ -456,7 +456,7 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("name"),
-            Some(&VBValue::String(expected_name))
+            Some(&VBValue::String(expected_name.into()))
         );
         assert_eq!(ctx.get_variable("size"), Some(&VBValue::Number(15.0)));
 
@@ -491,7 +491,7 @@ use super::*;
         let expected_name = path_obj.file_name().unwrap().to_str().unwrap().to_string();
         assert_eq!(
             ctx.get_variable("fname"),
-            Some(&VBValue::String(expected_name))
+            Some(&VBValue::String(expected_name.into()))
         );
         assert_eq!(ctx.get_variable("isRoot"), Some(&VBValue::Boolean(false)));
 
@@ -535,7 +535,7 @@ use super::*;
         assert!(abs.is_some());
         if let Some(VBValue::String(s)) = abs {
             assert!(s.ends_with("test.txt"));
-            assert!(std::path::Path::new(s).is_absolute());
+            assert!(std::path::Path::new(s.as_ref()).is_absolute());
         } else {
             panic!("Expected String");
         }
@@ -651,7 +651,7 @@ use super::*;
         let tmp = ctx.get_variable("tmpFolder");
         assert!(tmp.is_some());
         if let Some(VBValue::String(s)) = tmp {
-            let p = std::path::Path::new(s);
+            let p = std::path::Path::new(s.as_ref());
             assert!(p.is_absolute());
         } else {
             panic!("Expected string path");
@@ -802,7 +802,7 @@ use super::*;
 
         assert_eq!(
             ctx.get_variable("content"),
-            Some(&VBValue::String("OpenAsTextStream content".to_string()))
+            Some(&VBValue::String("OpenAsTextStream content".into()))
         );
 
         cleanup_path(&path);

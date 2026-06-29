@@ -45,7 +45,7 @@ impl VBScriptObject for Connection {
         _context: &mut ExecutionContext,
     ) -> Result<VBValue, VBSError> {
         match name.to_uppercase().as_str() {
-            "CONNECTIONSTRING" => Ok(VBValue::String(self.connection_string.clone())),
+            "CONNECTIONSTRING" => Ok(VBValue::String(self.connection_string.clone().into())),
             "STATE" => Ok(VBValue::Number(self.state as f64)),
             _ => prop_not_found!("Connection", name),
         }

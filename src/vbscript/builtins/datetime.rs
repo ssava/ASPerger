@@ -122,12 +122,12 @@ pub(super) fn builtin_now(_args: &[VBValue]) -> Result<VBValue, VBSError> {
 
 pub(super) fn builtin_date(_args: &[VBValue]) -> Result<VBValue, VBSError> {
     let now = chrono::Local::now().naive_local();
-    Ok(VBValue::String(now.format("%m/%d/%Y").to_string()))
+    Ok(VBValue::String(now.format("%m/%d/%Y").to_string().into()))
 }
 
 pub(super) fn builtin_time(_args: &[VBValue]) -> Result<VBValue, VBSError> {
     let now = chrono::Local::now().naive_local();
-    Ok(VBValue::String(now.format("%H:%M:%S").to_string()))
+    Ok(VBValue::String(now.format("%H:%M:%S").to_string().into()))
 }
 
 pub(super) fn builtin_year(args: &[VBValue]) -> Result<VBValue, VBSError> {
@@ -214,9 +214,9 @@ pub(super) fn builtin_weekdayname(args: &[VBValue]) -> Result<VBValue, VBSError>
     ];
     let short = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     if abbreviate {
-        Ok(VBValue::String(short[idx as usize].to_string()))
+        Ok(VBValue::String(short[idx as usize].to_string().into()))
     } else {
-        Ok(VBValue::String(names[idx as usize].to_string()))
+        Ok(VBValue::String(names[idx as usize].to_string().into()))
     }
 }
 
@@ -249,9 +249,9 @@ pub(super) fn builtin_monthname(args: &[VBValue]) -> Result<VBValue, VBSError> {
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     if abbreviate {
-        Ok(VBValue::String(short[month - 1].to_string()))
+        Ok(VBValue::String(short[month - 1].to_string().into()))
     } else {
-        Ok(VBValue::String(names[month - 1].to_string()))
+        Ok(VBValue::String(names[month - 1].to_string().into()))
     }
 }
 
@@ -493,5 +493,5 @@ pub(super) fn builtin_formatdatetime(args: &[VBValue]) -> Result<VBValue, VBSErr
         4 => dt.format("%H:%M").to_string(),
         _ => format!("{} {}", dt.format("%m/%d/%Y"), dt.format("%H:%M:%S")),
     };
-    Ok(VBValue::String(s))
+    Ok(VBValue::String(s.into()))
 }

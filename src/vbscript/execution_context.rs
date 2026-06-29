@@ -3,6 +3,7 @@ use std::sync::Arc;
 use ahash::AHashMap;
 
 use super::block::{BlockStatement, UserDefinedFunction};
+use super::compiler::CompiledCode;
 use super::debugger::Debugger;
 use super::store::Store;
 use super::tokenizer::Token;
@@ -25,6 +26,7 @@ pub enum ErrorMode {
 }
 
 /// Parsed definition of a VBScript `Property Get/Let/Set` block.
+#[derive(Clone)]
 pub struct PropertyDef {
     pub name: String,
     pub get_body: Option<Vec<Vec<Token>>>,
@@ -146,6 +148,8 @@ pub struct ExecutionContext {
     functions: AHashMap<String, UserDefinedFunction>,
     /// Cached parsed function bodies.
     function_bodies: AHashMap<String, Vec<BlockStatement>>,
+    /// Cached compiled function code.
+    function_code: AHashMap<String, CompiledCode>,
     /// `Class` definitions (stored by class name).
     classes: AHashMap<String, ClassDefinition>,
     /// Current `On Error` mode.
@@ -254,6 +258,14 @@ impl ExecutionContext {
 
     pub fn set_function_body(&mut self, name: &str, body: Vec<BlockStatement>) {
         self.function_bodies.insert(name.to_lowercase(), body);
+    }
+
+    pub fn set_function_code(&mut self, name: &str, code: CompiledCode) {
+        self.function_code.insert(name.to_lowercase(), code);
+    }
+
+    pub fn get_function_code(&self, name: &str) -> Option<&CompiledCode> {
+        self.function_code.get(self.lc_key(name).as_ref())
     }
 
     pub fn define_class(&mut self, class: ClassDefinition) {
@@ -366,6 +378,7 @@ impl Default for ExecutionContext {
             script_path: String::new(),
             debugger: None,
             execute_file_callback: None,
+            function_code: AHashMap::new(),
             code_start_line: 0,
             request_id: 0,
         }
