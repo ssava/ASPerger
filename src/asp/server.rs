@@ -617,6 +617,7 @@ impl AspServer {
         debugger: Option<Arc<Debugger>>,
     ) -> Result<HttpResponse, ASPError> {
         let _span = tracing::info_span!("request", method = %request.method, path = %request.path).entered();
+        let request_start = std::time::Instant::now();
 
         let (file_path, _canonical_folder) = match Self::resolve_file_path(&request, folder, dir_cache) {
             Ok(v) => v,
@@ -672,6 +673,7 @@ impl AspServer {
         context.debugger = debugger;
         Self::inject_asp_intrinsic_objects(&mut context);
 
+        let render_start = std::time::Instant::now();
         let mut response_content = String::new();
         for block in &filtered_blocks {
             if context.response.ended { break; }
@@ -706,7 +708,9 @@ impl AspServer {
         };
 
         let response = Self::build_http_response(&context, body);
-        tracing::info!(status = %response.status_line, body_bytes = response.body.len(), "Request completed");
+        let total_ms = request_start.elapsed().as_secs_f64() * 1000.0;
+        let render_ms = render_start.elapsed().as_secs_f64() * 1000.0;
+        tracing::info!(status = %response.status_line, body_bytes = response.body.len(), response_time_ms = total_ms, render_time_ms = render_ms, "Request completed");
         Ok(response)
     }
 
