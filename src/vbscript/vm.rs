@@ -33,8 +33,8 @@ struct CallFrame {
 
 struct ForState {
     counter_slot: usize,
-    end: VBValue,
-    step: VBValue,
+    end: f64,
+    step: f64,
     current: f64,
 }
 
@@ -1137,43 +1137,54 @@ impl<'a> Vm<'a> {
                 Instruction::ForPrep(slot, exit_offset) => {
                     let existing = self.for_states.iter().position(|fs| fs.counter_slot == slot);
                     if let Some(pos) = existing {
-                        let end = self.for_states[pos].end.clone();
-                        let step = self.for_states[pos].step.clone();
                         let current = self.for_states[pos].current;
-                        if Vm::is_past_end_num(current, &end, &step) {
+                        let end = self.for_states[pos].end;
+                        let step = self.for_states[pos].step;
+                        if (step >= 0.0 && current > end) || (step < 0.0 && current < end) {
                             self.for_states.remove(pos);
                             self.ip = (self.ip as isize + exit_offset as isize) as usize;
                         }
                     } else {
-                        let step = self.stack.pop().unwrap();
-                        let end = self.stack.pop().unwrap();
+                        let step_val = self.stack.pop().unwrap();
+                        let end_val = self.stack.pop().unwrap();
                         let counter = self.locals[slot as usize].clone();
                         let counter_num = value_utils::to_arg_f64(&counter);
+                        let end_num = value_utils::to_arg_f64(&end_val);
+                        let step_num = value_utils::to_arg_f64(&step_val);
                         self.for_states.push(ForState {
                             counter_slot: slot,
-                            end,
-                            step: step.clone(),
+                            end: end_num,
+                            step: step_num,
                             current: counter_num,
                         });
-                        if Vm::is_past_end(&counter, &self.for_states.last().unwrap().end, &step) {
+                        if (step_num >= 0.0 && counter_num > end_num) || (step_num < 0.0 && counter_num < end_num) {
                             self.for_states.pop();
                             self.ip = (self.ip as isize + exit_offset as isize) as usize;
                         }
                     }
                 }
                 Instruction::ForStep(slot, back_offset) => {
-                    // Pop stale inner-loop states (from Exit For jumps)
-                    while let Some(fs) = self.for_states.last() {
-                        if fs.counter_slot == slot {
-                            break;
+                    // Check top state first (common case — avoid while-loop overhead)
+                    if let Some(fs) = self.for_states.last() {
+                        if fs.counter_slot != slot {
+                            while let Some(fs) = self.for_states.last() {
+                                if fs.counter_slot == slot {
+                                    break;
+                                }
+                                self.for_states.pop();
+                            }
                         }
-                        self.for_states.pop();
                     }
                     if let Some(fs) = self.for_states.last_mut() {
-                        let step_val = value_utils::to_arg_f64(&fs.step);
+                        let step_val = fs.step;
                         fs.current += step_val;
                         self.locals[slot as usize] = VBValue::Number(fs.current);
-                        if !Vm::is_past_end_num(fs.current, &fs.end, &fs.step) {
+                        let past_end = if step_val >= 0.0 {
+                            fs.current > fs.end
+                        } else {
+                            fs.current < fs.end
+                        };
+                        if !past_end {
                             self.ip = (self.ip as isize + back_offset as isize) as usize;
                         } else {
                             self.for_states.pop();
@@ -1724,18 +1735,4 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn is_past_end(counter: &VBValue, end: &VBValue, step: &VBValue) -> bool {
-        let c = value_utils::to_arg_f64(counter);
-        Self::is_past_end_num(c, end, step)
-    }
-
-    fn is_past_end_num(counter: f64, end: &VBValue, step: &VBValue) -> bool {
-        let e = value_utils::to_arg_f64(end);
-        let s = value_utils::to_arg_f64(step);
-        if s >= 0.0 {
-            counter > e
-        } else {
-            counter < e
-        }
-    }
 }
