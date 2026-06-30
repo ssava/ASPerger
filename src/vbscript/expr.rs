@@ -580,7 +580,7 @@ fn evaluate_function_call(
     }
     if let Some(func) = context.get_function(name).cloned() {
         if func.is_function {
-            return super::block::execute_user_defined_function(&func, &evaluated_args, context);
+            return crate::vbscript::interpreter::execute_user_function_vm(&func, &evaluated_args, context);
         } else {
             return Err(VBSErrorType::RuntimeError
                 .into_error(format!("Sub '{}' cannot be used as a function", name)));

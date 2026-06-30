@@ -1,10 +1,9 @@
-//! VBScript block / control-flow parsing and execution.
+//! VBScript block / control-flow parsing and compilation.
 
 mod block_types;
 mod block_parse;
-pub(crate) mod block_exec;
 
 pub use block_types::{BlockStatement, CaseClause, ElseIfBlock, UserDefinedFunction};
+pub(crate) use block_parse::first_non_ws;
 pub use block_parse::parse_blocks;
-pub(crate) use block_exec::execute_user_defined_function;
 

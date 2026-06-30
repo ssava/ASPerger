@@ -182,32 +182,6 @@ pub struct ExecutionContext {
     pub request_id: u64,
 }
 
-/// Scoped guard that resets `code_start_line` to a saved value on drop.
-///
-/// Used in `execute_user_defined_function` to ensure the field is restored
-/// even on early returns or panics.
-pub(crate) struct CodeStartLineGuard {
-    code_start_line: *mut usize,
-    saved: usize,
-}
-
-impl CodeStartLineGuard {
-    pub fn new(code_start_line: &mut usize) -> Self {
-        let saved = *code_start_line;
-        *code_start_line = 0;
-        CodeStartLineGuard {
-            code_start_line,
-            saved,
-        }
-    }
-}
-
-impl Drop for CodeStartLineGuard {
-    fn drop(&mut self) {
-        unsafe { *self.code_start_line = self.saved; }
-    }
-}
-
 impl ExecutionContext {
     pub fn new() -> Self {
         Self::default()

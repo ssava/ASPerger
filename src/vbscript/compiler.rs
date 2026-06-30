@@ -1,12 +1,12 @@
-use crate::vbscript::block::block_exec::{extract_methods_from_class_body, extract_properties_from_class_body};
+use crate::vbscript::block::first_non_ws;
 use crate::vbscript::block::BlockStatement;
 use crate::vbscript::block::UserDefinedFunction;
-use crate::vbscript::execution_context::ClassDefinition;
+use crate::vbscript::execution_context::{ClassDefinition, MethodDef, PropertyDef};
 use crate::vbscript::expr::Expr;
 use crate::vbscript::instruction::Instruction;
-use crate::vbscript::vbs_error::VBSError;
-use crate::vbscript::ExecutionContext;
-use crate::vbscript::VBValue;
+use crate::vbscript::vbs_error::{VBSError, VBSErrorType};
+use crate::vbscript::{ExecutionContext, Token, TokenType, VBValue};
+use ahash::AHashMap;
 
 #[derive(Clone)]
 pub struct CompiledCode {
@@ -740,4 +740,224 @@ impl<'a> Compiler<'a> {
             }
         }
     }
+}
+
+pub(crate) fn extract_properties_from_class_body(
+    body_lines: &[Vec<Token>],
+) -> Result<AHashMap<String, PropertyDef>, VBSError> {
+    let mut properties: AHashMap<String, PropertyDef> = AHashMap::new();
+    let mut i = 0;
+
+    while i < body_lines.len() {
+        let line = &body_lines[i];
+        let no_ws: Vec<&Token> = line
+            .iter()
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .collect();
+
+        if no_ws.is_empty()
+            || (no_ws[0].token_type == TokenType::Public
+                || no_ws[0].token_type == TokenType::Private)
+        {
+            let property_idx = no_ws
+                .iter()
+                .position(|t| t.token_type == TokenType::Property);
+            if let Some(p_idx) = property_idx {
+                let get_let_set = no_ws.get(p_idx + 1);
+                let name_tok = no_ws.get(p_idx + 2);
+                let is_get = get_let_set
+                    .map(|t| {
+                        t.token_type == TokenType::Get || t.value.eq_ignore_ascii_case("get")
+                    })
+                    .unwrap_or(false);
+                let is_let = get_let_set
+                    .map(|t| {
+                        t.token_type == TokenType::Let || t.value.eq_ignore_ascii_case("let")
+                    })
+                    .unwrap_or(false);
+                if is_get || is_let {
+                    let name_tok = match name_tok {
+                        Some(t) if t.token_type == TokenType::Identifier => t,
+                        _ => {
+                            i += 1;
+                            continue;
+                        }
+                    };
+                    let prop_name = name_tok.value.to_lowercase();
+                    i += 1;
+
+                    let mut param = None;
+                    if is_let && no_ws.len() > p_idx + 3 {
+                        let paren_open = no_ws.get(p_idx + 3);
+                        if paren_open
+                            .map(|t| t.token_type == TokenType::LeftParen)
+                            .unwrap_or(false)
+                        {
+                            if let Some(param_tok) = no_ws.get(p_idx + 4) {
+                                if param_tok.token_type == TokenType::Identifier {
+                                    param = Some(param_tok.value.to_lowercase());
+                                }
+                            }
+                        }
+                    }
+
+                    let mut body: Vec<Vec<Token>> = Vec::new();
+                    loop {
+                        if i >= body_lines.len() {
+                            return Err(VBSErrorType::SyntaxError
+                                .into_error("Property without End Property".to_string()));
+                        }
+                        let bline = &body_lines[i];
+                        let first = first_non_ws(bline);
+                        if let Some(f) = first {
+                            if f.token_type == TokenType::End {
+                                let second = bline
+                                    .iter()
+                                    .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                                    .skip(1)
+                                    .find(|t| t.token_type != TokenType::WhiteSpace);
+                                if let Some(s) = second {
+                                    if s.value.eq_ignore_ascii_case("property")
+                                        || s.token_type == TokenType::Property
+                                    {
+                                        i += 1;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        body.push(bline.clone());
+                        i += 1;
+                    }
+
+                    let entry = properties
+                        .entry(prop_name.clone())
+                        .or_insert(PropertyDef {
+                            name: prop_name.clone(),
+                            get_body: None,
+                            let_body: None,
+                            let_param: None,
+                        });
+
+                    if is_get {
+                        entry.get_body = Some(body);
+                    } else if is_let {
+                        entry.let_body = Some(body);
+                        entry.let_param = param;
+                    }
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+
+    Ok(properties)
+}
+
+pub(crate) fn extract_methods_from_class_body(body_lines: &[Vec<Token>]) -> AHashMap<String, MethodDef> {
+    let mut methods: AHashMap<String, MethodDef> = AHashMap::new();
+    let mut i = 0;
+
+    while i < body_lines.len() {
+        let line = &body_lines[i];
+        let no_ws: Vec<&Token> = line
+            .iter()
+            .filter(|t| t.token_type != TokenType::WhiteSpace)
+            .collect();
+
+        if no_ws.is_empty() {
+            i += 1;
+            continue;
+        }
+
+        let start_idx = if no_ws[0].token_type == TokenType::Public
+            || no_ws[0].token_type == TokenType::Private
+        {
+            if no_ws.len() < 2 {
+                i += 1;
+                continue;
+            }
+            1
+        } else {
+            0
+        };
+
+        let is_func = no_ws[start_idx].token_type == TokenType::Function
+            || no_ws[start_idx].value.eq_ignore_ascii_case("function");
+        let is_sub = no_ws[start_idx].token_type == TokenType::Sub
+            || no_ws[start_idx].value.eq_ignore_ascii_case("sub");
+
+        if !is_func && !is_sub {
+            i += 1;
+            continue;
+        }
+
+        let name_idx = start_idx + 1;
+        if name_idx >= no_ws.len() || no_ws[name_idx].token_type != TokenType::Identifier {
+            i += 1;
+            continue;
+        }
+        let method_name = no_ws[name_idx].value.to_lowercase();
+
+        let mut params = Vec::new();
+        if no_ws.len() > name_idx + 1 && no_ws[name_idx + 1].token_type == TokenType::LeftParen {
+            let mut p = name_idx + 2;
+            while p < no_ws.len() && no_ws[p].token_type != TokenType::RightParen {
+                if no_ws[p].token_type == TokenType::Identifier {
+                    params.push(no_ws[p].value.to_lowercase());
+                }
+                p += 1;
+            }
+        }
+
+        i += 1;
+        let mut body: Vec<Vec<Token>> = Vec::new();
+
+        loop {
+            if i >= body_lines.len() {
+                break;
+            }
+            let bline = &body_lines[i];
+            let first = first_non_ws(bline);
+            if let Some(f) = first {
+                if f.token_type == TokenType::End {
+                    let second = bline
+                        .iter()
+                        .skip_while(|t| t.token_type == TokenType::WhiteSpace)
+                        .skip(1)
+                        .find(|t| t.token_type != TokenType::WhiteSpace);
+                    if let Some(s) = second {
+                        if (is_func
+                            && (s.value.eq_ignore_ascii_case("function")
+                                || s.token_type == TokenType::Function))
+                            || (is_sub
+                                && (s.value.eq_ignore_ascii_case("sub")
+                                    || s.token_type == TokenType::Sub))
+                        {
+                            i += 1;
+                            break;
+                        }
+                    }
+                }
+            }
+            body.push(bline.clone());
+            i += 1;
+        }
+
+        let key = method_name.to_uppercase();
+        if !methods.contains_key(&key) {
+            methods.insert(
+                key,
+                MethodDef {
+                    name: method_name,
+                    params,
+                    body_lines: body,
+                    is_function: is_func,
+                },
+            );
+        }
+    }
+
+    methods
 }

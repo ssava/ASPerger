@@ -1,5 +1,6 @@
 use crate::asp::parser::AspBlock;
 use crate::vbscript::block;
+use crate::vbscript::block::UserDefinedFunction;
 use crate::vbscript::vbobject::ErrObject;
 use crate::vbscript::vbs_error::VBSError;
 use crate::vbscript::ExecutionContext;
@@ -276,6 +277,69 @@ pub fn inject_vbscript_constants(context: &mut ExecutionContext) {
         if context.get_variable(name).is_none() {
             context.set_variable(name, value);
         }
+    }
+}
+
+/// Execute a user-defined function via the VM.
+/// This is used from `expr.rs::evaluate` for the debug adapter's expression evaluator.
+pub fn execute_user_function_vm(
+    func: &UserDefinedFunction,
+    args: &[VBValue],
+    context: &mut ExecutionContext,
+) -> Result<VBValue, VBSError> {
+    let saved_code_start_line = context.code_start_line;
+    context.code_start_line = 0;
+
+    for (i, param) in func.params.iter().enumerate() {
+        let val = args.get(i).cloned().unwrap_or(VBValue::Empty);
+        context.set_variable(param, val);
+    }
+    if func.is_function {
+        context.set_variable(&func.name, VBValue::Empty);
+    }
+
+    let lines = &func.body_lines;
+    let blocks = block::parse_blocks(lines)?;
+    let mut compiler = crate::vbscript::compiler::Compiler::new(context);
+    let compiled = compiler.compile(&blocks)?;
+
+    for (name, code) in compiled.compiled_functions.clone() {
+        context.set_function_code(&name, code);
+    }
+
+    let local_names = compiled.local_names.clone();
+    let local_count = compiled.local_count;
+
+    let (result, vm_locals) = {
+        let mut vm = crate::vbscript::vm::Vm::new(context);
+        let r = vm.run(compiled);
+        let l = std::mem::take(&mut vm.locals);
+        (r, l)
+    };
+
+    for slot in 0..local_count {
+        if slot < vm_locals.len() {
+            if let Some(name) = local_names.get(slot) {
+                if !name.is_empty() {
+                    let val = vm_locals[slot].clone();
+                    context.set_variable(name, val);
+                }
+            }
+        }
+    }
+
+    context.code_start_line = saved_code_start_line;
+
+    let return_val = if func.is_function {
+        context.get_variable(&func.name).cloned().unwrap_or(VBValue::Empty)
+    } else {
+        VBValue::Empty
+    };
+
+    match result {
+        Ok(()) => Ok(return_val),
+        Err(e) if e.is_exit_function() || e.is_exit_sub() => Ok(return_val),
+        Err(e) => Err(e),
     }
 }
 

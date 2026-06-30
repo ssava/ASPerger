@@ -1,7 +1,6 @@
-use super::block_exec::execute_user_defined_function;
 use super::block_types::{BlockStatement, CaseClause, ElseIfBlock};
 use crate::vbscript::compiler::Compiler;
-use crate::vbscript::expr::{evaluate, parse_expression, BinOp, Expr};
+use crate::vbscript::expr::{parse_expression, BinOp, Expr};
 use crate::vbscript::instruction::Instruction;
 use crate::vbscript::syntax::{
     ArrayAssignment, Assignment, Const, Dim, Erase, MethodCall, OnErrorGoto0, OnErrorResumeNext,
@@ -1807,20 +1806,9 @@ impl VBSyntax for CallStatement {
         Ok(())
     }
 
-    fn execute(&self, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        let args: Result<Vec<VBValue>, VBSError> =
-            self.args.iter().map(|arg| evaluate(arg, context)).collect();
-        let args = args?;
-
-        if let Some(func) = context.get_function(&self.name).cloned() {
-            execute_user_defined_function(&func, &args, context)?;
-            return Ok(());
-        }
-
-        match crate::vbscript::builtins::call_builtin(&self.name, args) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
+    fn execute(&self, _context: &mut ExecutionContext) -> Result<(), VBSError> {
+        // Dead code — all execution uses compile() + VM
+        Ok(())
     }
 }
 
