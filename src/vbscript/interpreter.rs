@@ -1,5 +1,4 @@
-use std::vec::Vec;
-
+use crate::asp::parser::AspBlock;
 use crate::vbscript::block;
 use crate::vbscript::vbobject::ErrObject;
 use crate::vbscript::vbs_error::VBSError;
@@ -62,6 +61,41 @@ impl VBScriptInterpreter {
 
         let mut vm = crate::vbscript::vm::Vm::new(context);
         vm.run(compiled)
+    }
+
+    /// Execute multiple ASP blocks with a single VM to preserve variable state.
+    /// Converts HTML blocks to Response.Write calls and combines all code.
+    pub fn execute_vm_blocks(&self, asp_blocks: &[&AspBlock], context: &mut ExecutionContext) -> Result<(), VBSError> {
+        // Convert ASP blocks to a single VBScript code string
+        let mut code_parts = Vec::new();
+        
+        for block in asp_blocks {
+            match block {
+                AspBlock::Html(html) => {
+                    if !html.is_empty() {
+                        // Escape the HTML string for VBScript
+                        let escaped = html
+                            .replace("\"", "\"\"")
+                            .replace("\r", "")
+                            .replace("\n", "\" & vbCrLf & \"");
+                        code_parts.push(format!("Response.Write(\"{}\")", escaped));
+                    }
+                }
+                AspBlock::Code(code, _) => {
+                    code_parts.push(code.to_string());
+                }
+                AspBlock::Directive(_, _) => {
+                    // Directives are handled at parse time, ignore here
+                }
+            }
+        }
+        
+        let combined_code = code_parts.join("\n");
+        if combined_code.trim().is_empty() {
+            return Ok(());
+        }
+        
+        self.execute_vm(&combined_code, context)
     }
 
     fn group_tokens_into_lines(&self, tokens: &[Token]) -> Result<Vec<Vec<Token>>, VBSError> {

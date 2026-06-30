@@ -499,7 +499,7 @@ fn execute_select_case_block(
         for val_expr in &case.values {
             let case_val = evaluate(val_expr, context)?;
             let is_match = match val_expr {
-                Expr::CaseComparison { .. } => matches!(case_val, VBValue::Boolean(true)),
+                Expr::CaseComparison { .. } | Expr::Range { .. } => matches!(case_val, VBValue::Boolean(true)),
                 _ => val_equal(&expr_val, &case_val),
             };
             if is_match {

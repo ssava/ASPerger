@@ -854,6 +854,21 @@ fn parse_case_value(tokens: &[Token]) -> Result<Expr, VBSError> {
             }
         }
     }
+    // Check for "X To Y" range
+    if let Some(to_pos) = tokens.iter().position(|t| t.token_type == TokenType::To) {
+        if to_pos > 0 && to_pos < tokens.len() - 1 {
+            let low_tokens: Vec<Token> = tokens[..to_pos].iter().filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
+            let high_tokens: Vec<Token> = tokens[to_pos + 1..].iter().filter(|t| t.token_type != TokenType::WhiteSpace).cloned().collect();
+            if !low_tokens.is_empty() && !high_tokens.is_empty() {
+                let low = parse_expression(&low_tokens)?;
+                let high = parse_expression(&high_tokens)?;
+                return Ok(Expr::Range {
+                    low: Box::new(low),
+                    high: Box::new(high),
+                });
+            }
+        }
+    }
     parse_expression(tokens)
 }
 

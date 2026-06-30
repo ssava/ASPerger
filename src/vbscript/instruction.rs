@@ -67,9 +67,12 @@ pub enum Instruction {
     ReDim(LocalSlot, u8, bool),
     IndexStoreLocal(LocalSlot),
     IndexStoreGlobal(ConstantIdx),
+    IndexStoreLocalMulti(LocalSlot, u8),
+    IndexStoreGlobalMulti(ConstantIdx, u8),
 
     // -- Functions --
     Call(ConstantIdx, u8),
+    CallLocal(LocalSlot, u8),
     Return(u8),
 
     // -- Control flow --
@@ -91,6 +94,7 @@ pub enum Instruction {
 
     // -- Scope --
     SelectStore,
+    LoadSelectValue,
     SelectCompare,
     SelectClear,
     WithStart,
@@ -160,8 +164,11 @@ impl fmt::Display for Instruction {
             Instruction::NewArray(n) => write!(f, "NewArray {}", n),
             Instruction::IndexStoreLocal(s) => write!(f, "IndexStoreLocal {}", s),
             Instruction::IndexStoreGlobal(i) => write!(f, "IndexStoreGlobal {}", i),
+            Instruction::IndexStoreLocalMulti(s, n) => write!(f, "IndexStoreLocalMulti {} {}", s, n),
+            Instruction::IndexStoreGlobalMulti(i, n) => write!(f, "IndexStoreGlobalMulti {} {}", i, n),
             Instruction::ReDim(s, n, p) => write!(f, "ReDim {} {} {}", s, n, p),
             Instruction::Call(i, n) => write!(f, "Call {} {}", i, n),
+            Instruction::CallLocal(s, n) => write!(f, "CallLocal {} {}", s, n),
             Instruction::Return(n) => write!(f, "Return {}", n),
             Instruction::Jump(o) => write!(f, "Jump {}", o),
             Instruction::JumpIfFalse(o) => write!(f, "JumpIfFalse {}", o),
@@ -175,6 +182,7 @@ impl fmt::Display for Instruction {
             Instruction::ExitFunction => write!(f, "ExitFunction"),
             Instruction::ExitSub => write!(f, "ExitSub"),
             Instruction::SelectStore => write!(f, "SelectStore"),
+            Instruction::LoadSelectValue => write!(f, "LoadSelectValue"),
             Instruction::SelectCompare => write!(f, "SelectCompare"),
             Instruction::SelectClear => write!(f, "SelectClear"),
             Instruction::WithStart => write!(f, "WithStart"),

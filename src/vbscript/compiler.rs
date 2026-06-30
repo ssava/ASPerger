@@ -413,7 +413,11 @@ impl<'a> Compiler<'a> {
                 for case in cases {
                     for val_expr in &case.values {
                         self.compile_expr(val_expr);
-                        self.emit(Instruction::SelectCompare);
+                        // CaseComparison and Range already push a boolean, skip SelectCompare
+                        let needs_compare = !matches!(val_expr, Expr::CaseComparison { .. } | Expr::Range { .. });
+                        if needs_compare {
+                            self.emit(Instruction::SelectCompare);
+                        }
                         let next_patch = self.emit_jump_if_false();
 
                         for b in &case.body {
@@ -650,11 +654,19 @@ impl<'a> Compiler<'a> {
                 let name_lower = name.to_lowercase();
                 // Check if name matches a known local variable -> array read
                 if let Some(slot) = self.local_slot(&name_lower) {
-                    self.emit(Instruction::LoadLocal(slot));
-                    for arg in args {
-                        self.compile_expr(arg);
+                    if args.len() > 1 {
+                        // Multi-dimensional array access
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        self.emit(Instruction::CallLocal(slot, args.len() as u8));
+                    } else {
+                        self.emit(Instruction::LoadLocal(slot));
+                        for arg in args {
+                            self.compile_expr(arg);
+                        }
+                        self.emit(Instruction::IndexGet);
                     }
-                    self.emit(Instruction::IndexGet);
                 } else {
                     for arg in args {
                         self.compile_expr(arg);
@@ -689,6 +701,7 @@ impl<'a> Compiler<'a> {
                 self.emit(Instruction::LoadGlobal(name_idx));
             }
             Expr::CaseComparison { op, rhs } => {
+                self.emit(Instruction::LoadSelectValue);
                 self.compile_expr(rhs);
                 let inst = match op {
                     crate::vbscript::expr::BinOp::Eq => Instruction::Eq,
@@ -700,6 +713,15 @@ impl<'a> Compiler<'a> {
                     _ => Instruction::Eq,
                 };
                 self.emit(inst);
+            }
+            Expr::Range { low, high } => {
+                self.emit(Instruction::LoadSelectValue);
+                self.compile_expr(low);
+                self.emit(Instruction::Ge);
+                self.emit(Instruction::LoadSelectValue);
+                self.compile_expr(high);
+                self.emit(Instruction::Le);
+                self.emit(Instruction::And);
             }
         }
     }

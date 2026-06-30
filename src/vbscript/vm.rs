@@ -608,6 +608,131 @@ impl<'a> Vm<'a> {
                         }
                     }
                 }
+                Instruction::IndexStoreLocalMulti(slot, n) => {
+                    let n_indices = n as usize;
+                    let val = self.stack.pop().unwrap();
+                    let start = self.stack.len() - n_indices;
+                    let indices: Vec<VBValue> = self.stack.drain(start..).collect();
+                    let arr = &mut self.locals[slot as usize];
+                    if let VBValue::Array(arr_ref, dims) = arr {
+                        let flat_idx = if dims.is_empty() && n_indices == 1 {
+                            let idx_val = value_utils::to_arg_f64(&indices[0]) as usize;
+                            if idx_val >= arr_ref.len() {
+                                let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                    self.context.set_err(e);
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                            idx_val
+                        } else if n_indices == dims.len() {
+                            let flat_idx = match value_utils::compute_flat_index(&indices, dims) {
+                                Some(v) => v,
+                                None => {
+                                    let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                    if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                        self.context.set_err(e);
+                                        continue;
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                            };
+                            flat_idx
+                        } else {
+                            let e = VBSError::new(9, format!("Array has {} dimensions but {} indices provided", dims.len(), n_indices), VBSErrorType::RuntimeError);
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                                continue;
+                            } else {
+                                return Err(e);
+                            }
+                        };
+                        let items = Arc::make_mut(arr_ref);
+                        if flat_idx < items.len() {
+                            items[flat_idx] = val;
+                        } else {
+                            let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        let e = VBSError::new(0, "Object or array required".to_string(), VBSErrorType::RuntimeError);
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                            continue;
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
+                Instruction::IndexStoreGlobalMulti(idx, n) => {
+                    let n_indices = n as usize;
+                    let val = self.stack.pop().unwrap();
+                    let start = self.stack.len() - n_indices;
+                    let indices: Vec<VBValue> = self.stack.drain(start..).collect();
+                    let name = self.constants[idx as usize].to_string();
+                    let var = self.context.get_variable_mut(&name);
+                    if let Some(VBValue::Array(arr_ref, dims)) = var {
+                        let flat_idx = if dims.is_empty() && n_indices == 1 {
+                            let idx_val = value_utils::to_arg_f64(&indices[0]) as usize;
+                            if idx_val >= arr_ref.len() {
+                                let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                    self.context.set_err(e);
+                                    continue;
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                            idx_val
+                        } else if n_indices == dims.len() {
+                            let flat_idx = match value_utils::compute_flat_index(&indices, dims) {
+                                Some(v) => v,
+                                None => {
+                                    let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                    if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                        self.context.set_err(e);
+                                        continue;
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                            };
+                            flat_idx
+                        } else {
+                            let e = VBSError::new(9, format!("Array has {} dimensions but {} indices provided", dims.len(), n_indices), VBSErrorType::RuntimeError);
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                                continue;
+                            } else {
+                                return Err(e);
+                            }
+                        };
+                        let items = Arc::make_mut(arr_ref);
+                        if flat_idx < items.len() {
+                            items[flat_idx] = val;
+                        } else {
+                            let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    } else {
+                        let e = VBSError::new(0, "Object or array required".to_string(), VBSErrorType::RuntimeError);
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
                 Instruction::NewObject(i) => {
                     let name = self.constants[i as usize].to_string();
                     let class = self.context.get_class(&name);
@@ -791,6 +916,91 @@ impl<'a> Vm<'a> {
                         }
                     }
                 }
+                Instruction::CallLocal(slot, n) => {
+                    let n_args = n as usize;
+                    let args: Vec<VBValue> = if n_args > 0 {
+                        let start = self.stack.len() - n_args;
+                        self.stack.drain(start..).collect()
+                    } else {
+                        Vec::new()
+                    };
+                    // Load the local variable
+                    let local_val = self.locals[slot].clone();
+                    match local_val {
+                        VBValue::Array(items, dims) => {
+                            let flat_idx = if dims.is_empty() && args.len() == 1 {
+                                let idx = value_utils::to_arg_f64(&args[0]) as usize;
+                                if idx >= items.len() {
+                                    let e = VBSError::new(9, format!("Subscript out of range: index {} exceeds array size {}", idx, items.len()), VBSErrorType::RuntimeError);
+                                    if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                        self.context.set_err(e);
+                                        continue;
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                                idx
+                            } else if args.len() == dims.len() {
+                                let idx = match value_utils::compute_flat_index(&args, &dims) {
+                                    Some(v) => v,
+                                    None => {
+                                        let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                            self.context.set_err(e);
+                                            continue;
+                                        } else {
+                                            return Err(e);
+                                        }
+                                    }
+                                };
+                                if idx >= items.len() {
+                                    let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                    if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                        self.context.set_err(e);
+                                        continue;
+                                    } else {
+                                        return Err(e);
+                                    }
+                                }
+                                idx
+                            } else {
+                                let e = VBSError::new(9, format!("Array has {} dimensions but {} indices provided", dims.len(), args.len()), VBSErrorType::RuntimeError);
+                                if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                    self.context.set_err(e);
+                                    continue;
+                                } else {
+                                    return Err(e);
+                                }
+                            };
+                            self.stack.push(items[flat_idx].clone());
+                        }
+                        VBValue::Object(obj) => {
+                            if let Some(arg) = args.first() {
+                                match obj.indexed_get(arg, self.context) {
+                                    Ok(val) => self.stack.push(val),
+                                    Err(e) => {
+                                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                            self.context.set_err(e);
+                                        } else {
+                                            return Err(e);
+                                        }
+                                    }
+                                }
+                            } else {
+                                self.stack.push(VBValue::Empty);
+                            }
+                        }
+                        _ => {
+                            let e = VBSError::new(424, "Object or array required".to_string(), VBSErrorType::RuntimeError);
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                                continue;
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
                 Instruction::Return(n) => {
                     let frame = self.frames.pop().unwrap();
                     let result = if n > 0 {
@@ -954,6 +1164,13 @@ impl<'a> Vm<'a> {
                 // -- Scope --
                 Instruction::SelectStore => {
                     self.select_value = self.stack.pop();
+                }
+                Instruction::LoadSelectValue => {
+                    if let Some(ref sel) = self.select_value {
+                        self.stack.push(sel.clone());
+                    } else {
+                        self.stack.push(VBValue::Empty);
+                    }
                 }
                 Instruction::SelectCompare => {
                     let val = self.stack.pop().unwrap();

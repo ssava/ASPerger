@@ -373,19 +373,7 @@ impl AspServer {
         context: &mut ExecutionContext,
     ) -> Result<(), ASPError> {
         let interpreter = VBScriptInterpreter;
-        for block in blocks {
-            if context.response.ended {
-                break;
-            }
-            match *block {
-                AspBlock::Html(html) => context.write(html),
-                AspBlock::Code(code, start_line) => {
-                    context.code_start_line = *start_line;
-                    interpreter.execute_vm(code, context).map_err(|e| ASPError::new(500, e.to_string()))?;
-                }
-                AspBlock::Directive(_, _) => {}
-            }
-        }
+        interpreter.execute_vm_blocks(blocks, context).map_err(|e| ASPError::new(500, e.to_string()))?;
         Ok(())
     }
 
@@ -675,18 +663,15 @@ impl AspServer {
 
         let render_start = std::time::Instant::now();
         let mut response_content = String::new();
-        for block in &filtered_blocks {
-            if context.response.ended { break; }
-            match Self::process_blocks(&[block], &mut context) {
-                Ok(()) => response_content.push_str(&context.response.buffer),
-                Err(e) => {
-                    if context.response.ended { break; }
-                    response_content.push_str(&context.response.buffer);
-                    response_content.push_str(&format!("\n<!-- Error: {} -->\n", e));
-                }
+        // Process all blocks at once to preserve variable state across blocks
+        match Self::process_blocks(&filtered_blocks, &mut context) {
+            Ok(()) => response_content.push_str(&context.response.buffer),
+            Err(e) => {
+                response_content.push_str(&context.response.buffer);
+                response_content.push_str(&format!("\n<!-- Error: {} -->\n", e));
             }
-            context.flush_response_buffer();
         }
+        context.flush_response_buffer();
 
         for (name, entry) in &context.response.cookies {
             context.response.extra_headers.push((

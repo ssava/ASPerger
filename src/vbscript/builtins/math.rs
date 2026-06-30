@@ -46,7 +46,8 @@ pub(super) fn builtin_rnd(args: &[VBValue]) -> Result<VBValue, VBSError> {
 pub(super) fn builtin_randomize(args: &[VBValue]) -> Result<VBValue, VBSError> {
     let seed = if args.is_empty() {
         let now = chrono::Local::now().naive_local();
-        now.and_utc().timestamp_subsec_nanos()
+        let ts = now.and_utc().timestamp_nanos_opt().unwrap_or(0);
+        ((ts as u64) ^ (ts as u64 >> 32)) as u32
     } else {
         value_utils::to_arg_f64(&args[0]) as u32
     };

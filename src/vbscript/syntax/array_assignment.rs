@@ -112,19 +112,36 @@ impl VBSyntax for ArrayAssignment {
 
     fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
         let name_lower = self.var_name.to_lowercase();
+        let n_indices = self.index_exprs.len();
         if let Some(slot) = compiler.local_slot(&name_lower) {
-            for index_expr in &self.index_exprs {
-                compiler.compile_expr(index_expr);
+            if n_indices > 1 {
+                for index_expr in &self.index_exprs {
+                    compiler.compile_expr(index_expr);
+                }
+                compiler.compile_expr(&self.value_expr);
+                compiler.emit(Instruction::IndexStoreLocalMulti(slot, n_indices as u8));
+            } else {
+                for index_expr in &self.index_exprs {
+                    compiler.compile_expr(index_expr);
+                }
+                compiler.compile_expr(&self.value_expr);
+                compiler.emit(Instruction::IndexStoreLocal(slot));
             }
-            compiler.compile_expr(&self.value_expr);
-            compiler.emit(Instruction::IndexStoreLocal(slot));
         } else {
             let idx = compiler.add_constant(VBValue::String(name_lower.into()));
-            for index_expr in &self.index_exprs {
-                compiler.compile_expr(index_expr);
+            if n_indices > 1 {
+                for index_expr in &self.index_exprs {
+                    compiler.compile_expr(index_expr);
+                }
+                compiler.compile_expr(&self.value_expr);
+                compiler.emit(Instruction::IndexStoreGlobalMulti(idx, n_indices as u8));
+            } else {
+                for index_expr in &self.index_exprs {
+                    compiler.compile_expr(index_expr);
+                }
+                compiler.compile_expr(&self.value_expr);
+                compiler.emit(Instruction::IndexStoreGlobal(idx));
             }
-            compiler.compile_expr(&self.value_expr);
-            compiler.emit(Instruction::IndexStoreGlobal(idx));
         }
         Ok(())
     }

@@ -332,4 +332,24 @@ fn test_vm_exit_do_while_cond() {
     assert_eq!(ctx.get_variable("x"), Some(&VBValue::Number(10.0)));
 }
 
+#[test]
+fn test_vm_date_parts() {
+    let mut ctx1 = ExecutionContext::new();
+    crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx1);
+    let mut ctx2 = ExecutionContext::new();
+    crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut ctx2);
+
+    let code = "d = Now()\ny = Year(d)\nm = Month(d)\ndy = Day(d)\nh = Hour(d)\nmi = Minute(d)\ns = Second(d)";
+    let interp = crate::vbscript::VBScriptInterpreter;
+    interp.execute(code, &mut ctx1).unwrap();
+    interp.execute_vm(code, &mut ctx2).unwrap();
+
+    assert_eq!(ctx1.get_variable("y"), ctx2.get_variable("y"));
+    assert_eq!(ctx1.get_variable("m"), ctx2.get_variable("m"));
+    assert_eq!(ctx1.get_variable("dy"), ctx2.get_variable("dy"));
+    assert_eq!(ctx1.get_variable("h"), ctx2.get_variable("h"));
+    assert_eq!(ctx1.get_variable("mi"), ctx2.get_variable("mi"));
+    assert_eq!(ctx1.get_variable("s"), ctx2.get_variable("s"));
+}
+
 

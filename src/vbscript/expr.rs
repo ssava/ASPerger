@@ -52,6 +52,8 @@ pub enum Expr {
     WithObject,
     /// Used internally for `Case Is <op> <value>` in Select Case.
     CaseComparison { op: BinOp, rhs: Box<Expr> },
+    /// Used internally for `Case low To high` range in Select Case.
+    Range { low: Box<Expr>, high: Box<Expr> },
 }
 
 /// Parse a sequence of tokens into an `Expr` AST using a Pratt parser.
@@ -666,6 +668,16 @@ pub fn evaluate(expr: &Expr, context: &mut ExecutionContext) -> Result<VBValue, 
             })?;
             let rhs_val = evaluate(rhs, context)?;
             eval_binary(&select_val, op, &rhs_val)
+        }
+        Expr::Range { low, high } => {
+            let select_val = context.select_value.clone().ok_or_else(|| {
+                VBSErrorType::RuntimeError.into_error("Select value not set".to_string())
+            })?;
+            let low_val = evaluate(low, context)?;
+            let high_val = evaluate(high, context)?;
+            let ge = eval_binary(&select_val, &BinOp::Ge, &low_val)?;
+            let le = eval_binary(&select_val, &BinOp::Le, &high_val)?;
+            eval_binary(&ge, &BinOp::And, &le)
         }
         Expr::UnaryOp { op, expr } => {
             let val = evaluate(expr, context)?;
