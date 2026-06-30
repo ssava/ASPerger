@@ -55,6 +55,8 @@ pub enum Instruction {
     // -- Objects --
     GetProp(ConstantIdx),
     SetProp(ConstantIdx),
+    SetPropLocal(LocalSlot, ConstantIdx),
+    SetPropGlobal(ConstantIdx, ConstantIdx),
     CallMethod(ConstantIdx, u8),
     CallMethodLocal(LocalSlot, ConstantIdx, u8),
     CallMethodGlobal(ConstantIdx, ConstantIdx, u8),
@@ -116,6 +118,7 @@ pub enum Instruction {
 
     // -- Variable management --
     Erase(LocalSlot),
+    EraseGlobal(ConstantIdx),
 }
 
 impl fmt::Display for Instruction {
@@ -155,6 +158,8 @@ impl fmt::Display for Instruction {
             Instruction::Eqv => write!(f, "Eqv"),
             Instruction::GetProp(i) => write!(f, "GetProp {}", i),
             Instruction::SetProp(i) => write!(f, "SetProp {}", i),
+            Instruction::SetPropLocal(s, i) => write!(f, "SetPropLocal {} {}", s, i),
+            Instruction::SetPropGlobal(o, i) => write!(f, "SetPropGlobal {} {}", o, i),
             Instruction::CallMethod(i, n) => write!(f, "CallMethod {} {}", i, n),
             Instruction::CallMethodLocal(s, i, n) => write!(f, "CallMethodLocal {} {} {}", s, i, n),
             Instruction::CallMethodGlobal(g, i, n) => write!(f, "CallMethodGlobal {} {} {}", g, i, n),
@@ -196,6 +201,7 @@ impl fmt::Display for Instruction {
             Instruction::ServerExecute(i) => write!(f, "ServerExecute {}", i),
             Instruction::ServerTransfer(i) => write!(f, "ServerTransfer {}", i),
             Instruction::Erase(s) => write!(f, "Erase {}", s),
+            Instruction::EraseGlobal(i) => write!(f, "EraseGlobal {}", i),
         }
     }
 }

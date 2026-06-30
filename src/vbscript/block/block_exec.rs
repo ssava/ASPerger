@@ -522,7 +522,7 @@ fn execute_select_case_block(
     Ok(())
 }
 
-pub fn execute_blocks(
+pub(crate) fn execute_blocks(
     blocks: &[BlockStatement],
     context: &mut ExecutionContext,
 ) -> Result<(), VBSError> {

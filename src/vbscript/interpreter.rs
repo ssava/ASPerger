@@ -9,24 +9,7 @@ pub struct VBScriptInterpreter;
 
 impl VBScriptInterpreter {
     pub fn execute(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
-        let code = code.trim().to_string();
-
-        let tokens = Tokenizer::tokenize(&code);
-        if tokens.iter().all(|t| t.token_type == TokenType::EOF) {
-            return Ok(());
-        }
-
-        tracing::trace!(token_count = tokens.len(), "Tokenized code block");
-
-        let lines = self.group_tokens_into_lines(&tokens)?;
-
-        if context.get_variable("ERR").is_none() {
-            context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
-        }
-
-        let blocks = block::parse_blocks(&lines)?;
-        tracing::trace!(block_count = blocks.len(), "Parsed VBScript blocks");
-        block::execute_blocks(&blocks, context)
+        self.execute_vm(code, context)
     }
 
     pub fn execute_vm(&self, code: &str, context: &mut ExecutionContext) -> Result<(), VBSError> {
@@ -45,11 +28,28 @@ impl VBScriptInterpreter {
             context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
         }
 
+        inject_vbscript_constants(context);
+
         let blocks = block::parse_blocks(&lines)?;
         tracing::trace!(block_count = blocks.len(), "Parsed VBScript blocks");
 
-        let mut compiler = crate::vbscript::compiler::Compiler::new(&mut *context);
-        let mut compiled = compiler.compile(&blocks)?;
+        self.run_compiled_blocks(&blocks, context)
+    }
+
+    /// Execute pre-parsed `BlockStatement`s via the VM.
+    pub fn execute_blocks_vm(&self, blocks: &[block::BlockStatement], context: &mut ExecutionContext) -> Result<(), VBSError> {
+        if context.get_variable("ERR").is_none() {
+            context.set_variable("ERR", VBValue::Object(Box::new(ErrObject::new())));
+        }
+
+        inject_vbscript_constants(context);
+
+        self.run_compiled_blocks(blocks, context)
+    }
+
+    fn run_compiled_blocks(&self, blocks: &[block::BlockStatement], context: &mut ExecutionContext) -> Result<(), VBSError> {
+        let mut compiler = crate::vbscript::compiler::Compiler::new(context);
+        let mut compiled = compiler.compile(blocks)?;
 
         for func in compiled.function_defs.drain(..) {
             context.define_function(func);
@@ -59,8 +59,30 @@ impl VBScriptInterpreter {
             context.set_function_code(&name, code);
         }
 
-        let mut vm = crate::vbscript::vm::Vm::new(context);
-        vm.run(compiled)
+        let local_names = compiled.local_names.clone();
+        let local_count = compiled.local_count;
+
+        // Run VM and extract locals in a separate scope to release borrow on context
+        let (result, vm_locals) = {
+            let mut vm = crate::vbscript::vm::Vm::new(context);
+            let r = vm.run(compiled);
+            let l = std::mem::take(&mut vm.locals);
+            (r, l)
+        };
+
+        // Write back local variables to context
+        for slot in 0..local_count {
+            if slot < vm_locals.len() {
+                if let Some(name) = local_names.get(slot) {
+                    if !name.is_empty() {
+                        let val = vm_locals[slot].clone();
+                        context.set_variable(name, val);
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     /// Execute multiple ASP blocks with a single VM to preserve variable state.
@@ -236,6 +258,27 @@ impl VBScriptInterpreter {
     }
 }
 
+pub fn inject_vbscript_constants(context: &mut ExecutionContext) {
+    let constants: Vec<(&str, VBValue)> = vec![
+        ("vbCrLf", VBValue::String("\r\n".into())),
+        ("vbCr", VBValue::String("\r".into())),
+        ("vbLf", VBValue::String("\n".into())),
+        ("vbNewLine", VBValue::String("\n".into())),
+        ("vbTab", VBValue::String("\t".into())),
+        ("vbNullString", VBValue::String("".into())),
+        ("vbNull", VBValue::Null),
+        ("vbEmpty", VBValue::Empty),
+        ("vbObject", VBValue::Empty),
+        ("vbTrue", VBValue::Boolean(true)),
+        ("vbFalse", VBValue::Boolean(false)),
+    ];
+    for (name, value) in constants {
+        if context.get_variable(name).is_none() {
+            context.set_variable(name, value);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -284,5 +327,43 @@ mod tests {
         ctx.store = Some(crate::vbscript::store::Store::new());
         let result = VBScriptInterpreter.execute("if x then", &mut ctx);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_vbscript_constants_injected() {
+        let mut ctx = ExecutionContext::new();
+        inject_vbscript_constants(&mut ctx);
+
+        assert_eq!(ctx.get_variable("vbCrLf"), Some(&VBValue::String("\r\n".into())));
+        assert_eq!(ctx.get_variable("vbCr"), Some(&VBValue::String("\r".into())));
+        assert_eq!(ctx.get_variable("vbLf"), Some(&VBValue::String("\n".into())));
+        assert_eq!(ctx.get_variable("vbNewLine"), Some(&VBValue::String("\n".into())));
+        assert_eq!(ctx.get_variable("vbTab"), Some(&VBValue::String("\t".into())));
+        assert_eq!(ctx.get_variable("vbNullString"), Some(&VBValue::String("".into())));
+        assert_eq!(ctx.get_variable("vbNull"), Some(&VBValue::Null));
+        assert_eq!(ctx.get_variable("vbEmpty"), Some(&VBValue::Empty));
+        assert_eq!(ctx.get_variable("vbTrue"), Some(&VBValue::Boolean(true)));
+        assert_eq!(ctx.get_variable("vbFalse"), Some(&VBValue::Boolean(false)));
+    }
+
+    #[test]
+    fn test_vbscript_constants_usable_in_code() {
+        let mut ctx = ExecutionContext::new();
+        ctx.store = Some(crate::vbscript::store::Store::new());
+        inject_vbscript_constants(&mut ctx);
+
+        VBScriptInterpreter
+            .execute("x = vbCrLf & vbTab & vbNullString", &mut ctx)
+            .unwrap();
+        let val = ctx.get_variable("x").cloned().unwrap_or(VBValue::Empty);
+        assert_eq!(val, VBValue::String("\r\n\t".into()));
+    }
+
+    #[test]
+    fn test_vbscript_constants_dont_overwrite() {
+        let mut ctx = ExecutionContext::new();
+        ctx.set_variable("vbCrLf", VBValue::String("custom".into()));
+        inject_vbscript_constants(&mut ctx);
+        assert_eq!(ctx.get_variable("vbCrLf"), Some(&VBValue::String("custom".into())));
     }
 }

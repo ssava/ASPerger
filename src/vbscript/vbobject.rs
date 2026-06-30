@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
-use super::block::{parse_blocks, execute_blocks};
+use super::block::parse_blocks;
 use super::execution_context::ExecutionContext;
+use super::interpreter::VBScriptInterpreter;
 use super::value::VBValue;
 use super::value_utils;
 use super::vbs_error::{VBSError, VBSErrorType};
@@ -408,8 +409,9 @@ impl VBScriptObject for ClassInstance {
                 let mut instance_vars = self.instance_vars.clone();
                 context.set_variable(name, VBValue::Empty);
                 instance_vars.insert(name.to_lowercase(), VBValue::Empty);
+                let interp = VBScriptInterpreter;
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
-                    super::block::execute_blocks(&body_blocks, ctx)
+                    interp.execute_blocks_vm(&body_blocks, ctx)
                 });
                 match result {
                     Ok(()) => {
@@ -458,8 +460,9 @@ impl VBScriptObject for ClassInstance {
                 if let Some(ref param) = prop_def.let_param {
                     instance_vars.insert(param.to_lowercase(), value.clone());
                 }
+                let interp = VBScriptInterpreter;
                 let result = context.with_instance_scope(&mut instance_vars, |ctx| {
-                    super::block::execute_blocks(&body_blocks, ctx)
+                    interp.execute_blocks_vm(&body_blocks, ctx)
                 });
                 self.instance_vars = instance_vars;
                 result
@@ -526,8 +529,9 @@ impl VBScriptObject for ClassInstance {
         }
 
         // Execute with merged scope (globals + instance vars)
+        let interp = VBScriptInterpreter;
         let result = context.with_class_method_scope(&mut instance_vars, |ctx| {
-            execute_blocks(&body_blocks, ctx)
+            interp.execute_blocks_vm(&body_blocks, ctx)
         });
 
         // Capture updated instance vars

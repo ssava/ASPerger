@@ -12,7 +12,7 @@ pub struct Vm<'a> {
     constants: Arc<Vec<VBValue>>,
     ip: usize,
     stack: Vec<VBValue>,
-    locals: Vec<VBValue>,
+    pub(crate) locals: Vec<VBValue>,
     frames: Vec<CallFrame>,
     for_states: Vec<ForState>,
     for_each_states: Vec<ForEachState>,
@@ -35,6 +35,7 @@ struct ForState {
     counter_slot: usize,
     end: VBValue,
     step: VBValue,
+    current: f64,
 }
 
 struct ForEachState {
@@ -117,12 +118,17 @@ impl<'a> Vm<'a> {
                 }
                 Instruction::LoadGlobal(i) => {
                     let name = self.constants[i as usize].to_string();
-                    let val = self
-                        .context
-                        .get_variable(&name)
-                        .cloned()
-                        .unwrap_or(VBValue::Empty);
-                    self.stack.push(val);
+                    if let Some(val) = self.context.get_variable(&name) {
+                        self.stack.push(val.clone());
+                    } else {
+                        let e = VBSError::new(0, format!("Variable '{}' is not defined", name), VBSErrorType::RuntimeError);
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                            self.stack.push(VBValue::Empty);
+                        } else {
+                            return Err(e);
+                        }
+                    }
                 }
                 Instruction::StoreGlobal(i) => {
                     let name = self.constants[i as usize].to_string();
@@ -159,12 +165,32 @@ impl<'a> Vm<'a> {
                 Instruction::Div => {
                     let r = self.stack.pop().unwrap();
                     let l = self.stack.pop().unwrap();
-                    self.stack.push(Vm::div(l, r));
+                    match Vm::div(l, r) {
+                        Ok(v) => self.stack.push(v),
+                        Err(e) => {
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                                self.stack.push(VBValue::Empty);
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
                 }
                 Instruction::IntDiv => {
                     let r = self.stack.pop().unwrap();
                     let l = self.stack.pop().unwrap();
-                    self.stack.push(Vm::int_div(l, r));
+                    match Vm::int_div(l, r) {
+                        Ok(v) => self.stack.push(v),
+                        Err(e) => {
+                            if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                self.context.set_err(e);
+                                self.stack.push(VBValue::Empty);
+                            } else {
+                                return Err(e);
+                            }
+                        }
+                    }
                 }
                 Instruction::Mod => {
                     let r = self.stack.pop().unwrap();
@@ -318,6 +344,49 @@ impl<'a> Vm<'a> {
                         }
                     }
                 }
+                Instruction::SetPropLocal(slot, i) => {
+                    let prop = self.constants[i as usize].to_string();
+                    let val = self.stack.pop().unwrap();
+                    let mut obj_val = VBValue::Empty;
+                    std::mem::swap(&mut self.locals[slot as usize], &mut obj_val);
+                    let result = match &mut obj_val {
+                        VBValue::Object(obj) => {
+                            obj.set_property(&prop, val, self.context)
+                        }
+                        _ => Err(VBSError::new(0, "Object required".to_string(), VBSErrorType::RuntimeError)),
+                    };
+                    std::mem::swap(&mut self.locals[slot as usize], &mut obj_val);
+                    if let Err(e) = result {
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
+                Instruction::SetPropGlobal(o, i) => {
+                    let prop = self.constants[i as usize].to_string();
+                    let val = self.stack.pop().unwrap();
+                    let obj_key = self.constants[o as usize].to_string();
+                    let mut obj_val = VBValue::Empty;
+                    if let Some(slot) = self.context.get_variable_mut(&obj_key) {
+                        std::mem::swap(slot, &mut obj_val);
+                    }
+                    let result = match &mut obj_val {
+                        VBValue::Object(obj) => {
+                            obj.set_property(&prop, val, self.context)
+                        }
+                        _ => Err(VBSError::new(0, "Object required".to_string(), VBSErrorType::RuntimeError)),
+                    };
+                    self.context.set_variable(&obj_key, obj_val);
+                    if let Err(e) = result {
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                        } else {
+                            return Err(e);
+                        }
+                    }
+                }
                 Instruction::CallMethod(i, n) => {
                     let method = self.constants[i as usize].to_string();
                     let n_args = n as usize;
@@ -345,11 +414,7 @@ impl<'a> Vm<'a> {
                             } else { false };
 
                             if !found {
-                                let result = match obj.call_method(&method, &args, self.context)
-                                    .map_err(|e| VBSError::new(
-                                        0, format!("Method '{}' failed: {}", method, e),
-                                        VBSErrorType::RuntimeError
-                                    )) {
+                                let result = match obj.call_method(&method, &args, self.context) {
                                     Ok(v) => v,
                                     Err(e) => {
                                         if *self.context.get_error_mode() == ErrorMode::ResumeNext {
@@ -389,10 +454,6 @@ impl<'a> Vm<'a> {
                     let result = match &mut obj_val {
                         VBValue::Object(obj) => {
                             obj.call_method(&method, &args, self.context)
-                                .map_err(|e| VBSError::new(
-                                    0, format!("Method '{}' failed: {}", method, e),
-                                    VBSErrorType::RuntimeError
-                                ))
                         }
                         _ => {
                             Err(VBSError::new(
@@ -432,10 +493,6 @@ impl<'a> Vm<'a> {
                     let result = match &mut obj_val {
                         VBValue::Object(obj) => {
                             obj.call_method(&method, &args, self.context)
-                                .map_err(|e| VBSError::new(
-                                    0, format!("Method '{}' failed: {}", method, e),
-                                    VBSErrorType::RuntimeError
-                                ))
                         }
                         _ => {
                             Err(VBSError::new(
@@ -585,14 +642,44 @@ impl<'a> Vm<'a> {
                     let val = self.stack.pop().unwrap();
                     let key = self.stack.pop().unwrap();
                     let name = self.constants[idx as usize].to_string();
-                    let var = self.context.get_variable_mut(&name);
-                    if let Some(VBValue::Array(arr_ref, _)) = var {
-                        let idx_val = value_utils::to_arg_f64(&key) as usize;
-                        let items = Arc::make_mut(arr_ref);
-                        if idx_val < items.len() {
-                            items[idx_val] = val;
-                        } else {
-                            let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                    // Check type first to decide between array vs object path
+                    let is_object = matches!(
+                        self.context.get_variable(&name),
+                        Some(VBValue::Object(_))
+                    );
+                    let is_array = matches!(
+                        self.context.get_variable(&name),
+                        Some(VBValue::Array(..))
+                    );
+                    if is_array {
+                        let var = self.context.get_variable_mut(&name).unwrap();
+                        if let VBValue::Array(arr_ref, _) = var {
+                            let idx_val = value_utils::to_arg_f64(&key) as usize;
+                            let items = Arc::make_mut(arr_ref);
+                            if idx_val < items.len() {
+                                items[idx_val] = val;
+                            } else {
+                                let e = VBSError::new(9, "Subscript out of range".to_string(), VBSErrorType::RuntimeError);
+                                if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                                    self.context.set_err(e);
+                                } else {
+                                    return Err(e);
+                                }
+                            }
+                        }
+                    } else if is_object {
+                        let mut obj_val = {
+                            let slot = self.context.get_variable_mut(&name).unwrap();
+                            let mut replacement = VBValue::Empty;
+                            std::mem::swap(slot, &mut replacement);
+                            replacement
+                        };
+                        let result = match &mut obj_val {
+                            VBValue::Object(ref mut o) => o.indexed_set(&key, val, self.context),
+                            _ => unreachable!(),
+                        };
+                        self.context.set_variable(&name, obj_val);
+                        if let Err(e) = result {
                             if *self.context.get_error_mode() == ErrorMode::ResumeNext {
                                 self.context.set_err(e);
                             } else {
@@ -757,7 +844,7 @@ impl<'a> Vm<'a> {
                     for _ in 0..dim_count {
                         let size = value_utils::to_arg_f64(&self.stack.pop().unwrap()) as usize;
                         dims.push(size);
-                        total_size *= size;
+                        total_size *= size + 1;
                     }
                     dims.reverse();
                     let arr = vec![VBValue::Empty; total_size];
@@ -765,6 +852,15 @@ impl<'a> Vm<'a> {
                 }
                 Instruction::ReDim(slot, n, preserve) => {
                     let dim_count = n as usize;
+                    if preserve && dim_count > 1 {
+                        let e = VBSError::new(0, "ReDim Preserve can only change the last dimension of a multi-dimensional array".to_string(), VBSErrorType::RuntimeError);
+                        if *self.context.get_error_mode() == ErrorMode::ResumeNext {
+                            self.context.set_err(e);
+                            continue;
+                        } else {
+                            return Err(e);
+                        }
+                    }
                     let mut dims = Vec::with_capacity(dim_count);
                     let mut total_size = 1;
                     let mut new_dims = Vec::with_capacity(dim_count);
@@ -1043,7 +1139,8 @@ impl<'a> Vm<'a> {
                     if let Some(pos) = existing {
                         let end = self.for_states[pos].end.clone();
                         let step = self.for_states[pos].step.clone();
-                        if Vm::is_past_end(&self.locals[slot as usize], &end, &step) {
+                        let current = self.for_states[pos].current;
+                        if Vm::is_past_end_num(current, &end, &step) {
                             self.for_states.remove(pos);
                             self.ip = (self.ip as isize + exit_offset as isize) as usize;
                         }
@@ -1051,10 +1148,12 @@ impl<'a> Vm<'a> {
                         let step = self.stack.pop().unwrap();
                         let end = self.stack.pop().unwrap();
                         let counter = self.locals[slot as usize].clone();
+                        let counter_num = value_utils::to_arg_f64(&counter);
                         self.for_states.push(ForState {
                             counter_slot: slot,
                             end,
                             step: step.clone(),
+                            current: counter_num,
                         });
                         if Vm::is_past_end(&counter, &self.for_states.last().unwrap().end, &step) {
                             self.for_states.pop();
@@ -1063,22 +1162,19 @@ impl<'a> Vm<'a> {
                     }
                 }
                 Instruction::ForStep(slot, back_offset) => {
-                    if let Some(fs) = self.for_states.last() {
+                    // Pop stale inner-loop states (from Exit For jumps)
+                    while let Some(fs) = self.for_states.last() {
                         if fs.counter_slot == slot {
-                            let step_val = value_utils::to_arg_f64(&fs.step);
-                            match &self.locals[slot as usize] {
-                                VBValue::Number(n) => {
-                                    self.locals[slot as usize] = VBValue::Number(n + step_val);
-                                }
-                                _ => {
-                                    self.locals[slot as usize] = VBValue::Number(step_val);
-                                }
-                            }
-                            if !Vm::is_past_end(&self.locals[slot as usize], &fs.end, &fs.step) {
-                                self.ip = (self.ip as isize + back_offset as isize) as usize;
-                            } else {
-                                self.for_states.pop();
-                            }
+                            break;
+                        }
+                        self.for_states.pop();
+                    }
+                    if let Some(fs) = self.for_states.last_mut() {
+                        let step_val = value_utils::to_arg_f64(&fs.step);
+                        fs.current += step_val;
+                        self.locals[slot as usize] = VBValue::Number(fs.current);
+                        if !Vm::is_past_end_num(fs.current, &fs.end, &fs.step) {
+                            self.ip = (self.ip as isize + back_offset as isize) as usize;
                         } else {
                             self.for_states.pop();
                         }
@@ -1120,7 +1216,7 @@ impl<'a> Vm<'a> {
                                 }
                             }
                             _ => {
-                                let e = VBSError::new(0, "For Each requires an array or object".to_string(), VBSErrorType::RuntimeError);
+                                let e = VBSError::new(0, "Object doesn't support this property or method".to_string(), VBSErrorType::RuntimeError);
                                 if *self.context.get_error_mode() == ErrorMode::ResumeNext {
                                     self.context.set_err(e);
                                 } else {
@@ -1259,7 +1355,33 @@ impl<'a> Vm<'a> {
 
                 // -- Variable management --
                 Instruction::Erase(slot) => {
-                    self.locals[slot as usize] = VBValue::Empty;
+                    match &mut self.locals[slot as usize] {
+                        VBValue::Array(ref mut items, _) => {
+                            let items = Arc::make_mut(items);
+                            for item in items.iter_mut() {
+                                *item = VBValue::Empty;
+                            }
+                        }
+                        v => {
+                            *v = VBValue::Empty;
+                        }
+                    }
+                }
+                Instruction::EraseGlobal(i) => {
+                    let name = self.constants[i as usize].to_string();
+                    if let Some(v) = self.context.get_variable_mut(&name) {
+                        match v {
+                            VBValue::Array(ref mut items, _) => {
+                                let items = std::sync::Arc::make_mut(items);
+                                for item in items.iter_mut() {
+                                    *item = VBValue::Empty;
+                                }
+                            }
+                            _ => {
+                                *v = VBValue::Empty;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1418,12 +1540,22 @@ impl<'a> Vm<'a> {
         Vm::number_binop(l, r, |a, b| a * b)
     }
 
-    fn div(l: VBValue, r: VBValue) -> VBValue {
-        Vm::number_binop(l, r, |a, b| a / b)
+    fn div(l: VBValue, r: VBValue) -> Result<VBValue, VBSError> {
+        let rn = value_utils::to_arg_f64(&r);
+        if rn == 0.0 {
+            Err(VBSError::new(0, "Division by zero".to_string(), VBSErrorType::RuntimeError))
+        } else {
+            Ok(Vm::number_binop(l, r, |a, b| a / b))
+        }
     }
 
-    fn int_div(l: VBValue, r: VBValue) -> VBValue {
-        Vm::number_binop(l, r, |a, b| (a / b).floor())
+    fn int_div(l: VBValue, r: VBValue) -> Result<VBValue, VBSError> {
+        let rn = value_utils::to_arg_f64(&r);
+        if rn == 0.0 {
+            Err(VBSError::new(0, "Division by zero".to_string(), VBSErrorType::RuntimeError))
+        } else {
+            Ok(Vm::number_binop(l, r, |a, b| (a / b).floor()))
+        }
     }
 
     fn mod_op(l: VBValue, r: VBValue) -> VBValue {
@@ -1497,11 +1629,25 @@ impl<'a> Vm<'a> {
     }
 
     fn imp_op(l: VBValue, r: VBValue) -> VBValue {
-        Vm::bool_or_bitwise(l, r, |a, b| !a | b)
+        match (&l, &r) {
+            (VBValue::Boolean(a), VBValue::Boolean(b)) => VBValue::Boolean(!a || *b),
+            _ => {
+                let ln = value_utils::to_arg_f64(&l) as i64;
+                let rn = value_utils::to_arg_f64(&r) as i64;
+                VBValue::Number((!ln | rn) as f64)
+            }
+        }
     }
 
     fn eqv_op(l: VBValue, r: VBValue) -> VBValue {
-        Vm::bool_or_bitwise(l, r, |a, b| !(a ^ b))
+        match (&l, &r) {
+            (VBValue::Boolean(a), VBValue::Boolean(b)) => VBValue::Boolean(*a == *b),
+            _ => {
+                let ln = value_utils::to_arg_f64(&l) as i64;
+                let rn = value_utils::to_arg_f64(&r) as i64;
+                VBValue::Number(!(ln ^ rn) as f64)
+            }
+        }
     }
 
     fn like_match(l: VBValue, r: VBValue) -> VBValue {
@@ -1580,12 +1726,16 @@ impl<'a> Vm<'a> {
 
     fn is_past_end(counter: &VBValue, end: &VBValue, step: &VBValue) -> bool {
         let c = value_utils::to_arg_f64(counter);
+        Self::is_past_end_num(c, end, step)
+    }
+
+    fn is_past_end_num(counter: f64, end: &VBValue, step: &VBValue) -> bool {
         let e = value_utils::to_arg_f64(end);
         let s = value_utils::to_arg_f64(step);
         if s >= 0.0 {
-            c > e
+            counter > e
         } else {
-            c < e
+            counter < e
         }
     }
 }

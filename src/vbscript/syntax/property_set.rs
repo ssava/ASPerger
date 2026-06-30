@@ -79,15 +79,14 @@ impl VBSyntax for PropertySet {
 
     fn compile(&self, compiler: &mut Compiler) -> Result<(), VBSError> {
         let name_lower = self.object_name.to_lowercase();
-        if let Some(slot) = compiler.local_slot(&name_lower) {
-            compiler.emit(Instruction::LoadLocal(slot));
-        } else {
-            let idx = compiler.add_constant(VBValue::String(name_lower.into()));
-            compiler.emit(Instruction::LoadGlobal(idx));
-        }
         compiler.compile_expr(&self.value_expr);
         let prop_idx = compiler.add_constant(VBValue::String(self.property.to_lowercase().into()));
-        compiler.emit(Instruction::SetProp(prop_idx));
+        if let Some(slot) = compiler.local_slot(&name_lower) {
+            compiler.emit(Instruction::SetPropLocal(slot, prop_idx));
+        } else {
+            let obj_idx = compiler.add_constant(VBValue::String(name_lower.into()));
+            compiler.emit(Instruction::SetPropGlobal(obj_idx, prop_idx));
+        }
         Ok(())
     }
 

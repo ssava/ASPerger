@@ -41,6 +41,9 @@ impl VBSyntax for Erase {
             let name_lower = name.to_lowercase();
             if let Some(slot) = compiler.local_slot(&name_lower) {
                 compiler.emit(Instruction::Erase(slot));
+            } else {
+                let idx = compiler.add_constant(VBValue::String(name_lower.into()));
+                compiler.emit(Instruction::EraseGlobal(idx));
             }
         }
         Ok(())

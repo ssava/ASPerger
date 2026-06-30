@@ -208,7 +208,7 @@ use super::*;
         crate::asp::server::AspServer::inject_asp_intrinsic_objects(&mut context);
         let mut output = String::new();
 
-        for block in &blocks {
+        for block in blocks.iter() {
             match block {
                 crate::asp::parser::AspBlock::Html(html) => {
                     output.push_str(html);

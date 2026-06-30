@@ -13,6 +13,7 @@ pub struct CompiledCode {
     pub instructions: Vec<Instruction>,
     pub constants: Vec<VBValue>,
     pub local_count: usize,
+    pub local_names: Vec<String>,
     pub function_defs: Vec<UserDefinedFunction>,
     pub compiled_functions: Vec<(String, CompiledCode)>,
 }
@@ -53,10 +54,17 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(&mut self, blocks: &[BlockStatement]) -> Result<CompiledCode, VBSError> {
         self.compile_blocks(blocks)?;
+        let mut local_names = vec![String::new(); self.local_count];
+        for (name, slot) in &self.locals {
+            if *slot < local_names.len() {
+                local_names[*slot] = name.clone();
+            }
+        }
         Ok(CompiledCode {
             instructions: std::mem::take(&mut self.code),
             constants: std::mem::take(&mut self.constants),
             local_count: self.local_count,
+            local_names,
             function_defs: std::mem::take(&mut self.function_defs),
             compiled_functions: self.compiled_functions.drain().collect(),
         })
@@ -568,10 +576,17 @@ impl<'a> Compiler<'a> {
 
         self.compile_blocks(blocks)?;
 
+        let mut local_names = vec![String::new(); self.local_count];
+        for (name, slot) in &self.locals {
+            if *slot < local_names.len() {
+                local_names[*slot] = name.clone();
+            }
+        }
         let compiled = CompiledCode {
             instructions: std::mem::take(&mut self.code),
             constants: std::mem::take(&mut self.constants),
             local_count: self.local_count,
+            local_names,
             function_defs: Vec::new(),
             compiled_functions: Vec::new(),
         };

@@ -71,6 +71,40 @@
 - Dictionary.Add uses `HashMap::insert` (overwrites existing keys silently). VBScript's real Dictionary.Add errors on duplicate key
 - `Application.Contents("key")` reads return a deep clone of the stored value (Object.clone_box)
 
+## VM Benchmarks (level3_vm_comparison)
+- Run: `cargo bench --bench level3_vm_comparison` (12 benchmarks, 50 samples each)
+- VM is **27-69% faster** on loop-heavy workloads vs old interpreter
+- Trivial single-statement benchmarks are slower (~30-40%) due to compilation overhead
+- Function calls bridge to old interpreter (slightly slower for now)
+- Key wins: `for_empty_10k` (+69%), `if_else_2k` (+43%), `while_10k` (+27%), `select_case_1k` (+21%), `dict_500` (+21%)
+
+## VM: Array Indexing
+- Arrays are 0-based in VBScript (default `Option Base 0`)
+- `ReDim arr(9)` allocates 10 elements (indices 0-9): `total_size *= bound + 1`
+- `IndexGet`, `IndexStoreLocal`, `IndexStoreGlobal` use `idx = to_arg_f64(&key) as usize` (0-based, no `- 1`)
+- `Arc::make_mut` for copy-on-write array mutation (replaces `Arc::get_mut` which fails on shared refs)
+
+## VM: Object Method Call / Property Set Mutation
+- `CallMethod` operates on a **clone** of the object — mutations to `self` inside `call_method` are lost
+- `CallMethodLocal(LocalSlot, ConstantIdx, u8)` and `CallMethodGlobal(ConstantIdx, ConstantIdx, u8)` swap the object out of the variable, call the method, and swap it back
+- `SetProp(ConstantIdx)` operates on a **clone** of the object — mutations to `self` inside `set_property` are lost
+- `SetPropLocal(LocalSlot, ConstantIdx)` and `SetPropGlobal(ConstantIdx, ConstantIdx)` swap the object out of the variable, set the property, and swap it back
+- Used by `PropertySet::compile` for `obj.Property = value` statements (e.g. `c.count = 5`)
+- `CallMethod` (clone) works for read-only methods and ASP intrinsics (which mutate via `context`, not `self`)
+- `CallMethodGlobal`/`CallMethodLocal` should NOT wrap errors from `call_method` with `map_err` — this corrupts error codes from `Err.Raise`
+
+## VM: FunctionCall Array/Object Indexing
+- `Expr::FunctionCall { name, args }` in compiler checks if `name` is a local variable → emits `LoadLocal(slot)` + `IndexGet` (array read)
+- `Instruction::Call` handler checks array access → object indexed access → user function → builtin (matching old interpreter's evaluate order)
+- Object indexed access swaps the variable out, calls `indexed_get`, swaps it back
+
+## Critical VM Files
+- `src/vbscript/vm.rs` — ~1150 lines, `Vm` struct with `execute_loop`, ForState, ForEachState
+- `src/vbscript/compiler.rs` — ~680 lines, `Compiler` struct with `compile`, `compile_expr`, `compile_block`
+- `src/vbscript/instruction.rs` — ~55 `Instruction` variants + Display impl
+- `src/vbscript/syntax/*.rs` — each syntax node has `compile(&self, compiler)` implementing `VBSyntax`
+- `benches/level3_vm_comparison.rs` — Old interpreter vs VM benchmarks
+
 ## Important Constraints
 - `dap` crate v0.4.1-alpha1: response structs in `dap::responses`, event bodies in `dap::events`, `StoppedEventReason` enum in `types`
 - `StdoutLock` is `!Send` — use `BufWriter<std::io::Stdout>` for Server writer
